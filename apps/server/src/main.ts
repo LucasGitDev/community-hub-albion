@@ -1,4 +1,27 @@
-import { ROLES } from "@albion-hub/shared";
+import "reflect-metadata";
+import { Logger } from "@nestjs/common";
+import { NestFactory } from "@nestjs/core";
+import { API_PREFIX, AppModule, configureApp } from "./app.module.js";
+import { parseEnv } from "./config/env.js";
 
-// Esqueleto da TASK-001. Nest + Necord entram na TASK-003.
-console.log(`albion-hub server: ${ROLES.length} papéis carregados de @albion-hub/shared`);
+async function bootstrap() {
+  // Valida config antes de qualquer conexão (AC#4).
+  const parsed = parseEnv(process.env);
+  if (!parsed.ok) {
+    console.error(parsed.message);
+    process.exit(1);
+  }
+  const { env } = parsed;
+  // Login no Discord acontece no bootstrap do Nest: token recusado derruba o boot (fail fast).
+  const app = configureApp(await NestFactory.create(AppModule.register(env, { bot: env.DISCORD_BOT_ENABLED })));
+  await app.listen(env.PORT);
+  const logger = new Logger("Bootstrap");
+  logger.log(`API ouvindo em http://localhost:${env.PORT}/${API_PREFIX}`);
+  if (!env.DISCORD_BOT_ENABLED) logger.warn("DISCORD_BOT_ENABLED=false: bot do Discord desativado");
+}
+
+bootstrap().catch((error: unknown) => {
+  const reason = error instanceof Error ? error.message : String(error);
+  console.error(`Falha ao iniciar o servidor: ${reason}`);
+  process.exit(1);
+});
