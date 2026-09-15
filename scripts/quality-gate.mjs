@@ -69,6 +69,35 @@ const checks = {
     return { id: "e2e", label: "E2E + screenshots (desktop/mobile)", status: code === 0 ? "pass" : "fail", value, threshold: "0 falhas", blocking: true };
   },
 
+  image() {
+    // TASK-006: builda a imagem de produção e faz smoke no container (SPA + API, sem Discord e sem banco).
+    const tag = "albion-hub:quality";
+    const name = `albion-hub-smoke-${process.pid}`;
+    const build = sh(`docker build -t ${tag} .`);
+    if (build.code !== 0) return { id: "image", label: "Imagem Docker (build + smoke)", status: "fail", value: "build falhou", threshold: "build + smoke ok", blocking: true };
+    const env = "-e DISCORD_TOKEN=smoke.fake.token -e GUILD_ID=123456789012345678 -e DISCORD_BOT_ENABLED=false -e RUN_MIGRATIONS=false -e DATABASE_URL=postgres://smoke:smoke@127.0.0.1:1/smoke";
+    const run = sh(`docker run -d --name ${name} -p 127.0.0.1::3000 ${env} ${tag}`);
+    let value = "container não subiu";
+    let ok = false;
+    try {
+      if (run.code === 0) {
+        const port = sh(`docker port ${name} 3000/tcp`).output.trim().split(":").pop();
+        const probe = sh(
+          `for i in $(seq 1 30); do curl -sf -o /dev/null http://127.0.0.1:${port}/ && break; sleep 1; done; ` +
+            `curl -s -o /dev/null -w "%{http_code} " http://127.0.0.1:${port}/carteira; ` +
+            `curl -s -o /dev/null -w "%{http_code} " http://127.0.0.1:${port}/api/nao-existe; ` +
+            `curl -s http://127.0.0.1:${port}/api/health`,
+        ).output;
+        ok = /200 404 \{"status":"degraded","db":"down","bot":"offline"\}/.test(probe);
+        value = ok ? "build ok, SPA 200, /api 404 JSON, health ok" : "smoke falhou";
+        if (!ok) sh(`docker logs ${name}`);
+      }
+    } finally {
+      sh(`docker rm -f ${name}`);
+    }
+    return { id: "image", label: "Imagem Docker (build + smoke)", status: ok ? "pass" : "fail", value, threshold: "build + smoke ok", blocking: true };
+  },
+
   duplication() {
     sh("pnpm exec jscpd");
     const pct = readJson(`${OUT}/jscpd/jscpd-report.json`)?.statistics?.total?.percentage ?? 0;

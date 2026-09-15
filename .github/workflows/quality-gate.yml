@@ -84,8 +84,21 @@ jobs:
           retention-days: 14
           if-no-files-found: ignore
 
+  image:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/setup
+      - run: node scripts/quality-gate.mjs run image
+      - if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: quality-image
+          path: .quality/image.json
+          if-no-files-found: ignore
+
   summary:
-    needs: [check, e2e]
+    needs: [check, e2e, image]
     if: always()
     runs-on: ubuntu-latest
     steps:
