@@ -27,3 +27,32 @@ export function classifyVoiceUpdate({ oldChannelId, newChannelId }: VoiceUpdateI
 export function shouldTrackVoiceMember(input: { guildId: string; isBot: boolean }, configuredGuildId: string): boolean {
   return input.guildId === configuredGuildId && !input.isBot;
 }
+
+/** Estado de voz atual (subset plano de discord.js VoiceState) usado na reconciliação do boot. */
+export interface CurrentVoiceState {
+  userId: string;
+  guildId: string;
+  channelId: string | null | undefined;
+  /** undefined quando o member não está no cache: tratado como humano, igual ao listener. */
+  isBot: boolean | undefined;
+}
+
+export interface MemberInVoice {
+  discordUserId: string;
+  guildId: string;
+  channelId: string;
+}
+
+/**
+ * Quem está em voz agora na guild configurada (TASK-019, Q30): ignora outra guild, bots e
+ * estados sem canal. Deduplica por usuário (primeiro vence) para abrir no máximo uma sessão.
+ */
+export function membersInVoice(states: Iterable<CurrentVoiceState>, configuredGuildId: string): MemberInVoice[] {
+  const seen = new Map<string, MemberInVoice>();
+  for (const s of states) {
+    if (!s.channelId || seen.has(s.userId)) continue;
+    if (!shouldTrackVoiceMember({ guildId: s.guildId, isBot: s.isBot ?? false }, configuredGuildId)) continue;
+    seen.set(s.userId, { discordUserId: s.userId, guildId: s.guildId, channelId: s.channelId });
+  }
+  return [...seen.values()];
+}
