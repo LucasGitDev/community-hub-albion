@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 export interface MyNick {
   gameNick: string | null;
   pending: { id: string; nick: string; status: NickRequestStatus; createdAt: string; updatedAt: string } | null;
+  lastRejection: { nick: string; note: string | null; decidedAt: string } | null;
 }
 
 async function readError(res: Response): Promise<string> {

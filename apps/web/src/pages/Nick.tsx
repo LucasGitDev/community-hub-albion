@@ -1,5 +1,5 @@
 import { NICK_MAX_LENGTH, validateNick } from "@albion-hub/shared";
-import { Check, Hourglass } from "lucide-react";
+import { Check, Hourglass, X } from "lucide-react";
 import { useId, useState, type FormEvent } from "react";
 import { toast } from "sonner";
 import { PageHeader } from "@/components/display";
@@ -38,6 +38,7 @@ export function Nick() {
       />
       <div className="max-w-xl space-y-6">
         {gameNick && <CurrentNick nick={gameNick} />}
+        {!pending && state.data.lastRejection && <LastRejection rejection={state.data.lastRejection} />}
         {pending ? (
           <PendingRequest data={state.data} onSaved={set} />
         ) : gameNick ? (
@@ -58,6 +59,19 @@ function CurrentNick({ nick }: { nick: string }) {
         Nick aprovado
       </p>
       <p className="mt-1 font-display text-3xl font-medium break-all text-parchment">{nick}</p>
+    </section>
+  );
+}
+
+function LastRejection({ rejection }: { rejection: NonNullable<MyNick["lastRejection"]> }) {
+  return (
+    <section aria-labelledby="rejected-nick" className="rounded-lg border border-oxblood/50 bg-oxblood/10 p-5">
+      <p id="rejected-nick" className="flex items-center gap-1.5 text-sm text-oxblood">
+        <X className="size-4" strokeWidth={2.5} aria-hidden />
+        A staff recusou o nick {rejection.nick}
+      </p>
+      {rejection.note && <p className="mt-2 border-l-2 border-oxblood/50 pl-3 text-parchment">{rejection.note}</p>}
+      <p className="mt-2 text-sm text-faint">Em {formatDateTime(rejection.decidedAt)}. Corrija e envie de novo abaixo.</p>
     </section>
   );
 }
