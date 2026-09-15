@@ -8,7 +8,7 @@ import { DB_HANDLE } from "../db/db.module.js";
 import { isSameOriginRequest, SESSION_COOKIE, sessionCookieOptions, sessionExpiresAt } from "../domain/auth.js";
 import { AUTH_ENV } from "./auth.controller.js";
 
-export const devLoginSchema = z.object({
+const devLoginSchema = z.object({
   discordId: z.string().regex(/^\d{17,20}$/),
   username: z.string().trim().min(1).max(32),
   roles: z.array(z.enum(ROLES)).max(ROLES.length).default([]),
