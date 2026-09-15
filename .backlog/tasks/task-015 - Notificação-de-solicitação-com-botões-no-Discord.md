@@ -5,7 +5,7 @@ status: In Progress
 assignee:
   - '@claude'
 created_date: '2026-09-15 03:24'
-updated_date: '2026-09-15 13:29'
+updated_date: '2026-09-15 13:34'
 labels:
   - bot
 milestone: m-2
@@ -80,6 +80,8 @@ Security review (skill security-review rodou com diff vazio no checkout principa
 Teste manual no Discord (pendência do usuário): 1) .env com DISCORD_STAFF_CHANNEL_ID=1549401951924650025 (e DISCORD_MEMBER_ROLE_ID), bot ligado; 2) bot com Ver canal, Enviar mensagens, Inserir links no canal da staff; 3) membro pede nick em /nick → embed 'Novo pedido de nick' com Aprovar nick/Recusar aparece no canal; 4) membro corrige o nick → mesma mensagem é editada; 5) conta sem staff clica → mensagem efêmera 'Só a staff pode...'; conta sem login no painel → orientação de entrar no painel; 6) staff clica Aprovar → efêmero 'Nick X aprovado.', embed verde 'Aprovado por @staff em ...' sem botões, apelido/cargo aplicados (TASK-014); 7) novo pedido, Recusar → modal 'Motivo da recusa', enviar → embed vermelho com motivo; membro vê o motivo em /nick; 8) novo pedido decidido no painel /staff/membros → embed atualizado; 9) apagar a mensagem de um pedido pendente e corrigir o nick → embed republicado; 10) DISCORD_STAFF_CHANNEL_ID errado → log 'Canal da staff não encontrado...' e pedido segue no painel.
 
 Skills: task-done-check (checklist; sem UI web → visual Playwright N/A; copy Discord PT-BR revisada), security-review (checklist manual).
+
+Rebase sobre TASK-016 (PR #23): conflitos em members.module.ts (mantidos NickRequestService e ALBION_PLAYER_LOOKUP nos providers/exports), nick.controller.ts (pedido via NickRequestService.request + pré-aquecimento Albion sem await), nick.http.test.ts (imports de ambos; discord id do teste de hook colidia com teste da TASK-016 → id único). Sem colisão de migration (0004 continua única). lookupFor implementado (campo 'Albion' via describeAlbionLookup; disabled omite; erro logado sem bloquear) — completa TASK-016 AC#3. Gate pós-rebase: lint 0, race 0, typecheck ok, coverage branch 94.58%, e2e 28/0/0, imagem ok, dup 0%, dead code 0, vulns 0.
 <!-- SECTION:NOTES:END -->
 
 ## Final Summary
