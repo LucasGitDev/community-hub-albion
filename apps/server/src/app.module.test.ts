@@ -2,33 +2,65 @@ import "reflect-metadata";
 import type { INestApplication } from "@nestjs/common";
 import { Test } from "@nestjs/testing";
 import request from "supertest";
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it } from "vitest";
 import { AppModule, configureApp } from "./app.module.js";
 import { parseEnv } from "./config/env.js";
+import { DB_HANDLE } from "./db/db.module.js";
+
+const TEST_DATABASE_URL = process.env.TEST_DATABASE_URL ?? process.env.DATABASE_URL;
+
+function testEnv(databaseUrl = "postgres://albion:albion@localhost:1/none") {
+  const parsed = parseEnv({ DISCORD_TOKEN: "a.b.c", GUILD_ID: "123456789012345678", DATABASE_URL: databaseUrl, NODE_ENV: "test" });
+  if (!parsed.ok) throw new Error(parsed.message);
+  return parsed.env;
+}
+
+/** Handle falso: `execute` simula banco up/down sem Postgres. */
+const fakeHandle = (up: boolean) => ({
+  db: { execute: async () => (up ? [{ ok: 1 }] : Promise.reject(new Error("down"))) },
+  close: async () => {},
+});
+
+async function start(handle?: unknown, databaseUrl?: string): Promise<INestApplication> {
+  let builder = Test.createTestingModule({ imports: [AppModule.register(testEnv(databaseUrl), { bot: false })] });
+  if (handle) builder = builder.overrideProvider(DB_HANDLE).useValue(handle);
+  const app = configureApp((await builder.compile()).createNestApplication({ logger: false }));
+  await app.init();
+  return app;
+}
 
 describe("API HTTP (sem Discord)", () => {
-  let app: INestApplication;
-
-  beforeAll(async () => {
-    const parsed = parseEnv({ DISCORD_TOKEN: "a.b.c", GUILD_ID: "123456789012345678", NODE_ENV: "test" });
-    if (!parsed.ok) throw new Error(parsed.message);
-    const moduleRef = await Test.createTestingModule({ imports: [AppModule.register(parsed.env, { bot: false })] }).compile();
-    app = configureApp(moduleRef.createNestApplication({ logger: false }));
-    await app.init();
+  let app: INestApplication | undefined;
+  afterEach(async () => {
+    await app?.close();
+    app = undefined;
   });
 
-  afterAll(async () => {
-    await app.close();
-  });
-
-  it("GET /api/health responde 200 com bot offline", async () => {
+  it("GET /api/health responde 200 com banco up e bot offline", async () => {
+    app = await start(fakeHandle(true));
     const response = await request(app.getHttpServer()).get("/api/health");
     expect(response.status).toBe(200);
-    expect(response.body).toEqual({ status: "ok", bot: "offline" });
+    expect(response.body).toEqual({ status: "ok", db: "up", bot: "offline" });
+  });
+
+  it("GET /api/health responde 503 com banco down", async () => {
+    app = await start(fakeHandle(false));
+    const response = await request(app.getHttpServer()).get("/api/health");
+    expect(response.status).toBe(503);
+    expect(response.body).toEqual({ status: "degraded", db: "down", bot: "offline" });
   });
 
   it("rotas fora de /api não pertencem à API", async () => {
-    const response = await request(app.getHttpServer()).get("/health");
-    expect(response.status).toBe(404);
+    app = await start(fakeHandle(true));
+    expect((await request(app.getHttpServer()).get("/health")).status).toBe(404);
+  });
+
+  // TASK-002 AC#2: server conecta e consulta usando @albion-hub/db de verdade.
+  it.skipIf(!TEST_DATABASE_URL && !process.env.CI)("conecta no Postgres real via @albion-hub/db", async () => {
+    if (!TEST_DATABASE_URL) throw new Error("CI sem TEST_DATABASE_URL");
+    app = await start(undefined, TEST_DATABASE_URL);
+    const response = await request(app.getHttpServer()).get("/api/health");
+    expect(response.status).toBe(200);
+    expect(response.body.db).toBe("up");
   });
 });

@@ -2,14 +2,15 @@ import { describe, expect, it } from "vitest";
 import { parseEnv } from "./env.js";
 
 const TOKEN = "MTIzNDU2Nzg5MDEyMzQ1Njc4.GhIjKl.s3cr3t-token_value";
-const valid = { DISCORD_TOKEN: TOKEN, GUILD_ID: "123456789012345678" };
+const DB = "postgres://albion:albion@localhost:5432/albion_hub";
+const valid = { DISCORD_TOKEN: TOKEN, GUILD_ID: "123456789012345678", DATABASE_URL: DB };
 
 describe("parseEnv", () => {
   it("aceita config válida e aplica defaults", () => {
     const result = parseEnv(valid);
     expect(result).toEqual({
       ok: true,
-      env: { DISCORD_TOKEN: TOKEN, GUILD_ID: "123456789012345678", PORT: 3000, NODE_ENV: "development", DISCORD_BOT_ENABLED: true },
+      env: { DISCORD_TOKEN: TOKEN, GUILD_ID: "123456789012345678", DATABASE_URL: DB, PORT: 3000, NODE_ENV: "development", DISCORD_BOT_ENABLED: true },
     });
   });
 
@@ -49,5 +50,13 @@ describe("parseEnv", () => {
     const result = parseEnv({ DISCORD_TOKEN: leaked, GUILD_ID: "x" });
     expect(!result.ok && result.message).toContain("DISCORD_TOKEN: formato inválido");
     expect(!result.ok && result.message).not.toContain(leaked);
+  });
+
+  it("exige DATABASE_URL postgres", () => {
+    const missing = parseEnv({ DISCORD_TOKEN: TOKEN, GUILD_ID: "123456789012345678" });
+    expect(!missing.ok && missing.message).toContain("DATABASE_URL: obrigatória");
+    const wrong = parseEnv({ ...valid, DATABASE_URL: "mysql://x" });
+    expect(!wrong.ok && wrong.message).toContain("DATABASE_URL: formato inválido");
+    expect(!wrong.ok && wrong.message).not.toContain("mysql://x");
   });
 });
