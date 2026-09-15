@@ -8,7 +8,7 @@ import { AUTH_ENV } from "../auth/auth.controller.js";
 import { Authorize, CurrentAuth, type AuthorizedRequest } from "../auth/authorize.js";
 import { isSameOriginRequest } from "../domain/auth.js";
 
-export interface NickRequestDto {
+interface NickRequestDto {
   id: string;
   nick: string;
   status: NickRequestStatus;
