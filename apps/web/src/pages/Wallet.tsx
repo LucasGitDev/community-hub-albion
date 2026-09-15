@@ -6,6 +6,7 @@ import { cn } from "@/lib/utils";
 import { formatDateTime, formatDayHeading } from "@/lib/format";
 import { formatSilverShort } from "@albion-hub/shared";
 import { useCurrentUser } from "@/auth/AuthProvider";
+import { useMyNick } from "@/nick/api";
 import { MIN_WITHDRAWAL, useStore } from "@/mock/store";
 import type { LedgerEntry } from "@/mock/types";
 
@@ -157,8 +158,16 @@ function Statement({ entries }: { entries: LedgerEntry[] }) {
  * progresso visível desde o primeiro passo). Conta ativada já conta como feito.
  */
 function FirstSteps() {
-  const steps = [
+  const { state } = useMyNick();
+  const nick = state.status === "ready" ? state.data : null;
+  const nickStep = nick?.gameNick
+    ? { done: true, title: "Nick aprovado", detail: `A staff aprovou ${nick.gameNick}.` }
+    : nick?.pending
+      ? { done: false, title: "Nick aguardando a staff", detail: `${nick.pending.nick} está em análise.`, link: { to: "/nick", label: "Ver solicitação" } }
+      : { done: false, title: "Registre seu nick do Albion", detail: "A staff confere o nick do personagem pra liberar sua entrada.", link: { to: "/nick", label: "Registrar nick" } };
+  const steps: { done: boolean; title: string; detail: string; link?: { to: string; label: string } }[] = [
     { done: true, title: "Conta ativada", detail: "Você entrou com o Discord e já pode receber prata." },
+    nickStep,
     { done: false, title: "Participe de um evento com loot split", detail: "Entre na call do evento pelo Discord quando o caller chamar. Seu tempo na call define sua parte." },
     { done: false, title: "Receba sua parte aqui", detail: "Quando a staff confirmar a divisão, o valor aparece neste extrato e pode ser sacado." },
   ];
@@ -181,6 +190,11 @@ function FirstSteps() {
               {step.done && <span className="sr-only"> (feito)</span>}
             </p>
             <p className="text-sm text-faint">{step.detail}</p>
+            {step.link && (
+              <Link to={step.link.to} className="mt-1 inline-block text-sm text-brass hover:underline">
+                {step.link.label}
+              </Link>
+            )}
           </div>
         </li>
       ))}

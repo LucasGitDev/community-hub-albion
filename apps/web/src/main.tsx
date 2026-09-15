@@ -14,6 +14,7 @@ import { AdminRoles } from "./pages/AdminRoles";
 import { StoreProvider } from "./mock/store";
 import { Login } from "./pages/Login";
 import { MyWithdrawals } from "./pages/MyWithdrawals";
+import { Nick } from "./pages/Nick";
 import { Placeholder } from "./pages/Placeholder";
 import { StaffWithdrawals } from "./pages/StaffWithdrawals";
 import { Wallet } from "./pages/Wallet";
@@ -35,6 +36,7 @@ createRoot(document.getElementById("root")!).render(
           >
             <Route path="/carteira" element={<Wallet />} />
             <Route path="/saques" element={<MyWithdrawals />} />
+            <Route path="/nick" element={<Nick />} />
             {/* Gate de UI com as mesmas regras CASL da API; a API é a autoridade (TASK-009). */}
             <Route
               path="/staff/saques"
