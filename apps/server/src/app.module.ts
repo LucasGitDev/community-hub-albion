@@ -4,6 +4,7 @@ import { AuthModule } from "./auth/auth.module.js";
 import { BotModule } from "./bot/bot.module.js";
 import { DbModule } from "./db/db.module.js";
 import { HealthController } from "./health/health.controller.js";
+import { MembersModule } from "./members/members.module.js";
 import { NickModule } from "./nick/nick.module.js";
 import { serveSpa } from "./web/spa.js";
 
@@ -20,7 +21,7 @@ export class AppModule {
   static register(env: Env, options: AppModuleOptions = { bot: true }): DynamicModule {
     return {
       module: AppModule,
-      imports: [DbModule.register(env.DATABASE_URL), AuthModule.register(env), NickModule.register(env), ...(options.bot ? [BotModule.register(env)] : [])],
+      imports: [DbModule.register(env.DATABASE_URL), AuthModule.register(env), NickModule.register(env), MembersModule.register(env), ...(options.bot ? [BotModule.register(env)] : [])],
       controllers: [HealthController],
     };
   }
