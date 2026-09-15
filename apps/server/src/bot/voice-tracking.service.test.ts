@@ -5,6 +5,7 @@ import { asc, eq, sql } from "drizzle-orm";
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { DB_HANDLE } from "../db/db.module.js";
 import { classifyVoiceUpdate } from "../domain/voice.js";
+import { VoiceHeartbeatService } from "./voice-heartbeat.service.js";
 import { VOICE_CLOCK, VoiceTrackingService } from "./voice-tracking.service.js";
 
 const baseUrl = process.env.TEST_DATABASE_URL ?? process.env.DATABASE_URL;
@@ -117,5 +118,87 @@ describe.skipIf(!baseUrl)("VoiceTrackingService (TASK-018, Postgres real)", () =
     const log = vi.spyOn((svc as unknown as { logger: { error: (m: string) => void } }).logger, "error").mockImplementation(() => {});
     await expect(svc.apply({ discordUserId: USER, guildId: GUILD, action: { kind: "join", channelId: "c1" } })).resolves.toBeUndefined();
     expect(log).toHaveBeenCalledWith(expect.stringContaining("db down"));
+  });
+  describe("queda e reinício (TASK-019, Q30)", () => {
+    const U2 = "400000000000000002";
+    const U3 = "400000000000000003";
+    const at = (min: number) => new Date(new Date("2026-09-15T20:00:00Z").getTime() + min * 60_000);
+
+    /** Processo 1: sessões abertas em T0, heartbeats em T0+1m e T0+2m, depois morre sem fechar nada. */
+    async function crashAfterTwoHeartbeats() {
+      await update(null, "c1", USER);
+      await update(null, "c1", U2);
+      await update(null, "c2", U3);
+      const hb = new VoiceHeartbeatService(handle, () => now, 60_000);
+      tick(1);
+      await hb.beat();
+      tick(1);
+      await hb.beat();
+      hb.stop(); // "morreu": nenhum leave é registrado durante a queda
+    }
+
+    it("heartbeat atualiza last_heartbeat_at das abertas (AC#1)", async () => {
+      await update(null, "c1");
+      const hb = new VoiceHeartbeatService(handle, () => now, 60_000);
+      tick(1);
+      await hb.beat();
+      const [s] = await sessionsOf();
+      expect(s!.lastHeartbeatAt).toEqual(at(1));
+      expect(s!.endedAt).toBeNull();
+    });
+
+    it("reboot fecha abertas no último heartbeat e reabre só quem segue em voz (AC#2, AC#3)", async () => {
+      await crashAfterTwoHeartbeats();
+      now = at(10); // reinício 8 min depois; U2 saiu durante a queda, U3 trocou de canal
+      const result = await service.reconcile([
+        { discordUserId: USER, guildId: GUILD, channelId: "c1" },
+        { discordUserId: U3, guildId: GUILD, channelId: "c3" },
+      ]);
+      expect(result).toEqual({ closed: 3, opened: 2 });
+
+      for (const user of [USER, U2, U3]) {
+        const [old] = await sessionsOf(user);
+        expect(old!.endedAt).toEqual(at(2));
+      }
+      expect(await sessionsOf(U2)).toHaveLength(1);
+      const open = await listOpenVoiceSessions(handle.db);
+      expect(open.map((s) => [s.discordUserId, s.channelId, s.startedAt.toISOString()])).toEqual(
+        expect.arrayContaining([
+          [USER, "c1", at(10).toISOString()],
+          [U3, "c3", at(10).toISOString()],
+        ]),
+      );
+      expect(open).toHaveLength(2);
+    });
+
+    it("sessão sem nenhum heartbeat fecha no início (nunca inventa tempo)", async () => {
+      await update(null, "c1");
+      now = at(30);
+      await service.reconcile([]);
+      const [s] = await sessionsOf();
+      expect(s!.endedAt).toEqual(s!.startedAt);
+    });
+
+    it("evento de voz durante a reconciliação espera e não duplica sessão aberta", async () => {
+      await crashAfterTwoHeartbeats();
+      now = at(10);
+      const reconciling = service.reconcile([{ discordUserId: USER, guildId: GUILD, channelId: "c1" }]);
+      const leave = update("c1", null, USER); // chega enquanto reconcilia
+      const join = update(null, "c9", U2);
+      await Promise.all([reconciling, leave, join]);
+      expect(await listOpenVoiceSessions(handle.db, USER)).toHaveLength(0);
+      const u2 = await listOpenVoiceSessions(handle.db, U2);
+      expect(u2).toHaveLength(1);
+      expect(u2[0]!.channelId).toBe("c9");
+    });
+
+    it("falha de banco na reconciliação é logada sem lançar", async () => {
+      const broken = { db: { update: () => { throw new Error("db down"); }, transaction: () => Promise.reject(new Error("tx down")) } } as unknown as DbHandle;
+      const svc = new VoiceTrackingService(broken, () => now);
+      const log = vi.spyOn((svc as unknown as { logger: { error: (m: string) => void } }).logger, "error").mockImplementation(() => {});
+      await expect(svc.reconcile([{ discordUserId: USER, guildId: GUILD, channelId: "c1" }])).resolves.toEqual({ closed: 0, opened: 0 });
+      expect(log).toHaveBeenCalledWith(expect.stringContaining("db down"));
+      expect(log).toHaveBeenCalledWith(expect.stringContaining("tx down"));
+    });
   });
 });
