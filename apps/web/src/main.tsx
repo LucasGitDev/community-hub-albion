@@ -16,6 +16,7 @@ import { Login } from "./pages/Login";
 import { MyWithdrawals } from "./pages/MyWithdrawals";
 import { Nick } from "./pages/Nick";
 import { Placeholder } from "./pages/Placeholder";
+import { StaffMembers } from "./pages/StaffMembers";
 import { StaffWithdrawals } from "./pages/StaffWithdrawals";
 import { Wallet } from "./pages/Wallet";
 
@@ -58,7 +59,7 @@ createRoot(document.getElementById("root")!).render(
               path="/staff/membros"
               element={
                 <RequirePermission action="approve" subject="MemberRequest">
-                  <Placeholder title="Membros" description="Aprovação de nick dos novos membros." task="TASK-013" />
+                  <StaffMembers />
                 </RequirePermission>
               }
             />
