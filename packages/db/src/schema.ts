@@ -1,4 +1,4 @@
-import { ROLES } from "@albion-hub/shared";
+import { NICK_REQUEST_STATUSES, ROLES } from "@albion-hub/shared";
 import { sql } from "drizzle-orm";
 import { check, index, pgEnum, pgTable, primaryKey, text, timestamp, uniqueIndex, uuid } from "drizzle-orm/pg-core";
 
@@ -27,6 +27,8 @@ export const users = pgTable("users", {
   discordUsername: text("discord_username").notNull(),
   displayName: text("display_name"),
   avatar: text("avatar"),
+  /** Nick vigente do Albion (último aprovado pela staff, Q14/Q31). Troca pendente não altera. */
+  gameNick: text("game_nick"),
   createdAt: createdAt(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
 });
@@ -89,5 +91,33 @@ export const voiceSessions = pgTable(
     index("voice_sessions_channel_window_idx").on(t.channelId, t.startedAt, t.endedAt),
     check("voice_sessions_ended_after_started", sql`${t.endedAt} is null or ${t.endedAt} >= ${t.startedAt}`),
     check("voice_sessions_heartbeat_after_started", sql`${t.lastHeartbeatAt} >= ${t.startedAt}`),
+  ],
+);
+
+export const nickRequestStatusEnum = pgEnum("nick_request_status", NICK_REQUEST_STATUSES);
+
+/**
+ * Solicitações de nick (TASK-012): entrada de membro e troca de nick (Q14, Q31).
+ * No máximo uma `pending` por usuário (índice único parcial). Decisão da staff é TASK-013.
+ */
+export const nickRequests = pgTable(
+  "nick_requests",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    nick: text("nick").notNull(),
+    status: nickRequestStatusEnum("status").notNull().default("pending"),
+    createdAt: createdAt(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+    decidedAt: timestamp("decided_at", { withTimezone: true }),
+    decidedBy: uuid("decided_by").references(() => users.id, { onDelete: "set null" }),
+    decisionNote: text("decision_note"),
+  },
+  (t) => [
+    uniqueIndex("nick_requests_one_pending_per_user_idx").on(t.userId).where(sql`${t.status} = 'pending'`),
+    index("nick_requests_status_created_idx").on(t.status, t.createdAt),
+    check("nick_requests_decided_consistent", sql`(${t.status} = 'pending') = (${t.decidedAt} is null)`),
   ],
 );

@@ -5,6 +5,9 @@ import {
   closeVoiceSession,
   createDb,
   createSession,
+  getNickStatus,
+  listPendingNickRequests,
+  requestNick,
   findValidSession,
   grantRole,
   hashSessionToken,
@@ -291,6 +294,56 @@ describe.skipIf(!url)("@albion-hub/db (Postgres real)", () => {
       expect(await listOpenVoiceSessions(handle.db)).toEqual([]);
       const [row] = await handle.db.select().from(schema.voiceSessions).where(eq(schema.voiceSessions.discordUserId, a));
       expect(row?.endedAt?.getTime()).toBe(t(15).getTime());
+    });
+  });
+
+  describe("nick: solicitações (TASK-012, Q14/Q31)", () => {
+    it("cria pendente, troca o nick da pendente sem duplicar e lista na fila (AC#1, AC#2)", async () => {
+      const u = await upsertUserByDiscordId(handle.db, { discordId: "500000000000000001", discordUsername: "novato" });
+      expect(await getNickStatus(handle.db, u.id)).toEqual({ gameNick: null, pending: null });
+
+      const first = await requestNick(handle.db, u.id, "Novato");
+      expect(first.created).toBe(true);
+      expect(first.request.status).toBe("pending");
+
+      const second = await requestNick(handle.db, u.id, "NovatoDois");
+      expect(second.created).toBe(false);
+      expect(second.request.id).toBe(first.request.id);
+
+      const status = await getNickStatus(handle.db, u.id);
+      expect(status.pending?.nick).toBe("NovatoDois");
+      const queue = await listPendingNickRequests(handle.db);
+      expect(queue.filter((q) => q.user.id === u.id)).toHaveLength(1);
+    });
+
+    it("banco recusa segunda pendente do mesmo usuário (índice único parcial, AC#2)", async () => {
+      const u = await upsertUserByDiscordId(handle.db, { discordId: "500000000000000002", discordUsername: "duplo" });
+      await handle.db.insert(schema.nickRequests).values({ userId: u.id, nick: "Duplo" });
+      await expect(handle.db.insert(schema.nickRequests).values({ userId: u.id, nick: "Duplo2" })).rejects.toThrow();
+      // decididas não contam: nova pendente convive com histórico
+      await handle.db.update(schema.nickRequests).set({ status: "rejected", decidedAt: new Date() }).where(eq(schema.nickRequests.userId, u.id));
+      expect((await requestNick(handle.db, u.id, "Duplo3")).created).toBe(true);
+    });
+
+    it("requisições simultâneas geram uma só pendente", async () => {
+      const u = await upsertUserByDiscordId(handle.db, { discordId: "500000000000000004", discordUsername: "pressa" });
+      await Promise.all(["PressaA", "PressaB", "PressaC"].map((n) => requestNick(handle.db, u.id, n)));
+      const rows = await handle.db.select().from(schema.nickRequests).where(eq(schema.nickRequests.userId, u.id));
+      expect(rows).toHaveLength(1);
+    });
+
+    it("membro aprovado que pede troca mantém nick vigente e papel (AC#3)", async () => {
+      const u = await upsertUserByDiscordId(handle.db, { discordId: "500000000000000003", discordUsername: "veterano" });
+      await grantRole(handle.db, u.id, "member");
+      await handle.db.update(schema.users).set({ gameNick: "Veterano" }).where(eq(schema.users.id, u.id));
+      await requestNick(handle.db, u.id, "VeteranoNovo");
+      const status = await getNickStatus(handle.db, u.id);
+      expect(status.gameNick).toBe("Veterano");
+      expect(status.pending?.nick).toBe("VeteranoNovo");
+      expect(await listRoles(handle.db, u.id)).toEqual(["member"]);
+      // login seguinte não apaga o nick vigente
+      await upsertUserByDiscordId(handle.db, { discordId: "500000000000000003", discordUsername: "veterano2" });
+      expect((await getNickStatus(handle.db, u.id)).gameNick).toBe("Veterano");
     });
   });
 });
