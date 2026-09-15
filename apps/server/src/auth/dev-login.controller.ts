@@ -1,6 +1,7 @@
 import { BadRequestException, Body, Controller, ForbiddenException, HttpCode, Inject, Post, Req, Res } from "@nestjs/common";
-import { createSession, grantRole, upsertUserByDiscordId, type DbHandle } from "@albion-hub/db";
-import { ROLES } from "@albion-hub/shared";
+import { createSession, grantRole, schema, upsertUserByDiscordId, type DbHandle } from "@albion-hub/db";
+import { eq } from "drizzle-orm";
+import { ROLES, validateNick } from "@albion-hub/shared";
 import type { Request, Response } from "express";
 import { z } from "zod";
 import type { Env } from "../config/env.js";
@@ -12,6 +13,8 @@ const devLoginSchema = z.object({
   discordId: z.string().regex(/^\d{17,20}$/),
   username: z.string().trim().min(1).max(32),
   roles: z.array(z.enum(ROLES)).max(ROLES.length).default([]),
+  /** Nick já aprovado (e2e de troca de nick, TASK-012); aprovação real é da staff (TASK-013). */
+  gameNick: z.string().refine((v) => validateNick(v).ok).optional(),
 });
 
 /**
@@ -32,9 +35,10 @@ export class DevLoginController {
     if (!isSameOriginRequest(headers, this.env.PUBLIC_URL)) throw new ForbiddenException("Requisição de outra origem recusada.");
     const parsed = devLoginSchema.safeParse(body);
     if (!parsed.success) throw new BadRequestException("Dados de login de desenvolvimento inválidos.");
-    const { discordId, username, roles } = parsed.data;
+    const { discordId, username, roles, gameNick } = parsed.data;
     const db = this.handle.db;
     const user = await upsertUserByDiscordId(db, { discordId, discordUsername: username, displayName: username });
+    if (gameNick) await db.update(schema.users).set({ gameNick }).where(eq(schema.users.id, user.id));
     for (const role of new Set(["member" as const, ...roles])) await grantRole(db, user.id, role);
     const { token } = await createSession(db, user.id, sessionExpiresAt(new Date(), this.env.SESSION_TTL_DAYS));
     res.cookie(SESSION_COOKIE, token, sessionCookieOptions(this.env.NODE_ENV, this.env.SESSION_TTL_DAYS));

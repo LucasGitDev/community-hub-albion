@@ -79,6 +79,19 @@ describe.skipIf(!baseUrl)("dev-login (TASK-010, só dev/e2e)", () => {
     expect(me.body.user.username).toBe("grimwald");
   });
 
+  it("gameNick opcional grava nick aprovado (e2e TASK-012)", async () => {
+    const res = await request(enabled.getHttpServer())
+      .post("/api/auth/dev-login")
+      .set("Origin", PUBLIC_URL)
+      .send({ discordId: "400000000000000002", username: "veterano", gameNick: "Veterano" });
+    expect(res.status).toBe(204);
+    const cookie = (res.headers["set-cookie"] as unknown as string[]).find((c) => c.startsWith("ah_session="))!.split(";")[0]!;
+    const nick = await request(enabled.getHttpServer()).get("/api/me/nick").set("Cookie", cookie);
+    expect(nick.body.gameNick).toBe("Veterano");
+    const bad = await request(enabled.getHttpServer()).post("/api/auth/dev-login").set("Origin", PUBLIC_URL).send({ ...body, gameNick: "a b" });
+    expect(bad.status).toBe(400);
+  });
+
   it("recusa outra origem (403) e corpo inválido (400)", async () => {
     const cross = await request(enabled.getHttpServer()).post("/api/auth/dev-login").set("Origin", "https://evil.example").send(body);
     expect(cross.status).toBe(403);
