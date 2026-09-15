@@ -3,7 +3,7 @@ id: doc-005
 title: Decisões v1
 type: specification
 created_date: '2026-09-15 03:22'
-updated_date: '2026-09-15 03:22'
+updated_date: '2026-09-15 13:59'
 ---
 Resultado do grill (R1–R3, 2026-09-15). Referência pra specs e tasks.
 
@@ -48,7 +48,7 @@ Resultado do grill (R1–R3, 2026-09-15). Referência pra specs e tasks.
 |---|---|
 | Q13 | Papéis `member`, `caller`, `staff`, `admin`; permissões granulares seed em código na v1. |
 | Q14 | Entrada = nick + aprovação staff; validação via API Albion é ajuda, não bloqueio. |
-| Q31 | Aprovação muda apelido + dá cargo "Membro". Troca de nick: pendente, mantém acesso e apelido antigo até aprovar. |
+| Q31 | Aprovação muda apelido + garante cargo "Membro" (toda aprovação, inclusive troca — revisado 2026-09-15). Troca de nick: pendente, mantém acesso e apelido antigo até aprovar. Registro/troca também por slash command do bot, sem precisar do painel. |
 
 ## Infra
 | # | Decisão |
