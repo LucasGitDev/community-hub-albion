@@ -36,6 +36,7 @@ describe.skipIf(!baseUrl)("fila de nick da staff HTTP (TASK-013, Q14/Q31)", () =
       NODE_ENV: "test",
       DISCORD_CLIENT_ID: "223456789012345678",
       DISCORD_CLIENT_SECRET: "secret",
+      DISCORD_MEMBER_ROLE_ID: "323456789012345678",
       PUBLIC_URL,
     });
     if (!parsed.ok) throw new Error(parsed.message);
