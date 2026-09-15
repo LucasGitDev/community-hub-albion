@@ -1,4 +1,4 @@
-import { and, asc, desc, eq, getTableColumns, sql } from "drizzle-orm";
+import { and, asc, desc, eq, getTableColumns, isNotNull, sql } from "drizzle-orm";
 import type { Database } from "./client.js";
 import { nickRequests, users } from "./schema.js";
 
@@ -8,6 +8,8 @@ export interface NickStatus {
   /** Nick vigente (aprovado); null se nunca aprovado. */
   gameNick: string | null;
   pending: NickRequest | null;
+  /** Última decisão, se foi recusa (motivo aparece pro membro em /nick, TASK-013). */
+  lastRejected: NickRequest | null;
 }
 
 /** Nick vigente e solicitação pendente do usuário (GET /api/me/nick). */
@@ -19,7 +21,13 @@ export async function getNickStatus(db: Database, userId: string): Promise<NickS
     .where(and(eq(nickRequests.userId, userId), eq(nickRequests.status, "pending")))
     .orderBy(desc(nickRequests.createdAt))
     .limit(1);
-  return { gameNick: user?.gameNick ?? null, pending: pending ?? null };
+  const [lastDecided] = await db
+    .select()
+    .from(nickRequests)
+    .where(and(eq(nickRequests.userId, userId), isNotNull(nickRequests.decidedAt)))
+    .orderBy(desc(nickRequests.decidedAt))
+    .limit(1);
+  return { gameNick: user?.gameNick ?? null, pending: pending ?? null, lastRejected: lastDecided?.status === "rejected" ? lastDecided : null };
 }
 
 /**
@@ -58,4 +66,39 @@ export async function listPendingNickRequests(db: Database) {
 /** Grava o nick vigente sem passar pela fila (seed de dev/e2e). Aprovação real é da TASK-013. */
 export async function setGameNick(db: Database, userId: string, gameNick: string | null): Promise<void> {
   await db.update(users).set({ gameNick, updatedAt: sql`now()` }).where(eq(users.id, userId));
+}
+
+export type NickDecision = "approved" | "rejected";
+
+export interface DecideNickRequestInput {
+  requestId: string;
+  decision: NickDecision;
+  deciderUserId: string;
+  note: string | null;
+}
+
+export type DecideNickRequestResult =
+  | { ok: true; request: NickRequest; previousGameNick: string | null }
+  | { ok: false; reason: "not_found" | "not_pending" };
+
+/**
+ * Decisão da staff (TASK-013). Uma transação: UPDATE condicional `status = 'pending'` (só uma decisão vence,
+ * mesmo concorrente) + auditoria (decided_by/at/note). Aprovar grava `users.game_nick`; recusar não toca o nick vigente.
+ */
+export async function decideNickRequest(db: Database, input: DecideNickRequestInput): Promise<DecideNickRequestResult> {
+  return db.transaction(async (tx) => {
+    const [request] = await tx
+      .update(nickRequests)
+      .set({ status: input.decision, decidedAt: sql`now()`, decidedBy: input.deciderUserId, decisionNote: input.note, updatedAt: sql`now()` })
+      .where(and(eq(nickRequests.id, input.requestId), eq(nickRequests.status, "pending")))
+      .returning();
+    if (!request) {
+      const [exists] = await tx.select({ id: nickRequests.id }).from(nickRequests).where(eq(nickRequests.id, input.requestId));
+      return { ok: false, reason: exists ? "not_pending" : "not_found" };
+    }
+    const [user] = await tx.select({ gameNick: users.gameNick }).from(users).where(eq(users.id, request.userId)).for("update");
+    const previousGameNick = user?.gameNick ?? null;
+    if (input.decision === "approved") await tx.update(users).set({ gameNick: request.nick, updatedAt: sql`now()` }).where(eq(users.id, request.userId));
+    return { ok: true, request, previousGameNick };
+  });
 }
