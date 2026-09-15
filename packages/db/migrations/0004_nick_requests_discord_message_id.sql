@@ -1,0 +1,1 @@
+ALTER TABLE "nick_requests" ADD COLUMN "discord_message_id" text;
