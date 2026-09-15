@@ -42,3 +42,16 @@ export {
   type NickRequest,
   type NickStatus,
 } from "./nick-repo.js";
+export {
+  createEventRole,
+  deleteEventRole,
+  deleteEventTemplate,
+  getEventTemplate,
+  listEventRoles,
+  listEventTemplates,
+  saveEventTemplate,
+  updateEventRole,
+  type EventRoleDeleteResult,
+  type EventRoleWriteResult,
+  type EventTemplateWriteResult,
+} from "./event-templates-repo.js";

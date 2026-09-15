@@ -1,11 +1,20 @@
+import { DEFAULT_EVENT_ROLES } from "@albion-hub/shared";
 import { eq, sql } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import {
   closeStaleSessionsAtHeartbeat,
   closeVoiceSession,
   createDb,
+  createEventRole,
   createSession,
   decideNickRequest,
+  deleteEventRole,
+  deleteEventTemplate,
+  getEventTemplate,
+  listEventRoles,
+  listEventTemplates,
+  saveEventTemplate,
+  updateEventRole,
   findUserIdByDiscordId,
   getNickRequestEmbedData,
   setNickRequestDiscordMessageId,
@@ -427,6 +436,58 @@ describe.skipIf(!url)("@albion-hub/db (Postgres real)", () => {
       const decided = await getNickRequestEmbedData(handle.db, request.id);
       expect(decided).toMatchObject({ request: { nick: "Corrigido", status: "rejected", discordMessageId: "777000000000000001" }, decider: { discordId: "520000000000000101" } });
       expect(await getNickRequestEmbedData(handle.db, "00000000-0000-4000-8000-000000000000")).toBeNull();
+    });
+  });
+
+  describe("catálogo de roles e templates (TASK-020, Q8)", () => {
+    const MISSING = "00000000-0000-4000-8000-000000000000";
+    const tpl = (name: string, roles: { roleId: string; slots: number }[]) => ({ name, description: null, minPartySize: 1, maxPartySize: null, active: true, roles });
+
+    it("migration semeia as 6 roles iniciais uma vez só, na ordem", async () => {
+      const names = (await listEventRoles(handle.db)).map((r) => r.name);
+      expect(names.slice(0, DEFAULT_EVENT_ROLES.length)).toEqual([...DEFAULT_EVENT_ROLES]);
+      await runMigrations(url!);
+      expect((await listEventRoles(handle.db)).filter((r) => r.name === "Tank")).toHaveLength(1);
+    });
+
+    it("cria e edita role; nome único sem diferenciar maiúsculas (AC#1)", async () => {
+      const created = await createEventRole(handle.db, { name: "Batedor", description: null });
+      if (!created.ok) throw new Error("falhou");
+      expect(created.role).toMatchObject({ name: "Batedor", templateCount: 0 });
+      expect(await createEventRole(handle.db, { name: "batedor", description: null })).toEqual({ ok: false, reason: "duplicate" });
+      expect(await updateEventRole(handle.db, created.role.id, { name: "TANK" })).toEqual({ ok: false, reason: "duplicate" });
+      expect(await updateEventRole(handle.db, MISSING, { name: "X" })).toEqual({ ok: false, reason: "not_found" });
+      const edited = await updateEventRole(handle.db, created.role.id, { description: "abre caminho" });
+      expect(edited).toMatchObject({ ok: true, role: { name: "Batedor", description: "abre caminho" } });
+      expect(await deleteEventRole(handle.db, created.role.id)).toBe("deleted");
+      expect(await deleteEventRole(handle.db, created.role.id)).toBe("not_found");
+    });
+
+    it("template com roles e vagas; role em uso não apaga, nem pela FK (AC#2, AC#3)", async () => {
+      const roles = await listEventRoles(handle.db);
+      const created = await createEventRole(handle.db, { name: "Arqueiro", description: null });
+      if (!created.ok) throw new Error("falhou");
+      const tank = created.role;
+      const healer = roles.find((r) => r.name === "Healer")!;
+      const saved = await saveEventTemplate(handle.db, tpl("Raid do Dragão", [{ roleId: healer.id, slots: 4 }, { roleId: tank.id, slots: 2 }]));
+      if (!saved.ok) throw new Error(saved.reason);
+      expect(saved.template).toMatchObject({ totalSlots: 6, roles: [{ name: "Healer", slots: 4 }, { name: "Arqueiro", slots: 2 }] });
+      expect(await saveEventTemplate(handle.db, tpl("raid do dragão", [{ roleId: tank.id, slots: 1 }]))).toEqual({ ok: false, reason: "duplicate" });
+      expect(await saveEventTemplate(handle.db, tpl("Outro", [{ roleId: MISSING, slots: 1 }]))).toEqual({ ok: false, reason: "unknown_role" });
+
+      expect((await listEventRoles(handle.db)).find((r) => r.id === tank.id)!.templateCount).toBe(1);
+      expect(await deleteEventRole(handle.db, tank.id)).toBe("in_use");
+      await expect(handle.db.delete(schema.eventRoles).where(eq(schema.eventRoles.id, tank.id))).rejects.toThrow();
+      await expect(handle.db.insert(schema.eventTemplateRoles).values({ templateId: saved.template.id, roleId: roles[2]!.id, slots: 0 })).rejects.toThrow();
+
+      const replaced = await saveEventTemplate(handle.db, { ...tpl("Raid do Dragão", [{ roleId: healer.id, slots: 5 }]), maxPartySize: 20 }, saved.template.id);
+      expect(replaced).toMatchObject({ ok: true, template: { maxPartySize: 20, totalSlots: 5, roles: [{ name: "Healer" }] } });
+      expect(await deleteEventRole(handle.db, tank.id)).toBe("deleted");
+      expect(await saveEventTemplate(handle.db, tpl("Nada", [{ roleId: healer.id, slots: 1 }]), MISSING)).toEqual({ ok: false, reason: "not_found" });
+      expect((await listEventTemplates(handle.db)).map((t) => t.name)).toContain("Raid do Dragão");
+      expect(await deleteEventTemplate(handle.db, saved.template.id)).toBe(true);
+      expect(await deleteEventTemplate(handle.db, saved.template.id)).toBe(false);
+      expect(await getEventTemplate(handle.db, saved.template.id)).toBeNull();
     });
   });
 });

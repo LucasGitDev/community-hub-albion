@@ -1,6 +1,6 @@
 import { NICK_REQUEST_STATUSES, ROLES } from "@albion-hub/shared";
 import { sql } from "drizzle-orm";
-import { check, index, pgEnum, pgTable, primaryKey, text, timestamp, uniqueIndex, uuid } from "drizzle-orm/pg-core";
+import { boolean, check, index, integer, pgEnum, pgTable, primaryKey, text, timestamp, uniqueIndex, uuid } from "drizzle-orm/pg-core";
 
 /**
  * Metadados da aplicação (chave/valor). Tabela mínima para provar o pipeline de migrations.
@@ -122,4 +122,60 @@ export const nickRequests = pgTable(
     index("nick_requests_status_created_idx").on(t.status, t.createdAt),
     check("nick_requests_decided_consistent", sql`(${t.status} = 'pending') = (${t.decidedAt} is null)`),
   ],
+);
+
+/**
+ * Catálogo global de roles de evento (TASK-020, Q8). Nome único sem diferenciar maiúsculas.
+ * Seed inicial (Tank, Healer, DPS Melee, DPS Range, Support, Scout) vive na migration: roda uma vez por banco,
+ * então restart não duplica e edição/remoção da staff nunca é sobrescrita.
+ */
+export const eventRoles = pgTable(
+  "event_roles",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    name: text("name").notNull(),
+    description: text("description"),
+    sortOrder: integer("sort_order").notNull().default(0),
+    createdAt: createdAt(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [uniqueIndex("event_roles_name_lower_idx").on(sql`lower(${t.name})`), check("event_roles_name_not_blank", sql`length(trim(${t.name})) > 0`)],
+);
+
+/**
+ * Template de evento (TASK-020, Q8): DB é fonte de verdade (doc-002). `max_party_size` null = sem teto (PvP Roaming 2-∞).
+ * Sem faixa de moeda por role nem taxa de entrada: economia temática fica para quando o ledger existir (migration aditiva).
+ */
+export const eventTemplates = pgTable(
+  "event_templates",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    name: text("name").notNull(),
+    description: text("description"),
+    minPartySize: integer("min_party_size").notNull(),
+    maxPartySize: integer("max_party_size"),
+    active: boolean("active").notNull().default(true),
+    createdAt: createdAt(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    uniqueIndex("event_templates_name_lower_idx").on(sql`lower(${t.name})`),
+    check("event_templates_party_size", sql`${t.minPartySize} >= 1 and (${t.maxPartySize} is null or ${t.maxPartySize} >= ${t.minPartySize})`),
+  ],
+);
+
+/** Roles do template com vagas. Role em uso não pode ser apagada (AC#3): FK `on delete restrict` é a última barreira. */
+export const eventTemplateRoles = pgTable(
+  "event_template_roles",
+  {
+    templateId: uuid("template_id")
+      .notNull()
+      .references(() => eventTemplates.id, { onDelete: "cascade" }),
+    roleId: uuid("role_id")
+      .notNull()
+      .references(() => eventRoles.id, { onDelete: "restrict" }),
+    slots: integer("slots").notNull(),
+    sortOrder: integer("sort_order").notNull().default(0),
+  },
+  (t) => [primaryKey({ columns: [t.templateId, t.roleId] }), index("event_template_roles_role_idx").on(t.roleId), check("event_template_roles_slots_positive", sql`${t.slots} > 0`)],
 );
