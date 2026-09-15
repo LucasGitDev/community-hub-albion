@@ -1,4 +1,6 @@
-export type Role = "member" | "caller" | "staff" | "admin";
+import type { Role } from "@albion-hub/shared";
+
+export type { Role };
 
 export interface User {
   id: string;

@@ -1,6 +1,7 @@
 import { forwardRef, type ButtonHTMLAttributes, type ReactNode } from "react";
 import { Check, Hourglass, PackageCheck, X } from "lucide-react";
-import { cn, formatSilver } from "@/lib/format";
+import { cn } from "@/lib/format";
+import { formatSilver } from "@albion-hub/shared";
 import type { WithdrawalStatus } from "@/mock/types";
 
 type Variant = "primary" | "quiet" | "danger" | "ghost";
