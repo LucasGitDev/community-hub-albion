@@ -1,2 +1,3 @@
-// Esqueleto da TASK-001. Drizzle, schema e migrations entram na TASK-002.
-export {};
+export { createDb, ping, type CreateDbOptions, type Database, type DbHandle } from "./client.js";
+export { migrationsFolder, runMigrations } from "./migrate.js";
+export * as schema from "./schema.js";

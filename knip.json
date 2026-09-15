@@ -34,6 +34,17 @@
       "project": [
         "src/**/*.ts"
       ]
+    },
+    "packages/db": {
+      "entry": [
+        "src/index.ts",
+        "drizzle.config.ts",
+        "scripts/*.mjs"
+      ],
+      "project": [
+        "src/**/*.ts",
+        "scripts/**/*.mjs"
+      ]
     }
   },
   "ignoreDependencies": [
