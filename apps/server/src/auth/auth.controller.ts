@@ -1,5 +1,5 @@
-import { Controller, Get, HttpCode, Inject, Logger, Post, Req, Res, UnauthorizedException, ForbiddenException } from "@nestjs/common";
-import { createSession, findValidSession, grantRole, listRoles, revokeSession, upsertUserByDiscordId, type DbHandle } from "@albion-hub/db";
+import { Controller, Get, HttpCode, Inject, Logger, Post, Req, Res, ForbiddenException } from "@nestjs/common";
+import { createSession, grantRole, revokeSession, upsertUserByDiscordId, type DbHandle } from "@albion-hub/db";
 import type { Request, Response } from "express";
 import type { Env } from "../config/env.js";
 import { DB_HANDLE } from "../db/db.module.js";
@@ -21,7 +21,9 @@ import {
   stateCookieOptions,
   verifyOAuthState,
 } from "../domain/auth.js";
+import { Authorize, CurrentAuth } from "./authorize.js";
 import { DISCORD_OAUTH_CLIENT, type DiscordOAuthClient } from "./discord-oauth.client.js";
+import type { AuthContext } from "./session.service.js";
 
 export const AUTH_ENV = Symbol("AUTH_ENV");
 
@@ -96,15 +98,13 @@ export class AuthController {
   }
 
   @Get("me")
-  async me(@Req() req: Request, @Res({ passthrough: true }) res: Response): Promise<MeResponse> {
+  @Authorize()
+  me(@CurrentAuth() auth: AuthContext, @Res({ passthrough: true }) res: Response): MeResponse {
     res.setHeader("Cache-Control", "no-store");
-    const token = parseCookies(req.headers.cookie)[SESSION_COOKIE];
-    const found = token ? await findValidSession(this.handle.db, token) : null;
-    if (!found) throw new UnauthorizedException("Sessão inválida ou expirada. Entre de novo.");
-    const { user } = found;
+    const { user, roles } = auth;
     return {
       user: { id: user.id, discordId: user.discordId, username: user.discordUsername, displayName: user.displayName, avatar: user.avatar },
-      roles: await listRoles(this.handle.db, user.id),
+      roles,
     };
   }
 
