@@ -42,13 +42,13 @@ export interface NickEmbedInput {
   lookup?: NickLookupView | null;
 }
 
-export interface NickEmbedField {
+interface NickEmbedField {
   name: string;
   value: string;
   inline?: boolean;
 }
 
-export interface NickEmbedButton {
+interface NickEmbedButton {
   customId: string;
   label: string;
   style: "success" | "danger";
