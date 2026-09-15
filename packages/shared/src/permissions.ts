@@ -28,7 +28,7 @@ interface SubjectFields {
   Event: { ownerId: string };
   EventTemplate: Record<never, never>;
   LootSplit: Record<never, never>;
-  MemberRequest: Record<never, never>;
+  MemberRequest: { userId: string };
   UserRole: Record<never, never>;
 }
 
@@ -54,6 +54,9 @@ export function defineAbilityFor(user: AbilityUser): AppAbility {
     can("create", "Withdrawal");
     can("read", "Withdrawal", own);
     can(["read", "join"], "Event");
+    // Entrada/troca de nick (TASK-012, Q14/Q31): pede e acompanha só a própria solicitação.
+    can("create", "MemberRequest");
+    can("read", "MemberRequest", own);
   }
 
   if (roles.has("caller")) {
