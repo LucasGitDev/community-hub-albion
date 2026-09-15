@@ -3,8 +3,9 @@ import type { Env } from "./config/env.js";
 import { BotModule } from "./bot/bot.module.js";
 import { DbModule } from "./db/db.module.js";
 import { HealthController } from "./health/health.controller.js";
+import { serveSpa } from "./web/spa.js";
 
-/** Tudo da API fica sob /api; a raiz fica livre para a SPA (TASK-004). */
+/** Tudo da API fica sob /api; a raiz é da SPA (web/spa.ts). */
 export const API_PREFIX = "api";
 
 export interface AppModuleOptions {
@@ -23,8 +24,9 @@ export class AppModule {
   }
 }
 
-export function configureApp(app: INestApplication): INestApplication {
+export function configureApp(app: INestApplication, options: { webDistDir?: string } = {}): INestApplication {
   app.setGlobalPrefix(API_PREFIX);
+  if (options.webDistDir) serveSpa(app, options.webDistDir);
   app.enableShutdownHooks();
   return app;
 }

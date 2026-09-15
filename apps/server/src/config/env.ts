@@ -1,3 +1,4 @@
+import { fileURLToPath } from "node:url";
 import { z } from "zod";
 
 const SNOWFLAKE = /^\d{17,20}$/;
@@ -31,6 +32,12 @@ const envSchema = z.object({
     .enum(["true", "false"], { error: "deve ser true ou false" })
     .default("true")
     .transform((value) => value === "true"),
+  // Build da SPA servida na raiz. Default: apps/web/dist relativo ao dist do server (monorepo). Docker define explícito.
+  WEB_DIST_DIR: z
+    .string()
+    .trim()
+    .min(1)
+    .default(fileURLToPath(new URL("../../../web/dist", import.meta.url))),
   NODE_ENV: z.enum(["development", "test", "production"], { error: "deve ser development, test ou production" }).default("development"),
 });
 

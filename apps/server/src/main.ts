@@ -13,7 +13,7 @@ async function bootstrap() {
   }
   const { env } = parsed;
   // Login no Discord acontece no bootstrap do Nest: token recusado derruba o boot (fail fast).
-  const app = configureApp(await NestFactory.create(AppModule.register(env, { bot: env.DISCORD_BOT_ENABLED })));
+  const app = configureApp(await NestFactory.create(AppModule.register(env, { bot: env.DISCORD_BOT_ENABLED })), { webDistDir: env.WEB_DIST_DIR });
   await app.listen(env.PORT);
   const logger = new Logger("Bootstrap");
   logger.log(`API ouvindo em http://localhost:${env.PORT}/${API_PREFIX}`);
