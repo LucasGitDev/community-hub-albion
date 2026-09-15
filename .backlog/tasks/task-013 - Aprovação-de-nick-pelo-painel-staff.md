@@ -1,10 +1,11 @@
 ---
 id: TASK-013
 title: Aprovação de nick pelo painel staff
-status: To Do
-assignee: []
+status: In Progress
+assignee:
+  - '@claude'
 created_date: '2026-09-15 03:24'
-updated_date: '2026-09-15 03:50'
+updated_date: '2026-09-15 12:57'
 labels:
   - backend
   - frontend
@@ -40,3 +41,13 @@ Staff aprova ou rejeita solicitações de nick (Q14, Q31). Skills (doc-003): emi
 - [ ] #7 Notas e final summary com evidências; commits Conventional atômicos sem co-autor
 - [ ] #8 PR merged na main com quality gate verde; branch e worktree removidos
 <!-- DOD:END -->
+
+## Implementation Plan
+
+<!-- SECTION:PLAN:BEGIN -->
+1. db: decideNickRequest (approve/reject) transacional em nick-repo com lock FOR UPDATE; approve grava users.game_nick; conflito em não pendente; getNickStatus traz última recusa; testes de integração (audit, nick mantido, dupla decisão, concorrência).
+2. server: módulo members com NickDecisionService (approve/reject + listeners NICK_DECISION_LISTENERS p/ TASK-014) + StaffNickRequestsController GET /api/staff/nick-requests, POST :id/approve, :id/reject (Authorize approve MemberRequest, SameOriginGuard, uuid/zod); testes unit + HTTP (401/403/validação/audit).
+3. me/nick expõe lastRejection; web /nick mostra motivo da recusa.
+4. web /staff/membros: fila com Aprovar nick / Recusar + motivo obrigatório, toasts, empty state; emil-design-eng + ask-sonner.
+5. e2e desktop+mobile (aprovar, recusar com motivo, membro sem acesso); visual MCP 1280/400; security-review; quality; PR.
+<!-- SECTION:PLAN:END -->

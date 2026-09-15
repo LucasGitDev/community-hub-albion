@@ -27,7 +27,8 @@ async function requestNick(page: Page, nick: string) {
 
 test("staff aprova nick e membro vê o nick aprovado (AC#1, AC#2)", async ({ page }) => {
   const member = await login(page, "71000000000000001", "aprovar");
-  const nick = `Aprovado${member.slice(-1)}`;
+  // nick único por execução: reexecutar no mesmo banco não colide com o nick já aprovado.
+  const nick = `Ok${Date.now().toString(36)}${member.slice(-1)}`;
   await requestNick(page, nick);
 
   await login(page, "71000000000000101", "staffa", ["staff"]);
@@ -49,7 +50,8 @@ test("staff aprova nick e membro vê o nick aprovado (AC#1, AC#2)", async ({ pag
 
 test("staff recusa com motivo e membro vê o motivo (AC#1, AC#2)", async ({ page }) => {
   const member = await login(page, "71000000000000002", "recusar");
-  await requestNick(page, `Errado${member.slice(-1)}`);
+  const nick = `No${Date.now().toString(36)}${member.slice(-1)}`;
+  await requestNick(page, nick);
 
   await login(page, "71000000000000102", "staffr", ["staff"]);
   await page.goto("/staff/membros");
@@ -64,7 +66,7 @@ test("staff recusa com motivo e membro vê o motivo (AC#1, AC#2)", async ({ page
 
   await login(page, "71000000000000002", "recusar");
   await page.goto("/nick");
-  await expect(page.getByText(`A staff recusou o nick Errado${member.slice(-1)}`)).toBeVisible();
+  await expect(page.getByText(`A staff recusou o nick ${nick}`)).toBeVisible();
   await expect(page.getByText("Não achei esse personagem no jogo.")).toBeVisible();
   await expect(page.getByRole("button", { name: "Enviar para aprovação" })).toBeVisible();
   await snap(page, "nick-recusado");
