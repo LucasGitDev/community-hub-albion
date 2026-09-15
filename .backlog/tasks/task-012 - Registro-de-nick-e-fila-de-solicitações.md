@@ -5,7 +5,7 @@ status: In Progress
 assignee:
   - '@claude'
 created_date: '2026-09-15 03:24'
-updated_date: '2026-09-15 06:17'
+updated_date: '2026-09-15 06:19'
 labels:
   - backend
   - db
@@ -77,6 +77,8 @@ AC → evidência:
 Security review (checklist manual sobre git diff origin/main...HEAD): endpoints exigem sessão (401) e permissão CASL (403); userId vem só da sessão (sem IDOR); POST com checagem same-origin (CSRF) + SameSite=Lax; entrada validada por regex estrita (sem XSS/injeção; Drizzle parametrizado); DTO não expõe decidedBy/nota; Cache-Control no-store; gameNick no dev-login só com AUTH_DEV_LOGIN (proibido em produção). Sem achado crítico. Observação não bloqueante: sem rate limit no POST (impacto limitado a 1 linha pendente do próprio usuário).
 
 Skills: emil-design-eng, revenue-centric-design, task-done-check (checklist), security-review (checklist manual).
+
+Rebase 2 sobre origin/main 4406c60 (TASK-011 merged): conflito só em packages/db/src/index.ts (mantidos exports de admin-roles e nick); sem colisão de migration (0003_nick_requests). pnpm quality completo: lint 0, race 0, typecheck ok, coverage branch 92.13%, e2e 22 ok/0 falha, imagem build+smoke ok, dup 0%, deadcode 0, vulns 0.
 <!-- SECTION:NOTES:END -->
 
 ## Final Summary
