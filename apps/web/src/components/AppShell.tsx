@@ -1,6 +1,6 @@
 import { ROLE_LABELS, type Action, type SubjectType } from "@albion-hub/shared";
 import { NavLink, Outlet, useLocation } from "react-router";
-import { CalendarRange, Coins, HandCoins, KeyRound, LogOut, ScrollText, Swords, UserPen, Users, Vault } from "lucide-react";
+import { CalendarRange, Coins, LayoutTemplate, HandCoins, KeyRound, LogOut, ScrollText, Swords, UserPen, Users, Vault } from "lucide-react";
 import type { ReactNode } from "react";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
@@ -39,6 +39,7 @@ export function AppShell() {
     [
       { to: "/staff/saques", label: "Fila de saques", icon: <Vault />, can: ["approve", "Withdrawal"], count: queue },
       { to: "/staff/eventos", label: "Eventos", icon: <CalendarRange />, can: ["create", "Event"] },
+      { to: "/staff/templates", label: "Templates", icon: <LayoutTemplate />, can: ["update", "EventTemplate"] },
       { to: "/staff/membros", label: "Membros", icon: <Users />, can: ["approve", "MemberRequest"] },
       { to: "/staff/splits", label: "Loot splits", icon: <ScrollText />, can: ["update", "LootSplit"] },
       { to: "/admin/papeis", label: "Papéis", icon: <KeyRound />, can: ["read", "UserRole"] },

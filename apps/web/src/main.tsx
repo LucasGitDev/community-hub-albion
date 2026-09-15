@@ -14,6 +14,7 @@ import { MyWithdrawals } from "./pages/MyWithdrawals";
 import { Nick } from "./pages/Nick";
 import { Placeholder } from "./pages/Placeholder";
 import { StaffMembers } from "./pages/StaffMembers";
+import { StaffTemplates } from "./pages/StaffTemplates";
 import { StaffWithdrawals } from "./pages/StaffWithdrawals";
 import { Wallet } from "./pages/Wallet";
 import { ThemeProvider, useTheme } from "./theme/theme";
@@ -51,6 +52,14 @@ createRoot(document.getElementById("root")!).render(
               element={
                 <RequirePermission action="create" subject="Event">
                   <Placeholder title="Eventos" description="Criar, abrir inscrições, iniciar e encerrar eventos." task="TASK-023" />
+                </RequirePermission>
+              }
+            />
+            <Route
+              path="/staff/templates"
+              element={
+                <RequirePermission action="update" subject="EventTemplate">
+                  <StaffTemplates />
                 </RequirePermission>
               }
             />
