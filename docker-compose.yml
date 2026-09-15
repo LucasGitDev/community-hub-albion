@@ -20,6 +20,7 @@ services:
       PUBLIC_URL: ${PUBLIC_URL:?defina PUBLIC_URL no .env (https em produção)}
       SESSION_TTL_DAYS: ${SESSION_TTL_DAYS:-30}
       BOOTSTRAP_ADMIN_DISCORD_IDS: ${BOOTSTRAP_ADMIN_DISCORD_IDS:-}
+      ALBION_REGION: ${ALBION_REGION:-}
       PORT: 3000
     ports:
       - "${APP_PORT:-3000}:3000"
