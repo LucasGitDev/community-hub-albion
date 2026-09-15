@@ -1,10 +1,11 @@
 ---
 id: TASK-008
 title: Login com Discord OAuth2 e checagem de membro da guild
-status: To Do
-assignee: []
+status: In Progress
+assignee:
+  - '@claude'
 created_date: '2026-09-15 03:24'
-updated_date: '2026-09-15 03:50'
+updated_date: '2026-09-15 05:24'
 labels:
   - auth
   - backend
@@ -42,3 +43,15 @@ Painel para todos (Q3) exige login Discord OAuth2 e só aceita quem é membro do
 - [ ] #7 Notas e final summary com evidências; commits Conventional atômicos sem co-autor
 - [ ] #8 PR merged na main com quality gate verde; branch e worktree removidos
 <!-- DOD:END -->
+
+## Implementation Plan
+
+<!-- SECTION:PLAN:BEGIN -->
+1. env: DISCORD_CLIENT_ID/SECRET, PUBLIC_URL, SESSION_TTL_DAYS, BOOTSTRAP_ADMIN_DISCORD_IDS (zod).
+2. shared: códigos de erro de login + textos PT-BR.
+3. server/src/domain/auth: state OAuth (gerar/verificar timing-safe), opções de cookie por env, parse de cookie, URL authorize, checagem same-origin p/ logout.
+4. DiscordOAuthClient injetável (fetch): troca de code, /users/@me, membro via /users/@me/guilds/{GUILD_ID}/member.
+5. AuthController /api/auth: discord, discord/callback, logout (204, same-origin), me (401/200).
+6. Testes unitários + HTTP com fake Discord e Postgres real (DB isolado).
+7. .env.example, security-review, quality gate, PR.
+<!-- SECTION:PLAN:END -->
