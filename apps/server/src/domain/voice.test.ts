@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { classifyVoiceUpdate, shouldTrackVoiceMember } from "./voice.js";
+import { classifyVoiceUpdate, membersInVoice, shouldTrackVoiceMember } from "./voice.js";
 
 describe("classifyVoiceUpdate", () => {
   it("join: sem canal → canal", () => {
@@ -30,5 +30,39 @@ describe("shouldTrackVoiceMember", () => {
   it("ignora outra guild (Q4) e bots", () => {
     expect(shouldTrackVoiceMember({ guildId: "x", isBot: false }, "g")).toBe(false);
     expect(shouldTrackVoiceMember({ guildId: "g", isBot: true }, "g")).toBe(false);
+  });
+});
+
+describe("membersInVoice (TASK-019)", () => {
+  const G = "g1";
+  it("lista humanos em canal da guild configurada", () => {
+    expect(
+      membersInVoice(
+        [
+          { userId: "u1", guildId: G, channelId: "c1", isBot: false },
+          { userId: "u2", guildId: G, channelId: "c2", isBot: undefined },
+        ],
+        G,
+      ),
+    ).toEqual([
+      { discordUserId: "u1", guildId: G, channelId: "c1" },
+      { discordUserId: "u2", guildId: G, channelId: "c2" },
+    ]);
+  });
+
+  it("ignora bots, outra guild, sem canal e duplicatas", () => {
+    expect(
+      membersInVoice(
+        [
+          { userId: "bot", guildId: G, channelId: "c1", isBot: true },
+          { userId: "x", guildId: "other", channelId: "c1", isBot: false },
+          { userId: "out", guildId: G, channelId: null, isBot: false },
+          { userId: "undef", guildId: G, channelId: undefined, isBot: false },
+          { userId: "u1", guildId: G, channelId: "c1", isBot: false },
+          { userId: "u1", guildId: G, channelId: "c9", isBot: false },
+        ],
+        G,
+      ),
+    ).toEqual([{ discordUserId: "u1", guildId: G, channelId: "c1" }]);
   });
 });
