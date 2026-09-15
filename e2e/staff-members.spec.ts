@@ -20,8 +20,13 @@ async function snap(page: Page, name: string) {
 
 async function requestNick(page: Page, nick: string) {
   await page.goto("/nick");
+  const change = page.getByRole("button", { name: "Pedir troca de nick" });
+  const submit = page.getByRole("button", { name: /^(Enviar para aprovação|Pedir troca)$/ });
+  // Reexecução no mesmo banco: membro já aprovado vê "Pedir troca de nick" em vez do formulário.
+  await expect(change.or(page.getByLabel("Nick do personagem"))).toBeVisible();
+  if (await change.isVisible()) await change.click();
   await page.getByLabel("Nick do personagem").fill(nick);
-  await page.getByRole("button", { name: "Enviar para aprovação" }).click();
+  await submit.click();
   await expect(page.getByText("Aguardando aprovação da staff")).toBeVisible();
 }
 
