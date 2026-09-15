@@ -5,7 +5,7 @@ status: In Progress
 assignee:
   - '@claude'
 created_date: '2026-09-15 03:24'
-updated_date: '2026-09-15 13:18'
+updated_date: '2026-09-15 13:34'
 labels:
   - backend
 milestone: m-2
@@ -25,7 +25,7 @@ Ajuda ao staff, não bloqueio (Q14): consulta nick na API Albion da ALBION_REGIO
 <!-- AC:BEGIN -->
 - [x] #1 Solicitação mostra ao staff se o nick foi encontrado na região configurada
 - [x] #2 Indisponibilidade da API Albion ou região ausente não impede registro nem aprovação
-- [ ] #3 Resultado é exibido tanto no painel quanto no embed quando disponível
+- [x] #3 Resultado é exibido tanto no painel quanto no embed quando disponível
 <!-- AC:END -->
 
 ## Definition of Done
@@ -70,6 +70,8 @@ AC → evidência:
 Security review: a skill security-review rodou contra o checkout principal e viu diff vazio; checklist manual feito no diff: URL de saída só do mapa fixo de hosts via env enum + encodeURIComponent (sem SSRF por host/protocolo), redirect:'error', timeout, JSON tratado como unknown e validado; resultado renderizado como texto no React; endpoint mantém @Authorize approve MemberRequest; log sem corpo da resposta nem segredo. Sem achado crítico.
 
 Skills: emil-design-eng (selo estático sem animação na fila, estado com ícone+texto+borda, tokens verdigris/oxblood/muted), security-review (checklist manual), task-done-check (checklist).
+
+AC#3 concluído via TASK-015 (PR #24): NickStaffEmbedService.lookupFor usa ALBION_PLAYER_LOOKUP + describeAlbionLookup e mostra o campo 'Albion' no embed da staff (found/not_found/unavailable com texto; disabled omite; erro da consulta logado e embed publica/edita mesmo assim, Q14). Evidência: apps/server/src/bot/nick-staff-embed.service.test.ts 'embed mostra a consulta Albion; desligada omite; indisponível ou erro não impede publicar (TASK-016 AC#3)' (Postgres real + lookup e Discord falsos); pnpm quality completo verde (coverage branch 94.58%).
 <!-- SECTION:NOTES:END -->
 
 ## Final Summary
