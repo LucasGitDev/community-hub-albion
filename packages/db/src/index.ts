@@ -5,6 +5,7 @@ export { generateSessionToken, hashSessionToken, isSessionExpired } from "./sess
 export {
   createSession,
   findDiscordIdByUserId,
+  findUserIdByDiscordId,
   findValidSession,
   grantRole,
   listRoles,
@@ -28,7 +29,14 @@ export {
 export { listUsersWithRoles, revokeRoleGuarded, userExists, type RevokeRoleResult, type UserWithRoles } from "./admin-roles-repo.js";
 export {
   decideNickRequest,
-  getNickStatus, listPendingNickRequests, requestNick, setGameNick, type DecideNickRequestInput,
+  getNickRequestEmbedData,
+  getNickStatus,
+  listPendingNickRequests,
+  requestNick,
+  setGameNick,
+  setNickRequestDiscordMessageId,
+  type DecideNickRequestInput,
+  type NickRequestEmbedData,
   type DecideNickRequestResult,
   type NickDecision,
   type NickRequest,

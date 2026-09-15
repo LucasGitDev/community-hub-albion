@@ -39,6 +39,12 @@ export async function findDiscordIdByUserId(db: Database, userId: string): Promi
   return row?.discordId ?? null;
 }
 
+/** Id do usuário do painel pelo id Discord (botões do embed da staff, TASK-015); null se nunca logou. */
+export async function findUserIdByDiscordId(db: Database, discordId: string): Promise<string | null> {
+  const [row] = await db.select({ id: users.id }).from(users).where(eq(users.discordId, discordId));
+  return row?.id ?? null;
+}
+
 /** Concede papel; idempotente (papel já existente não altera nada). */
 export async function grantRole(db: Database, userId: string, role: Role, grantedBy: string | null = null): Promise<void> {
   await db.insert(userRoles).values({ userId, role, grantedBy }).onConflictDoNothing();

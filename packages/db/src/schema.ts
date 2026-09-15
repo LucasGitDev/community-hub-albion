@@ -114,6 +114,8 @@ export const nickRequests = pgTable(
     decidedAt: timestamp("decided_at", { withTimezone: true }),
     decidedBy: uuid("decided_by").references(() => users.id, { onDelete: "set null" }),
     decisionNote: text("decision_note"),
+    // Mensagem do embed no canal da staff (TASK-015): editada na decisão ou na correção do nick pendente.
+    discordMessageId: text("discord_message_id"),
   },
   (t) => [
     uniqueIndex("nick_requests_one_pending_per_user_idx").on(t.userId).where(sql`${t.status} = 'pending'`),

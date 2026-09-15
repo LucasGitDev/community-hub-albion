@@ -1,5 +1,6 @@
 import { and, asc, desc, eq, getTableColumns, isNotNull, sql } from "drizzle-orm";
 import type { Database } from "./client.js";
+import { alias } from "drizzle-orm/pg-core";
 import { nickRequests, users } from "./schema.js";
 
 export type NickRequest = typeof nickRequests.$inferSelect;
@@ -101,4 +102,32 @@ export async function decideNickRequest(db: Database, input: DecideNickRequestIn
     if (input.decision === "approved") await tx.update(users).set({ gameNick: request.nick, updatedAt: sql`now()` }).where(eq(users.id, request.userId));
     return { ok: true, request, previousGameNick };
   });
+}
+
+/** Guarda o id da mensagem do embed da staff (TASK-015). */
+export async function setNickRequestDiscordMessageId(db: Database, requestId: string, messageId: string | null): Promise<void> {
+  await db.update(nickRequests).set({ discordMessageId: messageId }).where(eq(nickRequests.id, requestId));
+}
+
+export interface NickRequestEmbedData {
+  request: NickRequest;
+  requester: { discordId: string; gameNick: string | null };
+  decider: { discordId: string } | null;
+}
+
+/** Pedido com Discord id de quem pediu e de quem decidiu (montar/atualizar o embed da staff, TASK-015). */
+export async function getNickRequestEmbedData(db: Database, requestId: string): Promise<NickRequestEmbedData | null> {
+  const decider = alias(users, "decider");
+  const [row] = await db
+    .select({
+      request: nickRequests,
+      requester: { discordId: users.discordId, gameNick: users.gameNick },
+      deciderDiscordId: decider.discordId,
+    })
+    .from(nickRequests)
+    .innerJoin(users, eq(users.id, nickRequests.userId))
+    .leftJoin(decider, eq(decider.id, nickRequests.decidedBy))
+    .where(eq(nickRequests.id, requestId));
+  if (!row) return null;
+  return { request: row.request, requester: row.requester, decider: row.deciderDiscordId ? { discordId: row.deciderDiscordId } : null };
 }

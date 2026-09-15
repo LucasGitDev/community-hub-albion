@@ -6,6 +6,9 @@ import {
   createDb,
   createSession,
   decideNickRequest,
+  findUserIdByDiscordId,
+  getNickRequestEmbedData,
+  setNickRequestDiscordMessageId,
   getNickStatus,
   listPendingNickRequests,
   requestNick,
@@ -402,6 +405,28 @@ describe.skipIf(!url)("@albion-hub/db (Postgres real)", () => {
       expect(results.filter((r) => r.ok)).toHaveLength(1);
       const [row] = await handle.db.select().from(schema.nickRequests).where(eq(schema.nickRequests.id, request.id));
       expect((await getNickStatus(handle.db, u.id)).gameNick).toBe(row!.status === "approved" ? "Corrida" : "Antigo");
+    });
+  });
+
+  describe("nick: embed da staff (TASK-015)", () => {
+    it("guarda message id e devolve dados do embed com quem pediu e quem decidiu", async () => {
+      const u = await upsertUserByDiscordId(handle.db, { discordId: "520000000000000001", discordUsername: "embed" });
+      const staff = await upsertUserByDiscordId(handle.db, { discordId: "520000000000000101", discordUsername: "staffEmbed" });
+      await setGameNick(handle.db, u.id, "Velho");
+      const { request } = await requestNick(handle.db, u.id, "Novo");
+      expect(await findUserIdByDiscordId(handle.db, "520000000000000101")).toBe(staff.id);
+      expect(await findUserIdByDiscordId(handle.db, "520000000000000999")).toBeNull();
+
+      await setNickRequestDiscordMessageId(handle.db, request.id, "777000000000000001");
+      const pending = await getNickRequestEmbedData(handle.db, request.id);
+      expect(pending).toMatchObject({ request: { discordMessageId: "777000000000000001", status: "pending" }, requester: { discordId: "520000000000000001", gameNick: "Velho" }, decider: null });
+
+      // Correção do nick pendente preserva o message id (embed é editado, não duplicado).
+      await requestNick(handle.db, u.id, "Corrigido");
+      await decideNickRequest(handle.db, { requestId: request.id, decision: "rejected", deciderUserId: staff.id, note: "não" });
+      const decided = await getNickRequestEmbedData(handle.db, request.id);
+      expect(decided).toMatchObject({ request: { nick: "Corrigido", status: "rejected", discordMessageId: "777000000000000001" }, decider: { discordId: "520000000000000101" } });
+      expect(await getNickRequestEmbedData(handle.db, "00000000-0000-4000-8000-000000000000")).toBeNull();
     });
   });
 });
