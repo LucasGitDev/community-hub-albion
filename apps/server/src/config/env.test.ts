@@ -4,7 +4,8 @@ import { parseEnv } from "./env.js";
 const TOKEN = "MTIzNDU2Nzg5MDEyMzQ1Njc4.GhIjKl.s3cr3t-token_value";
 const DB = "postgres://albion:albion@localhost:5432/albion_hub";
 const OAUTH = { DISCORD_CLIENT_ID: "223456789012345678", DISCORD_CLIENT_SECRET: "client-secret", PUBLIC_URL: "http://localhost:3000" };
-const valid = { DISCORD_TOKEN: TOKEN, GUILD_ID: "123456789012345678", DATABASE_URL: DB, ...OAUTH };
+const ROLE = "323456789012345678";
+const valid = { DISCORD_TOKEN: TOKEN, GUILD_ID: "123456789012345678", DATABASE_URL: DB, DISCORD_MEMBER_ROLE_ID: ROLE, ...OAUTH };
 
 describe("parseEnv", () => {
   it("aceita config válida e aplica defaults", () => {
@@ -15,6 +16,7 @@ describe("parseEnv", () => {
         DISCORD_TOKEN: TOKEN,
         GUILD_ID: "123456789012345678",
         DATABASE_URL: DB,
+        DISCORD_MEMBER_ROLE_ID: ROLE,
         ...OAUTH,
         SESSION_TTL_DAYS: 30,
         BOOTSTRAP_ADMIN_DISCORD_IDS: [],
@@ -109,6 +111,25 @@ describe("parseEnv", () => {
       expect(result.ok && result.env.BOOTSTRAP_ADMIN_DISCORD_IDS).toEqual(["111111111111111111", "222222222222222222"]);
       const bad = parseEnv({ ...valid, BOOTSTRAP_ADMIN_DISCORD_IDS: "111111111111111111,fulano" });
       expect(!bad.ok && bad.message).toContain("BOOTSTRAP_ADMIN_DISCORD_IDS.1: formato inválido");
+    });
+  });
+
+  describe("cargo Membro (TASK-014)", () => {
+    it("obrigatório com o bot ligado", () => {
+      const rest: Record<string, string | undefined> = { ...valid, DISCORD_MEMBER_ROLE_ID: undefined };
+      for (const source of [rest, { ...valid, DISCORD_MEMBER_ROLE_ID: "" }]) {
+        const result = parseEnv(source);
+        expect(!result.ok && result.message).toContain("DISCORD_MEMBER_ROLE_ID: obrigatória com DISCORD_BOT_ENABLED=true");
+      }
+    });
+
+    it("opcional com o bot desligado e validado como snowflake", () => {
+      const rest: Record<string, string | undefined> = { ...valid, DISCORD_MEMBER_ROLE_ID: undefined };
+      const off = parseEnv({ ...rest, DISCORD_BOT_ENABLED: "false" });
+      expect(off.ok && off.env.DISCORD_MEMBER_ROLE_ID).toBeUndefined();
+      expect(off.ok).toBe(true);
+      const bad = parseEnv({ ...valid, DISCORD_MEMBER_ROLE_ID: "membro" });
+      expect(!bad.ok && bad.message).toContain("DISCORD_MEMBER_ROLE_ID: formato inválido");
     });
   });
 });

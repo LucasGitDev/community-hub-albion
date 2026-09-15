@@ -22,6 +22,7 @@ function testEnv(databaseUrl = "postgres://albion:albion@localhost:1/none", webD
     NODE_ENV: "test",
     DISCORD_CLIENT_ID: "223456789012345678",
     DISCORD_CLIENT_SECRET: "secret",
+    DISCORD_MEMBER_ROLE_ID: "323456789012345678",
     PUBLIC_URL: "http://localhost:3000",
   });
   if (!parsed.ok) throw new Error(parsed.message);
