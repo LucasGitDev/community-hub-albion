@@ -26,3 +26,15 @@ export function validateNick(input: unknown): NickValidation {
 /** Nicks do Albion não diferenciam maiúsculas na unicidade: compara sem caixa. */
 export const sameNick = (a: string | null | undefined, b: string | null | undefined): boolean =>
   !!a && !!b && a.toLowerCase() === b.toLowerCase();
+
+export const REJECTION_NOTE_MAX_LENGTH = 300;
+
+export type RejectionNoteValidation = { ok: true; note: string } | { ok: false; error: string };
+
+/** Motivo da recusa (TASK-013): obrigatório, o membro vê em /nick pra corrigir o pedido. */
+export function validateRejectionNote(input: unknown): RejectionNoteValidation {
+  const note = typeof input === "string" ? input.trim() : "";
+  if (!note) return { ok: false, error: "Escreva o motivo da recusa: o membro vê essa mensagem." };
+  if (note.length > REJECTION_NOTE_MAX_LENGTH) return { ok: false, error: `O motivo tem no máximo ${REJECTION_NOTE_MAX_LENGTH} caracteres.` };
+  return { ok: true, note };
+}
