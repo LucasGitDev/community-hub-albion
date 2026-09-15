@@ -8,6 +8,7 @@ function boot(env: Record<string, string>) {
   const inherited = { ...process.env };
   delete inherited.DISCORD_TOKEN;
   delete inherited.GUILD_ID;
+  delete inherited.DATABASE_URL;
   return spawnSync(process.execPath, ["dist/main.js"], { cwd: serverDir, env: { ...inherited, ...env }, encoding: "utf8", timeout: 20_000 });
 }
 

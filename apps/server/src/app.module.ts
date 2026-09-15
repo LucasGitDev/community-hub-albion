@@ -1,6 +1,7 @@
 import { type DynamicModule, type INestApplication, Module } from "@nestjs/common";
 import type { Env } from "./config/env.js";
 import { BotModule } from "./bot/bot.module.js";
+import { DbModule } from "./db/db.module.js";
 import { HealthController } from "./health/health.controller.js";
 
 /** Tudo da API fica sob /api; a raiz fica livre para a SPA (TASK-004). */
@@ -16,7 +17,7 @@ export class AppModule {
   static register(env: Env, options: AppModuleOptions = { bot: true }): DynamicModule {
     return {
       module: AppModule,
-      imports: options.bot ? [BotModule.register(env)] : [],
+      imports: [DbModule.register(env.DATABASE_URL), ...(options.bot ? [BotModule.register(env)] : [])],
       controllers: [HealthController],
     };
   }

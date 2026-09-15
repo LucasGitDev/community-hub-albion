@@ -15,6 +15,11 @@ const envSchema = z.object({
     .trim()
     .min(1, { error: "obrigatória" })
     .regex(SNOWFLAKE, { error: "formato inválido (esperado snowflake numérico de 17 a 20 dígitos)" }),
+  DATABASE_URL: z
+    .string({ error: "obrigatória" })
+    .trim()
+    .min(1, { error: "obrigatória" })
+    .regex(/^postgres(ql)?:\/\//, { error: "formato inválido (esperado postgres://usuario:senha@host:porta/banco)" }),
   PORT: z.coerce
     .number({ error: "deve ser um número" })
     .int({ error: "deve ser inteiro" })
