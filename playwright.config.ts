@@ -34,6 +34,9 @@ export default defineConfig({
       RUN_MIGRATIONS: "false",
       DATABASE_URL: process.env.TEST_DATABASE_URL ?? "postgres://albion:albion@127.0.0.1:1/indisponivel",
       NODE_ENV: "test",
+      DISCORD_CLIENT_ID: "223456789012345678",
+      DISCORD_CLIENT_SECRET: "e2e-fake-secret",
+      PUBLIC_URL: `http://localhost:${PORT}`,
     },
   },
 });

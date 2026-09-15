@@ -1,5 +1,6 @@
 import { type DynamicModule, type INestApplication, Module } from "@nestjs/common";
 import type { Env } from "./config/env.js";
+import { AuthModule } from "./auth/auth.module.js";
 import { BotModule } from "./bot/bot.module.js";
 import { DbModule } from "./db/db.module.js";
 import { HealthController } from "./health/health.controller.js";
@@ -18,7 +19,7 @@ export class AppModule {
   static register(env: Env, options: AppModuleOptions = { bot: true }): DynamicModule {
     return {
       module: AppModule,
-      imports: [DbModule.register(env.DATABASE_URL), ...(options.bot ? [BotModule.register(env)] : [])],
+      imports: [DbModule.register(env.DATABASE_URL), AuthModule.register(env), ...(options.bot ? [BotModule.register(env)] : [])],
       controllers: [HealthController],
     };
   }

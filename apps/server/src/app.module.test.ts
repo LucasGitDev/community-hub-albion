@@ -14,7 +14,16 @@ const TEST_DATABASE_URL = process.env.TEST_DATABASE_URL ?? process.env.DATABASE_
 const NO_SPA_DIR = join(tmpdir(), "albion-hub-sem-spa");
 
 function testEnv(databaseUrl = "postgres://albion:albion@localhost:1/none", webDistDir = NO_SPA_DIR) {
-  const parsed = parseEnv({ DISCORD_TOKEN: "a.b.c", GUILD_ID: "123456789012345678", DATABASE_URL: databaseUrl, WEB_DIST_DIR: webDistDir, NODE_ENV: "test" });
+  const parsed = parseEnv({
+    DISCORD_TOKEN: "a.b.c",
+    GUILD_ID: "123456789012345678",
+    DATABASE_URL: databaseUrl,
+    WEB_DIST_DIR: webDistDir,
+    NODE_ENV: "test",
+    DISCORD_CLIENT_ID: "223456789012345678",
+    DISCORD_CLIENT_SECRET: "secret",
+    PUBLIC_URL: "http://localhost:3000",
+  });
   if (!parsed.ok) throw new Error(parsed.message);
   return parsed.env;
 }

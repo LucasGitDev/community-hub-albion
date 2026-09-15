@@ -59,6 +59,9 @@ importers:
       '@albion-hub/db':
         specifier: workspace:*
         version: link:../../packages/db
+      '@albion-hub/shared':
+        specifier: workspace:*
+        version: link:../../packages/shared
       '@nestjs/common':
         specifier: ^12.0.2
         version: 12.0.2(reflect-metadata@0.2.2)(rxjs@7.8.2)
@@ -96,6 +99,9 @@ importers:
       '@types/supertest':
         specifier: ^7.2.1
         version: 7.2.1
+      drizzle-orm:
+        specifier: ^0.45.2
+        version: 0.45.2(postgres@3.4.9)
       supertest:
         specifier: ^7.2.2
         version: 7.2.2
