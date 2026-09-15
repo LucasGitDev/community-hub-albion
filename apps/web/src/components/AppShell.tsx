@@ -1,30 +1,42 @@
 import { ROLE_LABELS } from "@albion-hub/shared";
 import { NavLink, Outlet } from "react-router";
-import { CalendarRange, Coins, HandCoins, LogOut, ScrollText, Users, Vault } from "lucide-react";
+import { CalendarRange, Coins, HandCoins, KeyRound, LogOut, ScrollText, Users, Vault } from "lucide-react";
 import type { ReactNode } from "react";
 import { cn } from "@/lib/utils";
-import { canManageWithdrawals, isStaffArea, useStore, useUser } from "@/mock/store";
+import type { Action, SubjectType } from "@albion-hub/shared";
+import { toast } from "sonner";
+import { useAuth, useCurrentUser } from "@/auth/AuthProvider";
 
 interface NavItem {
   to: string;
   label: string;
   icon: ReactNode;
+  /** Item só aparece se o papel permitir (mesmas regras CASL da API). */
+  can?: [Action, SubjectType];
 }
 
 export function AppShell() {
-  const user = useUser();
-  const { logout } = useStore();
+  const { user, ability } = useCurrentUser();
+  const { logout } = useAuth();
+  const allowed = (item: NavItem) => !item.can || ability.can(item.can[0], item.can[1]);
 
   const personal: NavItem[] = [
     { to: "/carteira", label: "Carteira", icon: <Coins className="size-4" /> },
     { to: "/saques", label: "Meus saques", icon: <HandCoins className="size-4" /> },
   ];
-  const management: NavItem[] = [
-    ...(canManageWithdrawals(user.role) ? [{ to: "/staff/saques", label: "Fila de saques", icon: <Vault className="size-4" /> }] : []),
-    { to: "/staff/eventos", label: "Eventos", icon: <CalendarRange className="size-4" /> },
-    { to: "/staff/membros", label: "Membros", icon: <Users className="size-4" /> },
-    { to: "/staff/splits", label: "Loot splits", icon: <ScrollText className="size-4" /> },
-  ];
+  const management = (
+    [
+      { to: "/staff/saques", label: "Fila de saques", icon: <Vault className="size-4" />, can: ["approve", "Withdrawal"] },
+      { to: "/staff/eventos", label: "Eventos", icon: <CalendarRange className="size-4" />, can: ["create", "Event"] },
+      { to: "/staff/membros", label: "Membros", icon: <Users className="size-4" />, can: ["approve", "MemberRequest"] },
+      { to: "/staff/splits", label: "Loot splits", icon: <ScrollText className="size-4" />, can: ["update", "LootSplit"] },
+      { to: "/admin/papeis", label: "Papéis", icon: <KeyRound className="size-4" />, can: ["read", "UserRole"] },
+    ] satisfies NavItem[]
+  ).filter(allowed);
+  const roleLabel = user.roles.filter((r) => r !== "member").map((r) => ROLE_LABELS[r]).join(", ") || ROLE_LABELS.member;
+  const onLogout = () => {
+    logout().catch(() => toast.error("Não foi possível sair. Tente de novo."));
+  };
 
   return (
     <div className="min-h-dvh md:grid md:grid-cols-[15rem_1fr]">
@@ -34,7 +46,7 @@ export function AppShell() {
         </div>
         <nav className="flex-1 px-3" aria-label="Principal">
           <NavGroup items={personal} />
-          {isStaffArea(user.role) && (
+          {management.length > 0 && (
             <>
               <p className="mt-8 mb-2 px-3 text-xs text-faint">Gestão</p>
               <NavGroup items={management} />
@@ -45,9 +57,9 @@ export function AppShell() {
           <Avatar initials={user.initials} />
           <div className="min-w-0 flex-1">
             <p className="truncate text-sm font-medium">{user.nick}</p>
-            <p className="truncate text-xs text-muted">{ROLE_LABELS[user.role]}</p>
+            <p className="truncate text-xs text-muted">{roleLabel}</p>
           </div>
-          <button onClick={logout} className="press rounded-md p-2 text-muted hover:text-parchment" aria-label="Sair">
+          <button onClick={onLogout} className="press rounded-md p-2 text-muted hover:text-parchment" aria-label="Sair">
             <LogOut className="size-4" />
           </button>
         </div>
@@ -58,7 +70,7 @@ export function AppShell() {
         <span className="font-display text-lg font-semibold">albion-hub</span>
         <div className="flex items-center gap-2">
           <Avatar initials={user.initials} />
-          <button onClick={logout} className="press rounded-md p-2 text-muted" aria-label="Sair">
+          <button onClick={onLogout} className="press rounded-md p-2 text-muted" aria-label="Sair">
             <LogOut className="size-4" />
           </button>
         </div>
@@ -73,7 +85,7 @@ export function AppShell() {
         className="fixed inset-x-0 bottom-0 z-10 flex border-t border-rule bg-stone/95 backdrop-blur md:hidden"
         style={{ paddingBottom: "env(safe-area-inset-bottom)" }}
       >
-        {[...personal, ...(isStaffArea(user.role) ? management.slice(0, 2) : [])].map((item) => (
+        {[...personal, ...management.slice(0, 2)].map((item) => (
           <NavLink
             key={item.to}
             to={item.to}

@@ -5,15 +5,16 @@ import { WithdrawDialog } from "@/components/WithdrawDialog";
 import { cn } from "@/lib/utils";
 import { formatDateTime, formatDayHeading } from "@/lib/format";
 import { formatSilverShort } from "@albion-hub/shared";
-import { MIN_WITHDRAWAL, useStore, useUser } from "@/mock/store";
+import { useCurrentUser } from "@/auth/AuthProvider";
+import { MIN_WITHDRAWAL, useStore } from "@/mock/store";
 import type { LedgerEntry } from "@/mock/types";
 
 export function Wallet() {
-  const user = useUser();
+  const { user } = useCurrentUser();
   const { balanceFor, ledgerFor, withdrawalsFor } = useStore();
-  const { total, reserved, available } = balanceFor(user.id);
-  const entries = ledgerFor(user.id);
-  const pending = withdrawalsFor(user.id).filter((w) => w.status === "pending" || w.status === "approved");
+  const { total, reserved, available } = balanceFor(user.discordId);
+  const entries = ledgerFor(user.discordId);
+  const pending = withdrawalsFor(user.discordId).filter((w) => w.status === "pending" || w.status === "approved");
 
   const negative = total < 0n;
   const reservedPct = total > 0n ? Number((reserved * 1000n) / total) / 10 : 0;
@@ -65,12 +66,15 @@ export function Wallet() {
           </p>
         )}
 
+        {/* Sem nenhum lançamento, o próximo passo é o guia do extrato, não um botão desabilitado. */}
+        {entries.length > 0 && (
         <div className="mt-8 flex flex-wrap items-center gap-3">
           <WithdrawDialog trigger={<Button disabled={available < MIN_WITHDRAWAL}>Pedir saque</Button>} />
           {available >= 0n && available < MIN_WITHDRAWAL && (
             <span className="text-sm text-muted">Saque mínimo de {formatSilverShort(MIN_WITHDRAWAL)}.</span>
           )}
         </div>
+        )}
       </section>
 
       {pending.length > 0 && (
@@ -96,9 +100,7 @@ export function Wallet() {
       <section className="border-t border-rule pt-8">
         <h2 className="font-display text-xl font-medium">Extrato</h2>
         {entries.length === 0 ? (
-          <p className="mt-4 text-muted">
-            Nenhum lançamento ainda. Participe de um evento com loot split e sua parte aparece aqui.
-          </p>
+          <FirstSteps />
         ) : (
           <Statement entries={entries} />
         )}
@@ -149,3 +151,40 @@ function Statement({ entries }: { entries: LedgerEntry[] }) {
     </div>
   );
 }
+
+/**
+ * Estado vazio com um próximo passo (revenue-centric-design: empty state que direciona,
+ * progresso visível desde o primeiro passo). Conta ativada já conta como feito.
+ */
+function FirstSteps() {
+  const steps = [
+    { done: true, title: "Conta ativada", detail: "Você entrou com o Discord e já pode receber prata." },
+    { done: false, title: "Participe de um evento com loot split", detail: "Entre na call do evento pelo Discord quando o caller chamar. Seu tempo na call define sua parte." },
+    { done: false, title: "Receba sua parte aqui", detail: "Quando a staff confirmar a divisão, o valor aparece neste extrato e pode ser sacado." },
+  ];
+  return (
+    <ol className="mt-6 max-w-xl space-y-4" aria-label="Como receber sua primeira prata">
+      {steps.map((step, i) => (
+        <li key={step.title} className="flex gap-4">
+          <span
+            className={cn(
+              "num grid size-7 shrink-0 place-items-center rounded-full border text-sm",
+              step.done ? "border-verdigris/50 bg-verdigris/10 text-verdigris" : "border-rule text-muted",
+            )}
+            aria-hidden
+          >
+            {step.done ? "✓" : i + 1}
+          </span>
+          <div>
+            <p className={step.done ? "text-muted" : "text-parchment"}>
+              {step.title}
+              {step.done && <span className="sr-only"> (feito)</span>}
+            </p>
+            <p className="text-sm text-faint">{step.detail}</p>
+          </div>
+        </li>
+      ))}
+    </ol>
+  );
+}
+

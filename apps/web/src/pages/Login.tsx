@@ -1,9 +1,9 @@
-import { ROLE_LABELS } from "@albion-hub/shared";
-import { Navigate } from "react-router";
-import { useState } from "react";
+import { loginErrorMessage } from "@albion-hub/shared";
+import { Navigate, useSearchParams } from "react-router";
+import { DISCORD_LOGIN_URL } from "@/auth/api";
+import { useAuth } from "@/auth/AuthProvider";
+import { FullPageStatus } from "@/auth/guards";
 import { Button } from "@/components/ui/button";
-import { useStore } from "@/mock/store";
-
 
 function DiscordMark() {
   return (
@@ -14,50 +14,33 @@ function DiscordMark() {
 }
 
 export function Login() {
-  const { user, users, loginAs } = useStore();
-  const [picking, setPicking] = useState(false);
+  const { state } = useAuth();
+  const [params] = useSearchParams();
+  const error = params.get("erro");
 
-  if (user) return <Navigate to="/carteira" replace />;
+  if (state.status === "authenticated") return <Navigate to="/carteira" replace />;
+  if (state.status === "loading") return <FullPageStatus>Carregando…</FullPageStatus>;
 
   return (
     <div className="grid min-h-dvh place-items-center px-4 py-12">
       <div className="w-full max-w-sm">
         <h1 className="font-display text-5xl leading-none font-medium tracking-tight">albion-hub</h1>
-        <p className="mt-4 text-muted">
-          Sua prata dos loot splits da comunidade, com extrato de cada evento e pedido de saque.
-        </p>
+        <p className="mt-4 text-muted">Sua prata dos loot splits da comunidade, com extrato de cada evento e pedido de saque.</p>
 
-        {!picking ? (
-          <Button className="mt-10 h-12 w-full bg-[#5865f2] text-white hover:bg-[#4752c4]" onClick={() => setPicking(true)}>
-            <DiscordMark />
-            Entrar com Discord
-          </Button>
-        ) : (
-          <div className="mt-10 rounded-xl border border-rule bg-stone p-2">
-            <p className="px-3 pt-2 pb-3 text-xs text-faint">OAuth mockado. Escolha com quem entrar:</p>
-            <ul>
-              {users.map((u) => (
-                <li key={u.id}>
-                  <button
-                    onClick={() => loginAs(u.id)}
-                    className="press flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left hover:bg-stone-raised"
-                  >
-                    <span className="grid size-8 place-items-center rounded-full bg-rule text-xs font-semibold text-silver">
-                      {u.initials}
-                    </span>
-                    <span className="flex-1">
-                      <span className="block text-sm font-medium">{u.nick}</span>
-                      <span className="block text-xs text-muted">@{u.discordName}</span>
-                    </span>
-                    <span className="text-xs text-muted">{ROLE_LABELS[u.role]}</span>
-                  </button>
-                </li>
-              ))}
-            </ul>
-          </div>
+        {error && (
+          <p role="alert" className="mt-8 rounded-md border border-oxblood/40 bg-oxblood/10 p-4 text-sm">
+            {loginErrorMessage(error)}
+          </p>
         )}
 
-        <p className="mt-6 text-xs text-faint">Só membros do servidor conseguem entrar.</p>
+        <Button asChild className="mt-10 h-12 w-full bg-[#5865f2] text-white hover:bg-[#4752c4]">
+          <a href={DISCORD_LOGIN_URL}>
+            <DiscordMark />
+            Entrar com Discord
+          </a>
+        </Button>
+
+        <p className="mt-6 text-xs text-faint">Só membros do servidor da comunidade conseguem entrar.</p>
       </div>
     </div>
   );
