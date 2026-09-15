@@ -1,8 +1,8 @@
 # albion-hub
 
 Sistema de comunidade Discord (Albion Online): bot + API + painel web.
-Contexto de produto completo: `docs/product-context.md`. Arquitetura: `docs/architecture.md`.
-Skills/tools do agent: `docs/skills.md` — **ler antes de qualquer tarefa de UI, UX, produto ou review**.
+Docs (produto, arquitetura, skills, roadmap) vivem no Backlog.md: `backlog doc list --plain`.
+Skills/tools do agent: doc "Skills" no backlog — **ler antes de qualquer tarefa de UI, UX, produto ou review**.
 
 ## Stack
 - Monorepo: pnpm workspaces + Turborepo
@@ -22,7 +22,7 @@ Skills/tools do agent: `docs/skills.md` — **ler antes de qualquer tarefa de UI
 - RBAC via CASL, separado de cargos Discord.
 
 ## Uso automático de skills
-Invocar skill via Skill tool sem o usuário pedir sempre que o gatilho de `docs/skills.md` bater.
+Invocar skill via Skill tool sem o usuário pedir sempre que o gatilho do doc "Skills" (backlog) bater.
 Resumo:
 - Criar/alterar UI → `emil-design-eng` (+ `frontend-design`, `pick-ui-library`)
 - Animação → `animate`, `review-animations`, `improve-animations`, `find-animation-opportunities`, `animation-vocabulary`
@@ -30,7 +30,7 @@ Resumo:
 - Explorar variações de UI → `prototype`
 - Onboarding, landing, loja, conversão, retenção, economia/engajamento → `revenue-centric-design`
 - Review de produto/feature estilo indie-hacker → `marclou-review`
-- Ciclo spec → plano → TDD → review → close → `specify.*`
+- Tarefas, board, docs e decisões → Backlog.md CLI (ver bloco abaixo); gestão de tasks → agent `project-manager-backlog`
 
 <!-- BACKLOG.MD GUIDELINES START -->
 <!-- backlog.md-instructions-version: 1.50.1 -->
