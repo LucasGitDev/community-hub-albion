@@ -14,3 +14,13 @@ export {
   type Session,
   type User,
 } from "./auth-repo.js";
+export {
+  closeStaleSessionsAtHeartbeat,
+  closeVoiceSession,
+  listOpenVoiceSessions,
+  openVoiceSession,
+  overlapMs,
+  touchHeartbeat,
+  type OpenVoiceSessionInput,
+  type VoiceSession,
+} from "./voice-repo.js";

@@ -1,17 +1,22 @@
 import { eq, sql } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import {
+  closeStaleSessionsAtHeartbeat,
+  closeVoiceSession,
   createDb,
   createSession,
   findValidSession,
   grantRole,
   hashSessionToken,
+  listOpenVoiceSessions,
   listRoles,
+  openVoiceSession,
   ping,
   revokeRole,
   revokeSession,
   runMigrations,
   schema,
+  touchHeartbeat,
   upsertUserByDiscordId,
   type DbHandle,
 } from "./index.js";
@@ -187,6 +192,105 @@ describe.skipIf(!url)("@albion-hub/db (Postgres real)", () => {
       await handle.db.delete(schema.users).where(eq(schema.users.id, user.id));
       expect(await listRoles(handle.db, user.id)).toEqual([]);
       expect(await handle.db.select().from(schema.sessions).where(eq(schema.sessions.userId, user.id))).toHaveLength(0);
+    });
+  });
+  describe("voice sessions (TASK-017)", () => {
+    const t = (m: number) => new Date(Date.UTC(2026, 0, 1, 0, m));
+    let seq = 0;
+    const uid = () => `9${Date.now()}${++seq}`;
+    const pgCode = async (p: Promise<unknown>) => {
+      try {
+        await p;
+        return null;
+      } catch (e) {
+        const err = e as { code?: string; cause?: { code?: string } };
+        return err.cause?.code ?? err.code ?? "unknown";
+      }
+    };
+
+    it("migration cria voice_sessions com usuário, canal, início, fim opcional e heartbeat (AC#1)", async () => {
+      const cols = await handle.db.execute<{ column_name: string; is_nullable: string }>(
+        sql`select column_name, is_nullable from information_schema.columns where table_name = 'voice_sessions'`,
+      );
+      const nullable = Object.fromEntries(cols.map((c) => [c.column_name, c.is_nullable]));
+      expect(nullable).toMatchObject({
+        discord_user_id: "NO",
+        channel_id: "NO",
+        started_at: "NO",
+        ended_at: "YES",
+        last_heartbeat_at: "NO",
+        guild_id: "YES",
+      });
+    });
+
+    it("open → listOpenVoiceSessions por usuário (AC#2)", async () => {
+      const a = uid();
+      const b = uid();
+      const s = await openVoiceSession(handle.db, { discordUserId: a, guildId: "g", channelId: "c1", at: t(0) });
+      await openVoiceSession(handle.db, { discordUserId: b, channelId: "c1", at: t(1) });
+      expect(s).toMatchObject({ discordUserId: a, channelId: "c1", endedAt: null, guildId: "g" });
+      expect(s.lastHeartbeatAt.getTime()).toBe(t(0).getTime());
+      const mine = await listOpenVoiceSessions(handle.db, a);
+      expect(mine.map((r) => r.id)).toEqual([s.id]);
+      const all = await listOpenVoiceSessions(handle.db);
+      expect(all.map((r) => r.discordUserId)).toEqual(expect.arrayContaining([a, b]));
+    });
+
+    it("segundo open do mesmo usuário fecha o anterior no mesmo instante (AC#3)", async () => {
+      const a = uid();
+      const first = await openVoiceSession(handle.db, { discordUserId: a, channelId: "c1", at: t(0) });
+      const second = await openVoiceSession(handle.db, { discordUserId: a, channelId: "c2", at: t(5) });
+      const open = await listOpenVoiceSessions(handle.db, a);
+      expect(open.map((r) => r.id)).toEqual([second.id]);
+      const [old] = await handle.db.select().from(schema.voiceSessions).where(eq(schema.voiceSessions.id, first.id));
+      expect(old?.endedAt?.getTime()).toBe(t(5).getTime());
+    });
+
+    it("índice único parcial rejeita segunda sessão aberta inserida direto (AC#3)", async () => {
+      const a = uid();
+      await handle.db.insert(schema.voiceSessions).values({ discordUserId: a, channelId: "c1", startedAt: t(0), lastHeartbeatAt: t(0) });
+      const code = await pgCode(
+        handle.db.insert(schema.voiceSessions).values({ discordUserId: a, channelId: "c2", startedAt: t(1), lastHeartbeatAt: t(1) }),
+      );
+      expect(code).toBe("23505");
+      // Sessões fechadas não contam.
+      await handle.db
+        .insert(schema.voiceSessions)
+        .values({ discordUserId: a, channelId: "c2", startedAt: t(1), lastHeartbeatAt: t(1), endedAt: t(2) });
+    });
+
+    it("closeVoiceSession define ended_at; sem sessão aberta retorna null", async () => {
+      const a = uid();
+      await openVoiceSession(handle.db, { discordUserId: a, channelId: "c1", at: t(0) });
+      const closed = await closeVoiceSession(handle.db, a, t(30));
+      expect(closed?.endedAt?.getTime()).toBe(t(30).getTime());
+      expect(await listOpenVoiceSessions(handle.db, a)).toEqual([]);
+      expect(await closeVoiceSession(handle.db, a, t(40))).toBeNull();
+    });
+
+    it("check constraint rejeita ended_at < started_at", async () => {
+      const code = await pgCode(
+        handle.db.insert(schema.voiceSessions).values({ discordUserId: uid(), channelId: "c", startedAt: t(10), lastHeartbeatAt: t(10), endedAt: t(5) }),
+      );
+      expect(code).toBe("23514");
+    });
+
+    it("touchHeartbeat atualiza abertas e closeStaleSessionsAtHeartbeat fecha no último heartbeat", async () => {
+      await closeStaleSessionsAtHeartbeat(handle.db); // isola dos testes anteriores
+      const a = uid();
+      const b = uid();
+      await openVoiceSession(handle.db, { discordUserId: a, channelId: "c1", at: t(0) });
+      await openVoiceSession(handle.db, { discordUserId: b, channelId: "c1", at: t(0) });
+      await closeVoiceSession(handle.db, b, t(1));
+      expect(await touchHeartbeat(handle.db, t(15))).toBe(1);
+      expect(await touchHeartbeat(handle.db, t(10))).toBe(1); // não retrocede
+      const [open] = await listOpenVoiceSessions(handle.db, a);
+      expect(open?.lastHeartbeatAt.getTime()).toBe(t(15).getTime());
+
+      expect(await closeStaleSessionsAtHeartbeat(handle.db)).toBe(1);
+      expect(await listOpenVoiceSessions(handle.db)).toEqual([]);
+      const [row] = await handle.db.select().from(schema.voiceSessions).where(eq(schema.voiceSessions.discordUserId, a));
+      expect(row?.endedAt?.getTime()).toBe(t(15).getTime());
     });
   });
 });
