@@ -33,7 +33,7 @@ export interface ModalInteractionLike extends InteractionLike {
 
 const ephemeral = (content: string): ReplyOptions => ({ content, flags: MessageFlags.Ephemeral });
 
-export function toModalPayload(modal: ReturnType<typeof buildRejectModal>) {
+function toModalPayload(modal: ReturnType<typeof buildRejectModal>) {
   return {
     custom_id: modal.customId,
     title: modal.title,
