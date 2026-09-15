@@ -2,6 +2,7 @@ import { type DynamicModule, Module } from "@nestjs/common";
 import type { Env } from "../config/env.js";
 import { AUTH_ENV, AuthController } from "./auth.controller.js";
 import { AuthorizeGuard } from "./authorize.js";
+import { DevLoginController } from "./dev-login.controller.js";
 import { RolesController } from "./roles.controller.js";
 import { SessionService } from "./session.service.js";
 import { DISCORD_OAUTH_CLIENT, FetchDiscordOAuthClient } from "./discord-oauth.client.js";
@@ -11,7 +12,8 @@ export class AuthModule {
   static register(env: Env): DynamicModule {
     return {
       module: AuthModule,
-      controllers: [AuthController, RolesController],
+      // Dev login só existe quando habilitado (env proíbe em produção).
+      controllers: [AuthController, RolesController, ...(env.AUTH_DEV_LOGIN ? [DevLoginController] : [])],
       providers: [
         { provide: AUTH_ENV, useValue: env },
         SessionService,

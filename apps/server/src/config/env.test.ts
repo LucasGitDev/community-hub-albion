@@ -22,6 +22,7 @@ describe("parseEnv", () => {
         NODE_ENV: "development",
         DISCORD_BOT_ENABLED: true,
         RUN_MIGRATIONS: true,
+        AUTH_DEV_LOGIN: false,
         WEB_DIST_DIR: expect.stringMatching(/apps[\\/]web[\\/]dist$/),
       },
     });
@@ -89,6 +90,12 @@ describe("parseEnv", () => {
     it("exige PUBLIC_URL https em produção", () => {
       const result = parseEnv({ ...valid, NODE_ENV: "production" });
       expect(!result.ok && result.message).toContain("PUBLIC_URL: deve usar https em produção");
+    });
+
+    it("AUTH_DEV_LOGIN só fora de produção", () => {
+      expect(parseEnv({ ...valid, AUTH_DEV_LOGIN: "true" })).toMatchObject({ ok: true, env: { AUTH_DEV_LOGIN: true } });
+      const prod = parseEnv({ ...valid, AUTH_DEV_LOGIN: "true", NODE_ENV: "production", PUBLIC_URL: "https://painel.exemplo.com" });
+      expect(!prod.ok && prod.message).toContain("AUTH_DEV_LOGIN: não pode ser true em produção");
     });
 
     it("SESSION_TTL_DAYS entre 1 e 90", () => {
