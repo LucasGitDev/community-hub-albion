@@ -3,7 +3,7 @@ id: doc-006
 title: Quality Gate e DoD
 type: guide
 created_date: '2026-09-15 03:49'
-updated_date: '2026-09-15 03:56'
+updated_date: '2026-09-15 05:33'
 ---
 Como o albion-hub garante que uma task está pronta: **gate automático** (local = CI) + **DoD no backlog** + **verificação do agent** (skill `task-done-check`).
 
@@ -18,6 +18,7 @@ Fonte única de thresholds: `quality.config.json`. Mesmo script local e no GitHu
 | Testes + coverage | Vitest + v8, branch sobre regra de negócio (`src/lib`, `src/domain`, `mock/rules.ts`, `packages/*/src`) | ≥ 79% | sim |
 | E2E + screenshots | Playwright, projetos desktop 1280 e mobile 400 | 0 falhas | sim |
 | Vulnerabilidades | `pnpm audit --prod` | 0 high/critical | sim |
+| Imagem Docker | `docker build` + smoke do container (SPA 200, `/api` 404 JSON, health) | build + smoke ok | sim |
 | Duplicação | jscpd (ts/tsx) | ≤ 15% | não (aviso) |
 | Dead code | knip | 0 | não (aviso) |
 
