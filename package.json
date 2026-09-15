@@ -16,7 +16,9 @@
     "dup": "jscpd",
     "deadcode": "knip",
     "audit:prod": "pnpm audit --prod --audit-level=high",
-    "quality": "node scripts/quality-gate.mjs"
+    "quality": "node scripts/quality-gate.mjs",
+    "db:generate": "pnpm --filter @albion-hub/db db:generate",
+    "db:migrate": "pnpm --filter @albion-hub/db db:migrate"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
