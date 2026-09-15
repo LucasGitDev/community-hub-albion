@@ -73,7 +73,15 @@ const envSchema = z.object({
         .filter(Boolean),
     )
     .pipe(z.array(z.string().regex(SNOWFLAKE, { error: "formato inválido (esperado snowflakes separados por vírgula)" }))),
+  // Login sem Discord (POST /api/auth/dev-login) só pra dev/e2e. Proibido em produção.
+  AUTH_DEV_LOGIN: z
+    .enum(["true", "false"], { error: "deve ser true ou false" })
+    .default("false")
+    .transform((value) => value === "true"),
   NODE_ENV: z.enum(["development", "test", "production"], { error: "deve ser development, test ou production" }).default("development"),
+}).refine((env) => env.NODE_ENV !== "production" || !env.AUTH_DEV_LOGIN, {
+  error: "não pode ser true em produção",
+  path: ["AUTH_DEV_LOGIN"],
 }).refine((env) => env.NODE_ENV !== "production" || env.PUBLIC_URL.startsWith("https://"), {
   error: "deve usar https em produção (cookie secure)",
   path: ["PUBLIC_URL"],
