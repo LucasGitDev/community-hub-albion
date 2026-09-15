@@ -97,7 +97,7 @@ export function AdminRoles() {
                         onClick={() => void toggle(u, role)}
                         className={cn(
                           "press h-8 rounded-full border px-3 text-sm font-medium disabled:cursor-not-allowed disabled:opacity-50",
-                          on ? "border-primary bg-primary text-primary-foreground" : "text-muted-foreground hover:bg-accent hover:text-foreground",
+                          on ? "border-foreground bg-foreground text-background" : "text-muted-foreground hover:bg-accent hover:text-foreground",
                         )}
                       >
                         {ROLE_LABELS[role]}

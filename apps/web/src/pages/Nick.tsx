@@ -98,7 +98,7 @@ function HowItWorks({ step }: { step: 1 | 2 | 3 }) {
                 className={cn(
                   "num grid size-6 shrink-0 place-items-center rounded-full border text-xs font-semibold",
                   done && "border-success bg-success text-background",
-                  current && "border-primary bg-primary text-primary-foreground",
+                  current && "border-foreground bg-foreground text-background",
                   !done && !current && "text-muted-foreground",
                 )}
                 aria-hidden
