@@ -45,6 +45,13 @@ describe("FetchAlbionPlayerLookup (TASK-016, Q14/Q15)", () => {
     expect((await make(async () => Promise.reject(new TypeError("fetch failed"))).lookup.lookup("Nick")).status).toBe("unavailable");
   });
 
+  it("informa o motivo da indisponibilidade pro log", async () => {
+    const reasons: string[] = [];
+    const lookup = new FetchAlbionPlayerLookup({ region: "asia", fetch: (async () => json({}, 502)) as typeof fetch, onUnavailable: (r) => reasons.push(r) });
+    await lookup.lookup("Nick");
+    expect(reasons).toEqual(["HTTP 502"]);
+  });
+
   it("timeout aborta e vira unavailable", async () => {
     const hang = (_url: string, init?: RequestInit) =>
       new Promise<Response>((_, reject) => init!.signal!.addEventListener("abort", () => reject(init!.signal!.reason)));
