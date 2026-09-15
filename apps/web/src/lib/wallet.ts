@@ -33,15 +33,3 @@ export function lastSplit<T extends Entry>(entries: T[]): T | null {
   }
   return best;
 }
-
-/**
- * Valor intermediário de um count-up, em bigint. `progress` em [0,1] vira milésimos inteiros,
- * então a interpolação não passa prata por float.
- */
-export function interpolateSilver(from: bigint, to: bigint, progress: number): bigint {
-  const p = Math.min(1000, Math.max(0, Math.round(progress * 1000)));
-  return from + ((to - from) * BigInt(p)) / 1000n;
-}
-
-/** Curva ease-out (cúbica) pro count-up; aplicada sobre o tempo, não sobre o valor. */
-export const easeOutCubic = (t: number) => 1 - (1 - Math.min(1, Math.max(0, t))) ** 3;

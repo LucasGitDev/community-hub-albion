@@ -7,7 +7,7 @@ import { cn } from "@/lib/utils";
 import { useAuth, useCurrentUser } from "@/auth/AuthProvider";
 import { Silver } from "@/components/display";
 import { useStore } from "@/mock/store";
-import { useVariant } from "@/theme/variant";
+import { ThemeToggle } from "@/theme/theme";
 
 interface NavItem {
   to: string;
@@ -23,7 +23,6 @@ export function AppShell() {
   const { user, ability } = useCurrentUser();
   const { logout } = useAuth();
   const { balanceFor, withdrawalsFor, allWithdrawals } = useStore();
-  const { replayKey } = useVariant();
   const { pathname } = useLocation();
   const allowed = (item: NavItem) => !item.can || ability.can(item.can[0], item.can[1]);
 
@@ -90,9 +89,7 @@ export function AppShell() {
               <Coins className="size-4 text-brand" aria-hidden />
               <Silver value={available} className="font-semibold" />
             </NavLink>
-            <span className="md:hidden">
-              <Initials value={user.initials} />
-            </span>
+            <ThemeToggle />
             <button onClick={onLogout} className="press rounded-md p-2 text-muted-foreground hover:bg-accent md:hidden" aria-label="Sair">
               <LogOut className="size-4" />
             </button>
@@ -109,7 +106,7 @@ export function AppShell() {
                 className={({ isActive }) =>
                   cn(
                     "press flex h-8 shrink-0 items-center gap-1.5 rounded-full border px-3 text-xs font-medium [&_svg]:size-3.5",
-                    isActive ? "border-primary bg-primary text-primary-foreground" : "text-muted-foreground",
+                    isActive ? "border-foreground bg-foreground text-background" : "text-muted-foreground",
                   )
                 }
               >
@@ -121,7 +118,7 @@ export function AppShell() {
           </nav>
         )}
 
-        <main key={replayKey} className="w-full max-w-7xl flex-1 px-4 pt-5 pb-28 md:px-6 md:pt-6 md:pb-12">
+        <main className="w-full max-w-7xl flex-1 px-4 pt-5 pb-28 md:px-6 md:pt-6 md:pb-12">
           <Outlet />
         </main>
       </div>
@@ -145,7 +142,7 @@ export function AppShell() {
             {item.icon}
             {item.label}
             {!!item.count && (
-              <span className="num absolute top-1.5 left-1/2 ml-2 grid h-4 min-w-4 place-items-center rounded-full bg-primary px-1 text-[0.625rem] leading-none font-semibold text-primary-foreground">
+              <span className="num absolute top-1.5 left-1/2 ml-2 grid h-4 min-w-4 place-items-center rounded-full bg-foreground px-1 text-[0.625rem] leading-none font-semibold text-background">
                 {item.count}
               </span>
             )}
@@ -159,10 +156,10 @@ export function AppShell() {
 function Brand({ className }: { className?: string }) {
   return (
     <div className={cn("flex items-center gap-2", className)}>
-      <span className="grid size-7 place-items-center rounded-md bg-primary text-primary-foreground">
+      <span className="grid size-7 place-items-center rounded-md bg-foreground text-background">
         <Swords className="size-4" aria-hidden />
       </span>
-      <span className="text-lg font-semibold tracking-tight">albion-hub</span>
+      <span className="text-lg font-semibold tracking-tight whitespace-nowrap">albion-hub</span>
     </div>
   );
 }
@@ -188,7 +185,7 @@ function NavGroup({ title, items, className }: { title: string; items: NavItem[]
               {item.icon}
               <span className="flex-1">{item.label}</span>
               {!!item.count && (
-                <span className="num grid h-5 min-w-5 place-items-center rounded-full bg-primary px-1.5 text-xs font-semibold text-primary-foreground">
+                <span className="num grid h-5 min-w-5 place-items-center rounded-full bg-muted px-1.5 text-xs font-semibold text-foreground">
                   {item.count}
                 </span>
               )}

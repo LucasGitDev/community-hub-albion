@@ -8,7 +8,7 @@ import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { EmptyState, PageHeader, Silver, StatCard, StatusBadge } from "@/components/display";
 import { cn } from "@/lib/utils";
 import { nickOf, useStore } from "@/mock/store";
-import { useDecisionFeedback } from "@/theme/feedback";
+import { toast } from "sonner";
 import type { Withdrawal, WithdrawalStatus } from "@/mock/types";
 import { WithdrawalTimeline } from "./MyWithdrawals";
 
@@ -59,7 +59,7 @@ export function StaffWithdrawals() {
                     <span
                       className={cn(
                         "num grid h-5 min-w-5 place-items-center rounded-full px-1.5 text-xs font-semibold",
-                        t.key === "pending" && count > 0 ? "bg-primary text-primary-foreground" : "bg-muted text-muted-foreground",
+                        t.key === "pending" && count > 0 ? "bg-foreground text-background" : "bg-muted text-muted-foreground",
                       )}
                     >
                       {count}
@@ -91,16 +91,12 @@ function StaffRow({ w }: { w: Withdrawal }) {
   const { decideWithdrawal, settleWithdrawal, balanceFor } = useStore();
   const [note, setNote] = useState("");
   const [rejecting, setRejecting] = useState(false);
-  const { leaving, finish } = useDecisionFeedback();
   const balance = balanceFor(w.userId);
   const nick = nickOf(w.userId);
 
   return (
     <li
-      className={cn(
-        "grid gap-x-6 gap-y-3 px-4 py-3 lg:grid-cols-[minmax(0,15rem)_minmax(0,10rem)_minmax(0,1fr)_auto] lg:items-center lg:py-(--row-py)",
-        leaving && "row-leave",
-      )}
+      className="grid gap-x-6 gap-y-3 px-4 py-3 lg:grid-cols-[minmax(0,15rem)_minmax(0,10rem)_minmax(0,1fr)_auto] lg:items-center lg:py-(--row-py)"
     >
       <div className="flex min-w-0 items-center gap-3">
         <span className="grid size-8 shrink-0 place-items-center rounded-full bg-secondary text-xs font-semibold text-secondary-foreground" aria-hidden>
@@ -117,7 +113,7 @@ function StaffRow({ w }: { w: Withdrawal }) {
       </div>
 
       <div className="flex flex-wrap items-center justify-between gap-2 lg:block">
-        <Silver value={w.amount} className={cn("text-2xl font-semibold", w.status === "pending" && "text-brand")} />
+        <Silver value={w.amount} className="text-2xl font-semibold" />
         <span className="lg:mt-1 lg:block">
           <StatusBadge status={w.status} />
         </span>
@@ -147,11 +143,10 @@ function StaffRow({ w }: { w: Withdrawal }) {
                   Recusar
                 </Button>
                 <Button
-                  onClick={() =>
-                    finish({ kind: "success", title: "Saque aprovado", description: `${formatSilver(w.amount)} debitados de ${nick}.` }, () =>
-                      decideWithdrawal(w.id, "approved"),
-                    )
-                  }
+                  onClick={() => {
+                    decideWithdrawal(w.id, "approved");
+                    toast.success("Saque aprovado", { description: `${formatSilver(w.amount)} debitados de ${nick}.` });
+                  }}
                 >
                   <Check />
                   Aprovar saque
@@ -165,11 +160,10 @@ function StaffRow({ w }: { w: Withdrawal }) {
                 <Button
                   variant="destructive"
                   disabled={!note.trim()}
-                  onClick={() =>
-                    finish({ kind: "neutral", title: "Saque recusado", description: `Reserva de ${nick} liberada.` }, () =>
-                      decideWithdrawal(w.id, "rejected", note.trim()),
-                    )
-                  }
+                  onClick={() => {
+                    decideWithdrawal(w.id, "rejected", note.trim());
+                    toast("Saque recusado", { description: `Reserva de ${nick} liberada.` });
+                  }}
                 >
                   Confirmar recusa
                 </Button>
@@ -184,11 +178,10 @@ function StaffRow({ w }: { w: Withdrawal }) {
           <Input value={note} onChange={(e) => setNote(e.target.value)} placeholder="Nota da entrega, ex: banco de Martlock" className="sm:flex-1" />
           <Button
             variant="outline"
-            onClick={() =>
-              finish({ kind: "success", title: "Marcado como entregue", description: `${formatSilver(w.amount)} entregues a ${nick}.` }, () =>
-                settleWithdrawal(w.id, note.trim() || undefined),
-              )
-            }
+            onClick={() => {
+                    settleWithdrawal(w.id, note.trim() || undefined);
+                    toast.success("Marcado como entregue", { description: `${formatSilver(w.amount)} entregues a ${nick}.` });
+                  }}
           >
             Marcar como entregue
           </Button>

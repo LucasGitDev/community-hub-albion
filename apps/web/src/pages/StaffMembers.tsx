@@ -7,9 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Textarea } from "@/components/ui/textarea";
-import { cn } from "@/lib/utils";
 import { formatDateTime } from "@/lib/format";
-import { useDecisionFeedback } from "@/theme/feedback";
 
 interface StaffNickRequest {
   id: string;
@@ -115,7 +113,6 @@ function RequestRow({ r, onDecided, onStale }: { r: StaffNickRequest; onDecided:
   const [rejecting, setRejecting] = useState(false);
   const [note, setNote] = useState("");
   const [busy, setBusy] = useState(false);
-  const { leaving, finish } = useDecisionFeedback();
   const name = r.user.displayName || r.user.discordUsername;
 
   async function decide(action: "approve" | "reject") {
@@ -128,12 +125,9 @@ function RequestRow({ r, onDecided, onStale }: { r: StaffNickRequest; onDecided:
     setBusy(true);
     try {
       await api(`/api/staff/nick-requests/${r.id}/${action}`, { method: "POST", body: JSON.stringify(body) });
-      finish(
-        action === "approve"
-          ? { kind: "success", title: "Nick aprovado", description: `${name} agora é ${r.nick}.` }
-          : { kind: "neutral", title: "Nick recusado", description: `${name} vê o motivo e pode enviar outro.` },
-        () => onDecided(r.id),
-      );
+      if (action === "approve") toast.success("Nick aprovado", { description: `${name} agora é ${r.nick}.` });
+      else toast("Nick recusado", { description: `${name} vê o motivo e pode enviar outro.` });
+      onDecided(r.id);
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "Não foi possível decidir agora. Tente de novo.");
       setBusy(false);
@@ -143,10 +137,7 @@ function RequestRow({ r, onDecided, onStale }: { r: StaffNickRequest; onDecided:
 
   return (
     <li
-      className={cn(
-        "grid gap-x-4 gap-y-3 px-4 py-3 lg:grid-cols-[minmax(0,14rem)_minmax(0,1fr)_minmax(0,11rem)_auto] lg:items-center lg:py-(--row-py)",
-        leaving && "row-leave",
-      )}
+      className="grid gap-x-4 gap-y-3 px-4 py-3 lg:grid-cols-[minmax(0,14rem)_minmax(0,1fr)_minmax(0,11rem)_auto] lg:items-center lg:py-(--row-py)"
     >
       <div className="flex min-w-0 items-center gap-3">
         <span className="grid size-8 shrink-0 place-items-center rounded-full bg-secondary text-xs font-semibold text-secondary-foreground" aria-hidden>

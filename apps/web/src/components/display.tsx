@@ -1,9 +1,7 @@
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import type { ReactNode } from "react";
 import { Check, Hourglass, PackageCheck, X } from "lucide-react";
 import { formatSilver } from "@albion-hub/shared";
 import { cn } from "@/lib/utils";
-import { easeOutCubic, interpolateSilver } from "@/lib/wallet";
-import { useVariant } from "@/theme/variant";
 import type { WithdrawalStatus } from "@/mock/types";
 
 /** Valor em prata. Sinal explícito quando `signed`. */
@@ -19,52 +17,6 @@ export function Silver({ value, signed, className }: { value: bigint; signed?: b
   );
 }
 
-const COUNT_UP_MS = 600;
-/** improve-animations (frequência): o count-up do zero só roda na 1ª visita da sessão; depois só anima mudanças. */
-let countedUpThisSession = false;
-
-/**
- * Prata com count-up (variação C). Gate do `animate`: tela visitada poucas vezes por dia, propósito
- * = recompensa/estado (o saldo "chega"). Anima só a primeira montagem e mudanças de valor;
- * reduced-motion mostra o valor final direto. Texto final é o mesmo do <Silver>.
- */
-export function CountUpSilver({ value, className }: { value: bigint; className?: string }) {
-  const { rewardMotion } = useVariant();
-  const startFromZero = rewardMotion && !countedUpThisSession;
-  const [shown, setShown] = useState(startFromZero ? 0n : value);
-  const fromRef = useRef(startFromZero ? 0n : value);
-
-  useEffect(() => {
-    const reduce = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-    if (!rewardMotion || reduce) {
-      fromRef.current = value;
-      setShown(value);
-      return;
-    }
-    countedUpThisSession = true;
-    const from = fromRef.current;
-    if (from === value) return;
-    const start = performance.now();
-    let raf = requestAnimationFrame(function tick(now) {
-      const t = (now - start) / COUNT_UP_MS;
-      const current = interpolateSilver(from, value, easeOutCubic(t));
-      fromRef.current = current;
-      setShown(current);
-      if (t < 1) raf = requestAnimationFrame(tick);
-    });
-    return () => cancelAnimationFrame(raf);
-  }, [value, rewardMotion]);
-
-  return (
-    <>
-      <span aria-hidden={shown !== value}>
-        <Silver value={shown} className={className} />
-      </span>
-      {shown !== value && <span className="sr-only">{formatSilver(value)}</span>}
-    </>
-  );
-}
-
 const statusMeta: Record<WithdrawalStatus, { label: string; icon: ReactNode; tone: "warning" | "info" | "destructive" | "success" }> = {
   pending: { label: "Em análise", icon: <Hourglass strokeWidth={2.25} />, tone: "warning" },
   approved: { label: "Aprovado, aguardando entrega", icon: <Check strokeWidth={2.5} />, tone: "info" },
@@ -73,17 +25,17 @@ const statusMeta: Record<WithdrawalStatus, { label: string; icon: ReactNode; ton
 };
 
 const toneClass = {
-  warning: "border-warning/35 bg-warning/10 text-warning v-c:border-warning v-c:bg-warning v-c:text-black",
-  info: "border-info/35 bg-info/10 text-info v-c:border-info v-c:bg-info v-c:text-black",
+  warning: "border-warning/35 bg-warning/10 text-warning",
+  info: "border-info/35 bg-info/10 text-info",
   destructive:
-    "border-destructive/35 bg-destructive/10 text-destructive v-c:border-destructive v-c:bg-destructive v-c:text-black",
-  success: "border-success/35 bg-success/10 text-success v-c:border-success v-c:bg-success v-c:text-black",
+    "border-destructive/35 bg-destructive/10 text-destructive",
+  success: "border-success/35 bg-success/10 text-success",
   neutral: "border-border bg-muted text-muted-foreground",
 } as const;
 
 export type Tone = keyof typeof toneClass;
 
-/** Pílula de estado: ícone + texto + cor (nunca só cor). Na C vira preenchida. */
+/** Pílula de estado: ícone + texto + cor (nunca só cor). */
 export function Pill({ tone, icon, children, className }: { tone: Tone; icon?: ReactNode; children: ReactNode; className?: string }) {
   return (
     <span
@@ -146,7 +98,7 @@ export function StatCard({
       aria-labelledby={labelId}
       className={cn(
         "flex min-w-0 flex-col justify-between gap-3 rounded-xl border bg-card p-4 text-card-foreground",
-        emphasis && "v-b:border-brand/40 v-c:border-foreground/60",
+        emphasis && "dark:border-brand/40",
         className,
       )}
     >
