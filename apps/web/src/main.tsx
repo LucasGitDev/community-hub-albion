@@ -2,11 +2,9 @@ import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import { BrowserRouter, Navigate, Route, Routes } from "react-router";
 import { Toaster } from "sonner";
-import "@fontsource/spectral/400.css";
-import "@fontsource/spectral/500.css";
-import "@fontsource/spectral/600.css";
-import "@fontsource-variable/hanken-grotesk";
+import "@fontsource-variable/geist";
 import "./index.css";
+import "./theme/picker.css";
 import { AuthProvider } from "./auth/AuthProvider";
 import { RequireAuth, RequirePermission } from "./auth/guards";
 import { AppShell } from "./components/AppShell";
@@ -19,9 +17,11 @@ import { Placeholder } from "./pages/Placeholder";
 import { StaffMembers } from "./pages/StaffMembers";
 import { StaffWithdrawals } from "./pages/StaffWithdrawals";
 import { Wallet } from "./pages/Wallet";
+import { useVariant, VariantPicker, VariantProvider } from "./theme/variant";
 
 createRoot(document.getElementById("root")!).render(
   <StrictMode>
+    <VariantProvider>
     <AuthProvider>
       <BrowserRouter>
         <Routes>
@@ -83,12 +83,23 @@ createRoot(document.getElementById("root")!).render(
           <Route path="*" element={<Navigate to="/carteira" replace />} />
         </Routes>
       </BrowserRouter>
-      <Toaster
-        theme="dark"
-        position="bottom-right"
-        mobileOffset={{ bottom: "calc(4.5rem + env(safe-area-inset-bottom))" }}
-        toastOptions={{ style: { background: "#232932", border: "1px solid #2e353f", color: "#e9e4d8" } }}
-      />
+      <ThemedToaster />
+      <VariantPicker />
     </AuthProvider>
+    </VariantProvider>
   </StrictMode>,
 );
+
+/** Toaster segue a variação: tema claro/escuro; na C, cores de estado (richColors) pra reforçar o feedback. */
+function ThemedToaster() {
+  const { variant } = useVariant();
+  return (
+    <Toaster
+      theme={variant === "a" ? "light" : "dark"}
+      richColors={variant === "c"}
+      position="bottom-right"
+      mobileOffset={{ bottom: "calc(4.5rem + env(safe-area-inset-bottom))" }}
+      toastOptions={{ className: "font-sans" }}
+    />
+  );
+}
