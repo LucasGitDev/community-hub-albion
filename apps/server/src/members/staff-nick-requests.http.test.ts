@@ -2,18 +2,24 @@ import "reflect-metadata";
 import type { INestApplication } from "@nestjs/common";
 import { Test } from "@nestjs/testing";
 import { createDb, createSession, grantRole, requestNick, runMigrations, schema, setGameNick, upsertUserByDiscordId, type DbHandle } from "@albion-hub/db";
-import type { Role } from "@albion-hub/shared";
+import type { AlbionLookupResult, Role } from "@albion-hub/shared";
 import { eq, sql } from "drizzle-orm";
 import request from "supertest";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { AppModule, configureApp } from "../app.module.js";
 import { parseEnv } from "../config/env.js";
+import { ALBION_PLAYER_LOOKUP } from "./albion-lookup.token.js";
 import { NickDecisionService, type NickDecidedEvent } from "./nick-decision.service.js";
 
 const baseUrl = process.env.TEST_DATABASE_URL ?? process.env.DATABASE_URL;
 if (!baseUrl && process.env.CI) throw new Error("CI sem TEST_DATABASE_URL: testes HTTP da fila de nick não podem ser pulados");
 
 const PUBLIC_URL = "http://localhost:3000";
+const CHECKED_AT = "2026-09-15T12:00:00.000Z";
+
+/** Consulta Albion falsa (nunca chama a API real): por nick; o resto fica indisponível. */
+const albionResults = new Map<string, AlbionLookupResult>();
+const fakeAlbion = { lookup: async (nick: string): Promise<AlbionLookupResult> => albionResults.get(nick) ?? { status: "unavailable", region: "americas", checkedAt: CHECKED_AT } };
 
 describe.skipIf(!baseUrl)("fila de nick da staff HTTP (TASK-013, Q14/Q31)", () => {
   let app: INestApplication;
@@ -40,7 +46,10 @@ describe.skipIf(!baseUrl)("fila de nick da staff HTTP (TASK-013, Q14/Q31)", () =
       PUBLIC_URL,
     });
     if (!parsed.ok) throw new Error(parsed.message);
-    const moduleRef = await Test.createTestingModule({ imports: [AppModule.register(parsed.env, { bot: false })] }).compile();
+    const moduleRef = await Test.createTestingModule({ imports: [AppModule.register(parsed.env, { bot: false })] })
+      .overrideProvider(ALBION_PLAYER_LOOKUP)
+      .useValue(fakeAlbion)
+      .compile();
     app = configureApp(moduleRef.createNestApplication({ logger: false }));
     await app.listen(0, "127.0.0.1");
   }, 60_000);
@@ -93,10 +102,25 @@ describe.skipIf(!baseUrl)("fila de nick da staff HTTP (TASK-013, Q14/Q31)", () =
       createdAt: r.createdAt.toISOString(),
       updatedAt: r.updatedAt.toISOString(),
       user: { id: user.id, displayName: "Nome002", discordUsername: "u002", gameNick: "VelhoNick" },
+      albion: { status: "unavailable", region: "americas", checkedAt: CHECKED_AT },
     });
   });
 
-  it("staff aprova: nick vigente muda, auditoria gravada e listener recebe o evento (AC#1, AC#2, AC#4)", async () => {
+  it("fila mostra se o nick foi encontrado no Albion da região (TASK-016 AC#1)", async () => {
+    const found: AlbionLookupResult = { status: "found", region: "americas", playerId: "p1", name: "AchadoNoJogo", guildName: "Guilda X", checkedAt: CHECKED_AT };
+    albionResults.set("AchadoNoJogo", found);
+    albionResults.set("Fantasma", { status: "not_found", region: "americas", checkedAt: CHECKED_AT });
+    const { request: a } = await pendingOf("610000000000000006", "AchadoNoJogo");
+    const { request: b } = await pendingOf("610000000000000007", "Fantasma");
+    const { cookie } = await login("610000000000000106", ["staff"]);
+    const res = await http().get("/api/staff/nick-requests").set("Cookie", cookie);
+    expect(res.status).toBe(200);
+    const byId = new Map((res.body.requests as { id: string; albion: unknown }[]).map((r) => [r.id, r.albion]));
+    expect(byId.get(a.id)).toEqual(found);
+    expect(byId.get(b.id)).toEqual({ status: "not_found", region: "americas", checkedAt: CHECKED_AT });
+  });
+
+  it("staff aprova: API Albion indisponível não impede (TASK-016 AC#2); nick vigente muda, auditoria gravada e listener recebe o evento (AC#1, AC#2, AC#4)", async () => {
     const events: NickDecidedEvent[] = [];
     const service = app.get(NickDecisionService);
     const off = service.onDecided((e) => void events.push(e));

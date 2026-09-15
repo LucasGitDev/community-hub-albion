@@ -1,11 +1,13 @@
 import { BadRequestException, Body, ConflictException, Controller, Get, HttpCode, Inject, NotFoundException, Param, Post, Res, UseGuards } from "@nestjs/common";
 import { listPendingNickRequests, type DbHandle } from "@albion-hub/db";
-import { validateRejectionNote } from "@albion-hub/shared";
+import { validateRejectionNote, type AlbionLookupResult } from "@albion-hub/shared";
 import type { Response } from "express";
 import { Authorize, CurrentAuth } from "../auth/authorize.js";
 import { SameOriginGuard } from "../auth/same-origin.guard.js";
 import type { AuthContext } from "../auth/session.service.js";
 import { DB_HANDLE } from "../db/db.module.js";
+import type { AlbionPlayerLookup } from "../domain/albion-lookup.js";
+import { ALBION_PLAYER_LOOKUP } from "./albion-lookup.token.js";
 import { NickDecisionService, type NickDecisionResult } from "./nick-decision.service.js";
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -16,6 +18,8 @@ export interface StaffNickRequestDto {
   createdAt: string;
   updatedAt: string;
   user: { id: string; displayName: string | null; discordUsername: string; gameNick: string | null };
+  /** Conferência do nick pedido na API Albion (TASK-016). Só ajuda: `disabled` sem ALBION_REGION, `unavailable` se a API falhar. */
+  albion: AlbionLookupResult;
 }
 
 export interface NickDecisionDto {
@@ -45,6 +49,7 @@ export class StaffNickRequestsController {
   constructor(
     @Inject(DB_HANDLE) private readonly handle: DbHandle,
     @Inject(NickDecisionService) private readonly decisions: NickDecisionService,
+    @Inject(ALBION_PLAYER_LOOKUP) private readonly albion: AlbionPlayerLookup,
   ) {}
 
   @Get()
@@ -52,13 +57,16 @@ export class StaffNickRequestsController {
   async list(@Res({ passthrough: true }) res: Response): Promise<{ requests: StaffNickRequestDto[] }> {
     res.setHeader("Cache-Control", "no-store");
     const rows = await listPendingNickRequests(this.handle.db);
+    // Consulta na leitura (paralela, em cache, timeout curto): não toca registro nem aprovação (Q14).
+    const albion = await Promise.all(rows.map(({ request }) => this.albion.lookup(request.nick)));
     return {
-      requests: rows.map(({ request, user }) => ({
+      requests: rows.map(({ request, user }, i) => ({
         id: request.id,
         nick: request.nick,
         createdAt: request.createdAt.toISOString(),
         updatedAt: request.updatedAt.toISOString(),
         user: { id: user.id, displayName: user.displayName, discordUsername: user.discordUsername, gameNick: user.gameNick },
+        albion: albion[i]!,
       })),
     };
   }
