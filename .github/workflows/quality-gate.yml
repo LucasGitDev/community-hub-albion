@@ -21,6 +21,24 @@ jobs:
   check:
     name: ${{ matrix.check }}
     runs-on: ubuntu-latest
+    # Postgres real para os testes de integração do @albion-hub/db (roda em toda a matriz por simplicidade;
+    # só o check coverage usa). Sem URL no CI, o teste falha em vez de ser pulado.
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_USER: albion
+          POSTGRES_PASSWORD: albion
+          POSTGRES_DB: albion_hub_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U albion -d albion_hub_test"
+          --health-interval 2s
+          --health-timeout 3s
+          --health-retries 30
+    env:
+      TEST_DATABASE_URL: postgres://albion:albion@localhost:5432/albion_hub_test
     strategy:
       fail-fast: false
       matrix:
