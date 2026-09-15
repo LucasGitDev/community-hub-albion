@@ -4,6 +4,8 @@ import { NecordModule } from "necord";
 import type { Env } from "../config/env.js";
 import { PingCommand } from "./ping.command.js";
 import { ReadyListener } from "./ready.listener.js";
+import { VoiceBootListener } from "./voice-boot.listener.js";
+import { DEFAULT_HEARTBEAT_INTERVAL_MS, VOICE_HEARTBEAT_INTERVAL_MS, VoiceHeartbeatService } from "./voice-heartbeat.service.js";
 import { VOICE_CLOCK, VoiceTrackingService } from "./voice-tracking.service.js";
 import { VOICE_GUILD_ID, VoiceListener } from "./voice.listener.js";
 
@@ -26,6 +28,9 @@ export class BotModule {
         ReadyListener,
         VoiceListener,
         VoiceTrackingService,
+        VoiceHeartbeatService,
+        VoiceBootListener,
+        { provide: VOICE_HEARTBEAT_INTERVAL_MS, useValue: DEFAULT_HEARTBEAT_INTERVAL_MS },
         { provide: VOICE_CLOCK, useValue: () => new Date() },
         { provide: VOICE_GUILD_ID, useValue: env.GUILD_ID },
       ],
