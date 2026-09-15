@@ -6,6 +6,7 @@
       "apps/*/src/lib/**/*.ts",
       "apps/*/src/mock/rules.ts",
       "apps/*/src/domain/**/*.ts",
+      "apps/server/src/config/**/*.ts",
       "packages/*/src/**/*.ts"
     ]
   },
