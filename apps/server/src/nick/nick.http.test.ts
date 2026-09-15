@@ -76,7 +76,7 @@ describe.skipIf(!baseUrl)("nick do usuário HTTP (TASK-012, Q14/Q31)", () => {
     const { cookie } = await member("600000000000000001");
     const empty = await request(app.getHttpServer()).get("/api/me/nick").set("Cookie", cookie);
     expect(empty.status).toBe(200);
-    expect(empty.body).toEqual({ gameNick: null, pending: null });
+    expect(empty.body).toEqual({ gameNick: null, pending: null, lastRejection: null });
 
     const res = await post(cookie, { nick: "  Ravenmoor " });
     expect(res.status).toBe(201);
