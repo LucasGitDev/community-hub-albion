@@ -24,3 +24,4 @@ export {
   type OpenVoiceSessionInput,
   type VoiceSession,
 } from "./voice-repo.js";
+export { listUsersWithRoles, revokeRoleGuarded, userExists, type RevokeRoleResult, type UserWithRoles } from "./admin-roles-repo.js";
