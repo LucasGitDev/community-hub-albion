@@ -54,7 +54,7 @@ const checks = {
   },
 
   coverage() {
-    const { code } = sh("pnpm exec vitest run --coverage --coverage.reportsDirectory=coverage");
+    const { code } = sh("pnpm coverage");
     const pct = readJson("coverage/coverage-summary.json")?.total?.branches?.pct;
     const ok = code === 0 && typeof pct === "number" && pct >= cfg.coverage.branches;
     return { id: "coverage", label: "Testes + coverage (branch)", status: ok ? "pass" : "fail", value: pct == null ? "—" : `${pct}%`, threshold: `≥ ${cfg.coverage.branches}%`, blocking: true };
