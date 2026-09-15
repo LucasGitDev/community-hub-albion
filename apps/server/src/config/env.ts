@@ -38,6 +38,11 @@ const envSchema = z.object({
     .trim()
     .min(1)
     .default(fileURLToPath(new URL("../../../web/dist", import.meta.url))),
+  // Aplica migrations do @albion-hub/db antes de subir (padrão no container). "false" pula (dev/e2e sem banco).
+  RUN_MIGRATIONS: z
+    .enum(["true", "false"], { error: "deve ser true ou false" })
+    .default("true")
+    .transform((value) => value === "true"),
   NODE_ENV: z.enum(["development", "test", "production"], { error: "deve ser development, test ou production" }).default("development"),
 });
 

@@ -2,6 +2,7 @@ import "reflect-metadata";
 import { Logger } from "@nestjs/common";
 import { NestFactory } from "@nestjs/core";
 import { API_PREFIX, AppModule, configureApp } from "./app.module.js";
+import { applyMigrationsOrExit } from "./boot/migrations.js";
 import { parseEnv } from "./config/env.js";
 
 async function bootstrap() {
@@ -12,6 +13,7 @@ async function bootstrap() {
     process.exit(1);
   }
   const { env } = parsed;
+  if (env.RUN_MIGRATIONS) await applyMigrationsOrExit(env.DATABASE_URL);
   // Login no Discord acontece no bootstrap do Nest: token recusado derruba o boot (fail fast).
   const app = configureApp(await NestFactory.create(AppModule.register(env, { bot: env.DISCORD_BOT_ENABLED })), { webDistDir: env.WEB_DIST_DIR });
   await app.listen(env.PORT);

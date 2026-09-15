@@ -31,6 +31,7 @@ export default defineConfig({
       DISCORD_TOKEN: "e2e.fake.token",
       GUILD_ID: "123456789012345678",
       DISCORD_BOT_ENABLED: "false",
+      RUN_MIGRATIONS: "false",
       DATABASE_URL: process.env.TEST_DATABASE_URL ?? "postgres://albion:albion@127.0.0.1:1/indisponivel",
       NODE_ENV: "test",
     },
