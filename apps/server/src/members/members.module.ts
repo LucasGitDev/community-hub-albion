@@ -4,10 +4,12 @@ import { AUTH_ENV } from "../auth/auth.controller.js";
 import { AuthorizeGuard } from "../auth/authorize.js";
 import { SameOriginGuard } from "../auth/same-origin.guard.js";
 import { SessionService } from "../auth/session.service.js";
+import { FetchAlbionPlayerLookup } from "../domain/albion-lookup.js";
+import { ALBION_PLAYER_LOOKUP } from "./albion-lookup.token.js";
 import { NickDecisionService } from "./nick-decision.service.js";
 import { StaffNickRequestsController } from "./staff-nick-requests.controller.js";
 
-/** Entrada de membros pela staff (TASK-013). Exporta o serviço de decisão para bot/embed (TASK-014/015). */
+/** Entrada de membros pela staff (TASK-013). Exporta o serviço de decisão e a consulta Albion (TASK-016) para bot/embed (TASK-014/015). */
 @Module({})
 export class MembersModule {
   static register(env: Env): DynamicModule {
@@ -15,8 +17,11 @@ export class MembersModule {
       module: MembersModule,
       global: true,
       controllers: [StaffNickRequestsController],
-      providers: [{ provide: AUTH_ENV, useValue: env }, SessionService, AuthorizeGuard, SameOriginGuard, NickDecisionService],
-      exports: [NickDecisionService],
+      providers: [{ provide: AUTH_ENV, useValue: env }, SessionService, AuthorizeGuard, SameOriginGuard,
+        NickDecisionService,
+        { provide: ALBION_PLAYER_LOOKUP, useFactory: () => new FetchAlbionPlayerLookup({ region: env.ALBION_REGION }) },
+      ],
+      exports: [NickDecisionService, ALBION_PLAYER_LOOKUP],
     };
   }
 }

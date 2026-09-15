@@ -1,4 +1,5 @@
 import { fileURLToPath } from "node:url";
+import { ALBION_REGIONS } from "@albion-hub/shared";
 import { z } from "zod";
 
 const SNOWFLAKE = /^\d{17,20}$/;
@@ -85,6 +86,11 @@ const envSchema = z.object({
     .enum(["true", "false"], { error: "deve ser true ou false" })
     .default("false")
     .transform((value) => value === "true"),
+  // Região do Albion pra conferir nick na API pública (TASK-016, Q15). Vazio/ausente = consulta desligada; nunca bloqueia.
+  ALBION_REGION: z.preprocess(
+    (value) => (typeof value === "string" && value.trim() === "" ? undefined : typeof value === "string" ? value.trim() : value),
+    z.enum(ALBION_REGIONS, { error: "deve ser americas, europe ou asia (ou vazio para desligar)" }).optional(),
+  ),
   NODE_ENV: z.enum(["development", "test", "production"], { error: "deve ser development, test ou production" }).default("development"),
 }).refine((env) => !env.DISCORD_BOT_ENABLED || env.DISCORD_MEMBER_ROLE_ID !== undefined, {
   error: "obrigatória com DISCORD_BOT_ENABLED=true",

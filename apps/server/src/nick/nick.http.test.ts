@@ -7,11 +7,15 @@ import request from "supertest";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { AppModule, configureApp } from "../app.module.js";
 import { parseEnv } from "../config/env.js";
+import { ALBION_PLAYER_LOOKUP } from "../members/albion-lookup.token.js";
 
 const baseUrl = process.env.TEST_DATABASE_URL ?? process.env.DATABASE_URL;
 if (!baseUrl && process.env.CI) throw new Error("CI sem TEST_DATABASE_URL: testes HTTP de nick não podem ser pulados");
 
 const PUBLIC_URL = "http://localhost:3000";
+/** Consulta Albion que nunca responde: prova que o pedido de nick não espera a API (TASK-016 AC#2). */
+const albionCalls: string[] = [];
+const hangingAlbion = { lookup: (nick: string) => (albionCalls.push(nick), new Promise<never>(() => undefined)) };
 
 describe.skipIf(!baseUrl)("nick do usuário HTTP (TASK-012, Q14/Q31)", () => {
   let app: INestApplication;
@@ -38,7 +42,10 @@ describe.skipIf(!baseUrl)("nick do usuário HTTP (TASK-012, Q14/Q31)", () => {
       PUBLIC_URL,
     });
     if (!parsed.ok) throw new Error(parsed.message);
-    const moduleRef = await Test.createTestingModule({ imports: [AppModule.register(parsed.env, { bot: false })] }).compile();
+    const moduleRef = await Test.createTestingModule({ imports: [AppModule.register(parsed.env, { bot: false })] })
+      .overrideProvider(ALBION_PLAYER_LOOKUP)
+      .useValue(hangingAlbion)
+      .compile();
     app = configureApp(moduleRef.createNestApplication({ logger: false }));
     await app.listen(0, "127.0.0.1");
   }, 60_000);
@@ -61,6 +68,13 @@ describe.skipIf(!baseUrl)("nick do usuário HTTP (TASK-012, Q14/Q31)", () => {
     if (cookie) req.set("Cookie", cookie);
     return req.send(body as object);
   };
+
+  it("API Albion travada não atrasa o pedido de nick; consulta é disparada em segundo plano (TASK-016 AC#2)", async () => {
+    const { cookie } = await member("600000000000000077");
+    const res = await post(cookie, { nick: "SemEspera" }).timeout(2_000);
+    expect(res.status).toBe(201);
+    expect(albionCalls).toContain("SemEspera");
+  });
 
   it("sem sessão: 401 no GET e no POST", async () => {
     expect((await request(app.getHttpServer()).get("/api/me/nick")).status).toBe(401);

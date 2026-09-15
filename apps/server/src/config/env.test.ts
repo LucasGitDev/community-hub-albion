@@ -76,6 +76,18 @@ describe("parseEnv", () => {
     expect(!wrong.ok && wrong.message).not.toContain("mysql://x");
   });
 
+  it("ALBION_REGION opcional: vazio desliga, região válida passa, outra é recusada (TASK-016, Q15)", () => {
+    for (const source of [valid, { ...valid, ALBION_REGION: " " }]) {
+      const result = parseEnv(source);
+      expect(result.ok).toBe(true);
+      expect(result.ok && result.env.ALBION_REGION).toBeUndefined();
+    }
+    expect(parseEnv({ ...valid, ALBION_REGION: " americas " })).toMatchObject({ ok: true, env: { ALBION_REGION: "americas" } });
+    const bad = parseEnv({ ...valid, ALBION_REGION: "http://evil.example" });
+    expect(!bad.ok && bad.message).toContain("ALBION_REGION: deve ser americas, europe ou asia");
+    expect(!bad.ok && bad.message).not.toContain("evil");
+  });
+
   describe("OAuth do painel (TASK-008)", () => {
     it("exige client id, secret e PUBLIC_URL sem vazar o secret", () => {
       const result = parseEnv({ DISCORD_TOKEN: TOKEN, GUILD_ID: "123456789012345678", DATABASE_URL: DB });
