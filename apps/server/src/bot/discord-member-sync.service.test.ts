@@ -76,11 +76,11 @@ describe.skipIf(!baseUrl)("DiscordMemberSync (TASK-014, Postgres real + gateway 
     expect(gateway.addRole).toHaveBeenCalledWith(discordId, ROLE, expect.any(String));
   });
 
-  it("troca de nick aprovada só altera o apelido (Q31)", async () => {
+  it("troca de nick aprovada altera o apelido e garante o cargo Membro (TASK-034 AC#2, Q31 revisada)", async () => {
     const { discordId, staff, request } = await pending("Novo", "Antigo");
     await decisions.approve(request.id, staff.id);
     expect(gateway.setNickname).toHaveBeenCalledWith(discordId, "Novo", expect.any(String));
-    expect(gateway.addRole).not.toHaveBeenCalled();
+    expect(gateway.addRole).toHaveBeenCalledWith(discordId, ROLE, expect.stringContaining(request.id));
   });
 
   it("recusa não altera apelido nem cargos (AC#4)", async () => {

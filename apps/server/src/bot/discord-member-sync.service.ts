@@ -9,7 +9,7 @@ import { DISCORD_GUILD_GATEWAY, type DiscordGuildGateway } from "./discord-guild
 export const DISCORD_MEMBER_ROLE_ID = Symbol("DISCORD_MEMBER_ROLE_ID");
 
 /**
- * Aplica no Discord o resultado da decisão de nick (TASK-014): apelido na aprovação e cargo Membro na primeira.
+ * Aplica no Discord o resultado da decisão de nick (TASK-014): apelido e cargo Membro em toda aprovação (TASK-034).
  * Roda depois do commit (hook do NickDecisionService). Falha do Discord é logada e nunca lança: a aprovação fica (AC#3).
  */
 @Injectable()
@@ -34,7 +34,7 @@ export class DiscordMemberSync implements OnModuleInit, OnModuleDestroy {
   }
 
   async sync(event: NickDecidedEvent): Promise<void> {
-    const actions = planMemberSync({ decision: event.decision, nick: event.request.nick, previousGameNick: event.previousGameNick }, this.memberRoleId);
+    const actions = planMemberSync({ decision: event.decision, nick: event.request.nick }, this.memberRoleId);
     if (actions.length === 0) return;
     const requestId = event.request.id;
     let discordId: string | null;

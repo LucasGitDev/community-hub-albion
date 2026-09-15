@@ -4,17 +4,16 @@ export type MemberSyncAction = { kind: "setNickname"; nick: string } | { kind: "
 export interface MemberSyncInput {
   decision: "approved" | "rejected";
   nick: string;
-  /** Nick vigente antes da decisão; null = primeira aprovação. */
-  previousGameNick: string | null;
 }
 
 /**
- * Regra pura: recusa não mexe em nada; aprovação aplica o apelido; só a primeira aprovação concede o cargo Membro
- * (troca de nick posterior só altera o apelido, Q31).
+ * Regra pura: recusa não mexe em nada; toda aprovação (primeira ou troca) aplica o apelido e garante o cargo Membro
+ * (Q31 revisada, TASK-034). Adicionar cargo que o membro já tem é no-op no Discord, então é idempotente.
  */
 export function planMemberSync(input: MemberSyncInput, memberRoleId: string): MemberSyncAction[] {
   if (input.decision !== "approved") return [];
-  const actions: MemberSyncAction[] = [{ kind: "setNickname", nick: input.nick }];
-  if (input.previousGameNick === null) actions.push({ kind: "addRole", roleId: memberRoleId });
-  return actions;
+  return [
+    { kind: "setNickname", nick: input.nick },
+    { kind: "addRole", roleId: memberRoleId },
+  ];
 }
