@@ -1,15 +1,13 @@
 import { BadRequestException, Body, ConflictException, Controller, ForbiddenException, Get, Inject, Post, Req, Res } from "@nestjs/common";
 import { getNickStatus, type DbHandle, type NickRequest } from "@albion-hub/db";
-import { sameNick, validateNick, type NickRequestStatus } from "@albion-hub/shared";
+import type { NickRequestStatus } from "@albion-hub/shared";
 import type { Request, Response } from "express";
 import type { Env } from "../config/env.js";
 import { DB_HANDLE } from "../db/db.module.js";
-import type { AlbionPlayerLookup } from "../domain/albion-lookup.js";
-import { ALBION_PLAYER_LOOKUP } from "../members/albion-lookup.token.js";
 import { AUTH_ENV } from "../auth/auth.controller.js";
 import { Authorize, CurrentAuth, type AuthorizedRequest } from "../auth/authorize.js";
 import { isSameOriginRequest } from "../domain/auth.js";
-import { NickRequestService } from "../members/nick-request.service.js";
+import { NickRegistrationService } from "../members/nick-registration.service.js";
 
 interface NickRequestDto {
   id: string;
@@ -45,8 +43,7 @@ export class NickController {
   constructor(
     @Inject(DB_HANDLE) private readonly handle: DbHandle,
     @Inject(AUTH_ENV) private readonly env: Env,
-    @Inject(ALBION_PLAYER_LOOKUP) private readonly albion: AlbionPlayerLookup,
-    @Inject(NickRequestService) private readonly requests: NickRequestService,
+    @Inject(NickRegistrationService) private readonly registration: NickRegistrationService,
   ) {}
 
   @Get()
@@ -71,15 +68,11 @@ export class NickController {
   ): Promise<MyNickResponse> {
     if (!isSameOriginRequest({ origin: header(req.headers.origin), secFetchSite: header(req.headers["sec-fetch-site"]) }, this.env.PUBLIC_URL))
       throw new ForbiddenException("Requisição de outra origem recusada.");
-    const parsed = validateNick((body as { nick?: unknown } | null)?.nick);
-    if (!parsed.ok) throw new BadRequestException(parsed.error);
-
-    const db = this.handle.db;
-    const current = await getNickStatus(db, auth.user.id);
-    if (sameNick(current.gameNick, parsed.nick)) throw new ConflictException("Esse já é o seu nick atual.");
-    const { request, created } = await this.requests.request(auth.user.id, parsed.nick);
-    // Pré-aquece o cache da consulta Albion pra fila da staff (TASK-016). Sem await: nunca atrasa nem derruba o pedido.
-    this.albion.lookup(request.nick).catch(() => undefined);
+    // Mesmo caminho do /registrar no Discord (TASK-035): regra única no NickRegistrationService.
+    const result = await this.registration.register(auth.user.id, (body as { nick?: unknown } | null)?.nick);
+    if (result.kind === "invalid") throw new BadRequestException(result.error);
+    if (result.kind === "same_nick") throw new ConflictException("Esse já é o seu nick atual.");
+    const { request, created, status: current } = result;
     res.status(created ? 201 : 200);
     res.setHeader("Cache-Control", "no-store");
     return { gameNick: current.gameNick, pending: toDto(request), lastRejection: toRejection(current.lastRejected) };

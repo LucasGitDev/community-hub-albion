@@ -7,6 +7,7 @@ import { SessionService } from "../auth/session.service.js";
 import { FetchAlbionPlayerLookup } from "../domain/albion-lookup.js";
 import { ALBION_PLAYER_LOOKUP } from "./albion-lookup.token.js";
 import { NickDecisionService } from "./nick-decision.service.js";
+import { NickRegistrationService } from "./nick-registration.service.js";
 import { NickRequestService } from "./nick-request.service.js";
 import { StaffNickRequestsController } from "./staff-nick-requests.controller.js";
 
@@ -21,12 +22,13 @@ export class MembersModule {
       providers: [{ provide: AUTH_ENV, useValue: env }, SessionService, AuthorizeGuard, SameOriginGuard,
         NickDecisionService,
         NickRequestService,
+        NickRegistrationService,
         { provide: ALBION_PLAYER_LOOKUP, useFactory: () => new FetchAlbionPlayerLookup({
             region: env.ALBION_REGION,
             onUnavailable: (reason) => new Logger("AlbionPlayerLookup").warn(`API do Albion indisponível: ${reason}`),
           }) },
       ],
-      exports: [NickDecisionService, NickRequestService, ALBION_PLAYER_LOOKUP],
+      exports: [NickDecisionService, NickRequestService, NickRegistrationService, ALBION_PLAYER_LOOKUP],
     };
   }
 }
