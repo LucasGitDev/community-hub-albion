@@ -2,9 +2,8 @@ import { ROLE_LABELS } from "@albion-hub/shared";
 import { NavLink, Outlet } from "react-router";
 import { CalendarRange, Coins, HandCoins, LogOut, ScrollText, Users, Vault } from "lucide-react";
 import type { ReactNode } from "react";
-import { cn } from "@/lib/format";
+import { cn } from "@/lib/utils";
 import { canManageWithdrawals, isStaffArea, useStore, useUser } from "@/mock/store";
-
 
 interface NavItem {
   to: string;

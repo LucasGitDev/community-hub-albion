@@ -1,9 +1,10 @@
-import * as Dialog from "@radix-ui/react-dialog";
 import { useState, type FormEvent, type ReactNode } from "react";
 import { toast } from "sonner";
 import { formatSilver, formatSilverShort, parseSilver } from "@albion-hub/shared";
 import { MIN_WITHDRAWAL, useStore, useUser } from "@/mock/store";
-import { Button, Silver } from "./ui";
+import { Button } from "@/components/ui/button";
+import { Dialog, DialogClose, DialogContent, DialogDescription, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
+import { Silver } from "@/components/display";
 
 export function WithdrawDialog({ trigger }: { trigger: ReactNode }) {
   const user = useUser();
@@ -28,21 +29,19 @@ export function WithdrawDialog({ trigger }: { trigger: ReactNode }) {
   }
 
   return (
-    <Dialog.Root
+    <Dialog
       open={open}
       onOpenChange={(o) => {
         setOpen(o);
         if (!o) setError(null);
       }}
     >
-      <Dialog.Trigger asChild>{trigger}</Dialog.Trigger>
-      <Dialog.Portal>
-        <Dialog.Overlay className="dialog-overlay fixed inset-0 z-20 bg-black/60" />
-        <Dialog.Content className="dialog-panel fixed top-1/2 left-1/2 z-30 w-[calc(100vw-2rem)] max-w-md -translate-x-1/2 -translate-y-1/2 rounded-xl border border-rule bg-stone p-6 shadow-2xl">
-          <Dialog.Title className="font-display text-2xl font-medium">Pedir saque</Dialog.Title>
-          <Dialog.Description className="mt-1 text-sm text-muted">
+      <DialogTrigger asChild>{trigger}</DialogTrigger>
+      <DialogContent>
+          <DialogTitle>Pedir saque</DialogTitle>
+          <DialogDescription>
             A staff entrega a prata in-game depois de aprovar. O valor fica reservado enquanto isso.
-          </Dialog.Description>
+          </DialogDescription>
 
           {blocked ? (
             <p className="mt-6 rounded-md border border-rule bg-ink p-4 text-sm text-muted">
@@ -87,17 +86,16 @@ export function WithdrawDialog({ trigger }: { trigger: ReactNode }) {
                 </button>
               </div>
               <div className="mt-8 flex justify-end gap-2">
-                <Dialog.Close asChild>
+                <DialogClose asChild>
                   <Button type="button" variant="ghost">
                     Cancelar
                   </Button>
-                </Dialog.Close>
+                </DialogClose>
                 <Button type="submit">Pedir saque</Button>
               </div>
             </form>
           )}
-        </Dialog.Content>
-      </Dialog.Portal>
-    </Dialog.Root>
+      </DialogContent>
+    </Dialog>
   );
 }

@@ -1,7 +1,7 @@
 import { ROLE_LABELS } from "@albion-hub/shared";
 import { Navigate } from "react-router";
 import { useState } from "react";
-import { Button } from "@/components/ui";
+import { Button } from "@/components/ui/button";
 import { useStore } from "@/mock/store";
 
 

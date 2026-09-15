@@ -1,32 +1,8 @@
-import { forwardRef, type ButtonHTMLAttributes, type ReactNode } from "react";
+import type { ReactNode } from "react";
 import { Check, Hourglass, PackageCheck, X } from "lucide-react";
-import { cn } from "@/lib/format";
+import { cn } from "@/lib/utils";
 import { formatSilver } from "@albion-hub/shared";
 import type { WithdrawalStatus } from "@/mock/types";
-
-type Variant = "primary" | "quiet" | "danger" | "ghost";
-
-const variants: Record<Variant, string> = {
-  primary: "bg-brass text-ink hover:bg-[#d6b36d] font-semibold",
-  quiet: "bg-stone-raised text-parchment hover:bg-rule border border-rule",
-  danger: "bg-transparent text-oxblood border border-oxblood/40 hover:bg-oxblood/10",
-  ghost: "bg-transparent text-muted hover:text-parchment",
-};
-
-export const Button = forwardRef<HTMLButtonElement, ButtonHTMLAttributes<HTMLButtonElement> & { variant?: Variant }>(
-  ({ variant = "primary", className, ...props }, ref) => (
-    <button
-      ref={ref}
-      className={cn(
-        "press inline-flex h-10 items-center justify-center gap-2 rounded-md px-4 text-sm disabled:pointer-events-none disabled:opacity-40",
-        variants[variant],
-        className,
-      )}
-      {...props}
-    />
-  ),
-);
-Button.displayName = "Button";
 
 /** Valor em prata. Sinal explícito quando `signed`. */
 export function Silver({ value, signed, className }: { value: bigint; signed?: boolean; className?: string }) {

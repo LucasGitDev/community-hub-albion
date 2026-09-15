@@ -1,6 +1,8 @@
-import { Button, PageHeader, Silver, StatusBadge } from "@/components/ui";
+import { Button } from "@/components/ui/button";
+import { PageHeader, Silver, StatusBadge } from "@/components/display";
 import { WithdrawDialog } from "@/components/WithdrawDialog";
-import { cn, formatDateTime } from "@/lib/format";
+import { cn } from "@/lib/utils";
+import { formatDateTime } from "@/lib/format";
 import { MIN_WITHDRAWAL, useStore, useUser } from "@/mock/store";
 import type { Withdrawal } from "@/mock/types";
 
