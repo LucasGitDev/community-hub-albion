@@ -11,7 +11,7 @@ async function readError(res: Response): Promise<string> {
   return typeof body?.message === "string" ? body.message : "Não foi possível enviar agora. Tente de novo em instantes.";
 }
 
-export async function fetchMyNick(signal?: AbortSignal): Promise<MyNick> {
+async function fetchMyNick(signal?: AbortSignal): Promise<MyNick> {
   const res = await fetch("/api/me/nick", { credentials: "same-origin", signal, headers: { Accept: "application/json" } });
   if (!res.ok) throw new Error(await readError(res));
   return (await res.json()) as MyNick;
