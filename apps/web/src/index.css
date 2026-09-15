@@ -1,0 +1,80 @@
+@import "tailwindcss";
+
+/*
+  Palette: forja e tesouraria.
+  ink/stone = pedra fria de fortaleza; parchment = texto; silver = a própria moeda;
+  brass = única cor de ação; verdigris/oxblood = estados de saque.
+*/
+@theme {
+  --color-ink: #13171c;
+  --color-stone: #1c2128;
+  --color-stone-raised: #232932;
+  --color-rule: #2e353f;
+  --color-parchment: #e9e4d8;
+  --color-muted: #9a9d9a;
+  --color-faint: #6b6f70;
+  --color-silver: #d6dae0;
+  --color-brass: #c9a45c;
+  --color-brass-deep: #a8853f;
+  --color-verdigris: #72b394;
+  --color-oxblood: #c9625b;
+
+  --font-display: "Spectral", Georgia, serif;
+  --font-sans: "Hanken Grotesk Variable", system-ui, sans-serif;
+
+  --ease-out: cubic-bezier(0.23, 1, 0.32, 1);
+  --ease-drawer: cubic-bezier(0.32, 0.72, 0, 1);
+}
+
+@layer base {
+  html {
+    color-scheme: dark;
+  }
+  body {
+    @apply bg-ink text-parchment font-sans antialiased;
+    font-size: 15px;
+    line-height: 1.55;
+  }
+  :focus-visible {
+    outline: 2px solid var(--color-brass);
+    outline-offset: 2px;
+    border-radius: 4px;
+  }
+  .num {
+    font-family: var(--font-display);
+    font-variant-numeric: lining-nums tabular-nums;
+  }
+}
+
+@layer components {
+  .press {
+    transition: transform 140ms var(--ease-out), background-color 160ms ease, color 160ms ease;
+  }
+  .press:active {
+    transform: scale(0.97);
+  }
+  .dialog-overlay {
+    transition: opacity 200ms ease;
+    @starting-style {
+      opacity: 0;
+    }
+  }
+  .dialog-panel {
+    transition: opacity 220ms var(--ease-out), transform 220ms var(--ease-out);
+    @starting-style {
+      opacity: 0;
+      transform: translate(-50%, -48%) scale(0.97);
+    }
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .press:active {
+    transform: none;
+  }
+  .dialog-panel {
+    @starting-style {
+      transform: translate(-50%, -50%);
+    }
+  }
+}
