@@ -5,7 +5,7 @@ status: In Progress
 assignee:
   - '@claude'
 created_date: '2026-09-15 21:14'
-updated_date: '2026-09-15 21:47'
+updated_date: '2026-09-15 22:16'
 labels:
   - frontend
 milestone: m-2
@@ -25,19 +25,19 @@ Feedback do usuário (2026-09-15): painel 'clean igual necrotério' — vazio, c
 - [x] #1 Tema preto e branco do shadcn aplicado como base com escala tipográfica única e fonte sans legível
 - [x] #2 Carteira, /nick, fila de membros e fila de saques redesenhadas com layout denso e hierarquia clara
 - [x] #3 Três variações (A P&B puro, B P&B + cor de destaque, C mais jogo com feedback animado) alternáveis no app e com screenshots 1280/400
-- [ ] #4 Usuário escolhe uma direção e ela fica como padrão, variações removidas
+- [x] #4 Usuário escolhe uma direção e ela fica como padrão, variações removidas
 - [x] #5 e2e existentes continuam passando
 <!-- AC:END -->
 
 ## Definition of Done
 <!-- DOD:BEGIN -->
-- [ ] #1 pnpm quality sem falha bloqueante; resumo do gate colado nas notas
-- [ ] #2 Cada AC verificado com evidência objetiva (teste, e2e, screenshot ou saída de comando), nunca só leitura de código
-- [ ] #3 Skills aplicáveis do doc-003 invocadas e listadas nas notas
-- [ ] #4 UI alterada: fluxo coberto por e2e e screenshots desktop 1280 e mobile 400 revisados pelo agent
-- [ ] #5 Comportamento confere com decisões do doc-005 (Qs citadas) e nada fora do escopo da task
-- [ ] #6 Toca auth, ledger, prata ou saque: security-review sem achado crítico
-- [ ] #7 Notas e final summary com evidências; commits Conventional atômicos sem co-autor
+- [x] #1 pnpm quality sem falha bloqueante; resumo do gate colado nas notas
+- [x] #2 Cada AC verificado com evidência objetiva (teste, e2e, screenshot ou saída de comando), nunca só leitura de código
+- [x] #3 Skills aplicáveis do doc-003 invocadas e listadas nas notas
+- [x] #4 UI alterada: fluxo coberto por e2e e screenshots desktop 1280 e mobile 400 revisados pelo agent
+- [x] #5 Comportamento confere com decisões do doc-005 (Qs citadas) e nada fora do escopo da task
+- [x] #6 Toca auth, ledger, prata ou saque: security-review sem achado crítico
+- [x] #7 Notas e final summary com evidências; commits Conventional atômicos sem co-autor
 - [ ] #8 PR merged na main com quality gate verde; branch e worktree removidos
 <!-- DOD:END -->
 
@@ -78,4 +78,25 @@ Nota: texto do passo 3 de "Como funciona" mudou depois das capturas (e2e strict 
 
 Gate (pnpm quality, TEST_DATABASE_URL :55451):
 | Linting 0 ✅ | Race 0 ✅ | Typecheck ok ✅ | Coverage branch 95.08% ✅ | E2E 28 ok 0 falha ✅ | Docker build+smoke ✅ | Duplicação 0% ✅ | Dead code 9 (advisory: exports não usados de ui shadcn) ⚠️ | Vulns 0 ✅ |
+
+## Decisão do usuário (AC#4)
+Variação A vira o tema CLARO e B o tema ESCURO; padrão escuro, com toggle. C, picker e `?v=` removidos por completo (count-up, check animado, saída de linha, richColors, densidade C). Count-up removido (não agregava nos dois temas).
+- Tema: classe `dark` no <html> já no index.html + script inline lê localStorage `albion-hub:theme` antes do 1º paint (sem flash; verificado: classe correta no `commit` da navegação). ThemeProvider/ThemeToggle em src/theme/theme.tsx; parseTheme em src/lib/theme.ts (testado). Toggle no header do shell (desktop e mobile) e no canto da tela de login; troca instantânea (gate de frequência do animate). Toaster segue o tema.
+- Ouro reduzido no escuro: só CTA primário, número-chave (stat emphasis) e ícone do item ativo. Contadores da sidebar/tabs/barra inferior, chip ativo de gestão mobile, passo atual do /nick, barra de progresso/disponível, logo e toggles de papel viraram neutros (foreground/muted). Valor da linha da fila de saques neutro.
+- Mobile 400: avatar saiu do header (logout e toggle ficam) pra não quebrar "albion-hub".
+- E2E: suíte roda no padrão escuro; novo teste "tema escuro é o padrão e a troca pra claro persiste no reload (TASK-036)" em e2e/panel.spec.ts (desktop+mobile).
+- Security (DoD#6): tela de saque só mudou visual; script inline estático sem dado do usuário; localStorage guarda só "light". Sem achado.
+
+## Screenshots finais (sobrescrevem as das variações, removidas)
+.playwright-mcp/ui036-{dark,light}-{carteira,nick,membros,saques}-{1280,400}.png — 1280 full page, 400 viewport; sem overflow horizontal; console sem erro.
+
+## Gate final (pnpm quality, :55451)
+| Lint 0 ✅ | Race 0 ✅ | Typecheck ok ✅ | Coverage branch 94.97% ✅ | E2E 30 ok 0 falha ✅ | Docker smoke ✅ | Duplicação 0% ✅ | Dead code 9 advisory ⚠️ | Vulns 0 ✅ |
+(1ª execução completa acusou coverage "—" com 412/412 testes passando isolados; reexecução completa passou — tratado como flake de recurso.)
 <!-- SECTION:NOTES:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+Painel refeito sobre o tema P&B do shadcn (Geist, escala tipográfica única, tokens de estado): shell com sidebar/header e saldo, carteira com stat cards e extrato em tabela, /nick com trilha de passos, filas de nick e saque densas com contadores. Após protótipo de 3 variações, usuário escolheu A=claro e B=escuro (padrão), com toggle persistido e sem flash; C e picker removidos, ouro restrito a CTA, número-chave e item ativo. Verificado com pnpm quality verde (E2E 30/30, incluindo teste de toggle) e screenshots claro/escuro 1280/400.
+<!-- SECTION:FINAL_SUMMARY:END -->
