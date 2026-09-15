@@ -1,0 +1,37 @@
+# Produção/VPS (Q16): app (API + bot + SPA) + Postgres. TASK-005.
+#   cp .env.example .env   # preencher seção "compose de produção"
+#   docker compose up -d --build
+services:
+  app:
+    build: .
+    image: albion-hub:latest
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgres://${POSTGRES_USER:-albion}:${POSTGRES_PASSWORD:?defina POSTGRES_PASSWORD no .env}@db:5432/${POSTGRES_DB:-albion_hub}
+      DISCORD_TOKEN: ${DISCORD_TOKEN:?defina DISCORD_TOKEN no .env}
+      GUILD_ID: ${GUILD_ID:?defina GUILD_ID no .env}
+      DISCORD_BOT_ENABLED: ${DISCORD_BOT_ENABLED:-true}
+      PORT: 3000
+    ports:
+      - "${APP_PORT:-3000}:3000"
+
+  db:
+    image: postgres:17
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-albion}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?defina POSTGRES_PASSWORD no .env}
+      POSTGRES_DB: ${POSTGRES_DB:-albion_hub}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 3s
+      timeout: 3s
+      retries: 30
+
+volumes:
+  pgdata:
