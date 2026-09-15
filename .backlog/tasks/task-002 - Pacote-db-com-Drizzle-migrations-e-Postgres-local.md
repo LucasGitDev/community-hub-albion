@@ -5,7 +5,7 @@ status: In Progress
 assignee:
   - '@claude'
 created_date: '2026-09-15 03:24'
-updated_date: '2026-09-15 04:14'
+updated_date: '2026-09-15 05:09'
 labels:
   - db
   - infra
@@ -25,7 +25,7 @@ Persistência base (doc-002): packages/db com Drizzle e migrations sobre Postgre
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
 - [x] #1 Migrations aplicam do zero num Postgres vazio e são idempotentes em reexecução
-- [ ] #2 Server consegue conectar e executar consulta usando o pacote db
+- [x] #2 Server consegue conectar e executar consulta usando o pacote db
 - [x] #3 Existe comando para gerar e aplicar migrations a partir da raiz
 <!-- AC:END -->
 
@@ -74,6 +74,8 @@ Lint 0 | Race 0 | Typecheck ok | Coverage branch 97.82% (>=79) | E2E 8 ok/0 falh
 
 ## Skills
 task-done-check (adaptado: sem UI, sem Playwright visual). security-review não aplicável (não toca auth/ledger/saque).
+
+AC#2 comprovado na TASK-003: apps/server usa @albion-hub/db (DbModule); teste 'conecta no Postgres real via @albion-hub/db' passa com TEST_DATABASE_URL e boot real respondeu db up no /api/health.
 <!-- SECTION:NOTES:END -->
 
 ## Final Summary
