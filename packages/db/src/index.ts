@@ -4,6 +4,7 @@ export * as schema from "./schema.js";
 export { generateSessionToken, hashSessionToken, isSessionExpired } from "./session-token.js";
 export {
   createSession,
+  findDiscordIdByUserId,
   findValidSession,
   grantRole,
   listRoles,

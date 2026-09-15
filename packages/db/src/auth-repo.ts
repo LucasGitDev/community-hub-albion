@@ -33,6 +33,12 @@ export async function upsertUserByDiscordId(db: Database, profile: DiscordProfil
   return user!;
 }
 
+/** Id Discord do usuário (bot aplica apelido/cargo, TASK-014); null se não existe. */
+export async function findDiscordIdByUserId(db: Database, userId: string): Promise<string | null> {
+  const [row] = await db.select({ discordId: users.discordId }).from(users).where(eq(users.id, userId));
+  return row?.discordId ?? null;
+}
+
 /** Concede papel; idempotente (papel já existente não altera nada). */
 export async function grantRole(db: Database, userId: string, role: Role, grantedBy: string | null = null): Promise<void> {
   await db.insert(userRoles).values({ userId, role, grantedBy }).onConflictDoNothing();
