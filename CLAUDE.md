@@ -32,6 +32,7 @@ Skills/tools do agent: doc "Skills" no backlog — **ler antes de qualquer taref
 ## Quality gate e DoD
 Doc "Quality Gate e DoD" no backlog. Resumo:
 - `pnpm quality` (tudo) ou `pnpm quality lint,typecheck,coverage` (loop rápido). Thresholds em `quality.config.json`.
+- Testes de banco precisam de Postgres: `POSTGRES_PORT=55432 docker compose -p <task> -f docker-compose.dev.yml up -d --wait` e `export TEST_DATABASE_URL=postgres://albion:albion@localhost:55432/albion_hub` (sem isso são pulados e a cobertura cai). Docker é OrbStack: sempre `timeout` nos comandos docker.
 - CI (`.github/workflows/quality-gate.yml`) roda o mesmo script e comenta o resumo no PR.
 - Antes de marcar AC/DoD ou abrir PR final: invocar skill `task-done-check` (gate + visual Playwright 1280/400 + produto vs doc-005 + skills do doc-003).
 
