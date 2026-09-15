@@ -23,7 +23,7 @@ Skills/tools do agent: doc "Skills" no backlog — **ler antes de qualquer taref
 
 ## Fluxo de git (toda task)
 - Nunca commitar direto na `main`. Uma branch por task: `<type>/task-XXX-slug` (ex: `feat/task-026-ledger`).
-- Tasks em paralelo: `git worktree add ../hub-albion-task-XXX -b <branch>` (ou EnterWorktree).
+- Tasks em paralelo: worktree **sempre** em `.claude/worktrees/task-XXX` (ignorado no git): `git worktree add .claude/worktrees/task-XXX -b <branch> origin/main`, depois `pnpm install` dentro dele.
 - Push + PR via `gh pr create` (título Conventional, corpo com `TASK-XXX`, resumo do gate e evidências).
 - **Task só está Done quando o PR foi merged na `main`** com o check `summary` do quality gate verde.
 - Merge: `gh pr merge --rebase --delete-branch` (preserva commits atômicos).

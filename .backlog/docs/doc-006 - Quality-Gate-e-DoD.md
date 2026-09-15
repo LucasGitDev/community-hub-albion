@@ -3,7 +3,7 @@ id: doc-006
 title: Quality Gate e DoD
 type: guide
 created_date: '2026-09-15 03:49'
-updated_date: '2026-09-15 03:50'
+updated_date: '2026-09-15 03:56'
 ---
 Como o albion-hub garante que uma task está pronta: **gate automático** (local = CI) + **DoD no backlog** + **verificação do agent** (skill `task-done-check`).
 
@@ -61,7 +61,7 @@ Checks que o gate não enxerga, feitos pelo agent antes de marcar AC/DoD:
 Saída padrão: tabela AC/DoD → evidência → status, colada nas notas da task.
 
 ## 5. Fluxo de entrega
-- Branch por task (`<type>/task-XXX-slug`), worktree quando houver tasks em paralelo.
+- Branch por task (`<type>/task-XXX-slug`); tasks em paralelo usam worktree em `.claude/worktrees/task-XXX` (ignorado no git).
 - PR via `gh`; CI comenta o resumo do gate.
 - **Done = merged na `main`** (`gh pr merge --rebase --delete-branch`), depois limpar branch local, worktree e `git fetch --prune`.
 - Recomendado: branch protection na `main` exigindo o check `summary`.
