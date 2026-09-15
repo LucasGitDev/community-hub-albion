@@ -4,8 +4,8 @@
   "type": "module",
   "scripts": {
     "build": "tsc -p tsconfig.build.json",
-    "dev": "tsc-watch -p tsconfig.build.json --noClear --onSuccess \"node --env-file-if-exists=.env --enable-source-maps dist/main.js\"",
-    "start": "node --env-file-if-exists=.env --enable-source-maps dist/main.js",
+    "dev": "tsc-watch -p tsconfig.build.json --noClear --onSuccess \"node --env-file-if-exists=../../.env --env-file-if-exists=.env --enable-source-maps dist/main.js\"",
+    "start": "node --env-file-if-exists=../../.env --env-file-if-exists=.env --enable-source-maps dist/main.js",
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {
