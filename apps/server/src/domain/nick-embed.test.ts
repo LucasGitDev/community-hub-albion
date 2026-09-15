@@ -27,9 +27,9 @@ const field = (view: ReturnType<typeof buildNickEmbed>, name: string) => view.fi
 
 describe("nick embed (TASK-015)", () => {
   it("customIds carregam o uuid do pedido e só uuid é aceito", () => {
-    expect(approveButtonId(ID)).toBe(`nick:approve/${ID}`);
-    expect(rejectButtonId(ID)).toBe(`nick:reject/${ID}`);
-    expect(rejectModalId(ID)).toBe(`nick:reject-modal/${ID}`);
+    expect(approveButtonId(ID)).toBe(`nick/approve/${ID}`);
+    expect(rejectButtonId(ID)).toBe(`nick/reject/${ID}`);
+    expect(rejectModalId(ID)).toBe(`nick/reject-modal/${ID}`);
     expect(isNickRequestId(ID)).toBe(true);
     for (const bad of ["x", `${ID}'`, undefined, 1]) expect(isNickRequestId(bad)).toBe(false);
   });
@@ -43,8 +43,8 @@ describe("nick embed (TASK-015)", () => {
     expect(field(view, "Pedido em")).toBe(`<t:${Date.parse("2026-09-15T12:00:00Z") / 1000}:f>`);
     expect(field(view, "Status")).toBe("Aguardando staff");
     expect(view.buttons).toEqual([
-      { customId: `nick:approve/${ID}`, label: "Aprovar nick", style: "success" },
-      { customId: `nick:reject/${ID}`, label: "Recusar", style: "danger" },
+      { customId: `nick/approve/${ID}`, label: "Aprovar nick", style: "success" },
+      { customId: `nick/reject/${ID}`, label: "Recusar", style: "danger" },
     ]);
     expect(field(buildNickEmbed({ ...base, currentNick: null }), "Nick")).toBe("Primeiro nick: Novo");
   });
@@ -74,7 +74,7 @@ describe("nick embed (TASK-015)", () => {
 
   it("modal de recusa exige motivo de 1 a 300 e título cabe no limite do Discord", () => {
     const modal = buildRejectModal(ID, "Novo");
-    expect(modal).toMatchObject({ customId: `nick:reject-modal/${ID}`, title: "Recusar nick Novo", field: { customId: "note", minLength: 1, maxLength: 300 } });
+    expect(modal).toMatchObject({ customId: `nick/reject-modal/${ID}`, title: "Recusar nick Novo", field: { customId: "note", minLength: 1, maxLength: 300 } });
     expect(buildRejectModal(ID, null).title).toBe("Recusar nick");
     expect(buildRejectModal(ID, "x".repeat(60)).title.length).toBeLessThanOrEqual(45);
   });

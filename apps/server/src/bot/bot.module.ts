@@ -4,8 +4,11 @@ import { NecordModule } from "necord";
 import type { Env } from "../config/env.js";
 import { DISCORD_GUILD_GATEWAY, DISCORD_GUILD_ID, DiscordJsGuildGateway } from "./discord-guild.gateway.js";
 import { DISCORD_MEMBER_ROLE_ID, DiscordMemberSync } from "./discord-member-sync.service.js";
+import { NickEmbedInteractions } from "./nick-embed.interactions.js";
+import { NickStaffEmbedService } from "./nick-staff-embed.service.js";
 import { PingCommand } from "./ping.command.js";
 import { ReadyListener } from "./ready.listener.js";
+import { DISCORD_STAFF_CHANNEL_ID, DiscordJsStaffChannelGateway, STAFF_CHANNEL_GATEWAY } from "./staff-channel.gateway.js";
 import { VoiceBootListener } from "./voice-boot.listener.js";
 import { DEFAULT_HEARTBEAT_INTERVAL_MS, VOICE_HEARTBEAT_INTERVAL_MS, VoiceHeartbeatService } from "./voice-heartbeat.service.js";
 import { VOICE_CLOCK, VoiceTrackingService } from "./voice-tracking.service.js";
@@ -13,8 +16,9 @@ import { VOICE_GUILD_ID, VoiceListener } from "./voice.listener.js";
 
 @Module({})
 export class BotModule {
-  static register(env: Pick<Env, "DISCORD_TOKEN" | "GUILD_ID" | "DISCORD_MEMBER_ROLE_ID">): DynamicModule {
+  static register(env: Pick<Env, "DISCORD_TOKEN" | "GUILD_ID" | "DISCORD_MEMBER_ROLE_ID" | "DISCORD_STAFF_CHANNEL_ID">): DynamicModule {
     if (!env.DISCORD_MEMBER_ROLE_ID) throw new Error("DISCORD_MEMBER_ROLE_ID obrigatória com o bot ligado");
+    if (!env.DISCORD_STAFF_CHANNEL_ID) throw new Error("DISCORD_STAFF_CHANNEL_ID obrigatória com o bot ligado");
     return {
       module: BotModule,
       imports: [
@@ -41,6 +45,11 @@ export class BotModule {
         { provide: DISCORD_GUILD_GATEWAY, useClass: DiscordJsGuildGateway },
         { provide: DISCORD_MEMBER_ROLE_ID, useValue: env.DISCORD_MEMBER_ROLE_ID },
         DiscordMemberSync,
+        // TASK-015: embed do pedido de nick com botões no canal da staff.
+        { provide: DISCORD_STAFF_CHANNEL_ID, useValue: env.DISCORD_STAFF_CHANNEL_ID },
+        { provide: STAFF_CHANNEL_GATEWAY, useClass: DiscordJsStaffChannelGateway },
+        NickStaffEmbedService,
+        NickEmbedInteractions,
       ],
     };
   }
