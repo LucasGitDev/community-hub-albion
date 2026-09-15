@@ -5,7 +5,7 @@ status: In Progress
 assignee:
   - '@claude'
 created_date: '2026-09-15 03:24'
-updated_date: '2026-09-15 05:33'
+updated_date: '2026-09-15 05:40'
 labels:
   - auth
   - backend
@@ -79,6 +79,8 @@ Lint 0 ✅ | Race 0 ✅ | Typecheck ok ✅ | Coverage branch 98.19% (≥79) ✅ 
 - AC#5: security-review (skill leu checkout principal com diff vazio; checklist aplicado manualmente em git diff do branch por subagente): nenhum achado crítico/alto. Sugestões defense-in-depth registradas: sessão de 30 dias não revalida membro da guild; admin bootstrap não é removido ao tirar id da env; callback não transacional.
 
 Skills: task-done-check, security-review. Sem UI (DoD#4 N/A).
+
+Lead (rebase sobre TASK-005/006): teste HTTP de auth agora usa app.listen(0) (5 execuções seguidas sem 'socket hang up'); smoke da imagem recebe env OAuth com PUBLIC_URL https (produção exige). Gate completo local ✅ incluindo imagem.
 <!-- SECTION:NOTES:END -->
 
 ## Final Summary

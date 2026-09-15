@@ -1,11 +1,11 @@
 ---
 id: TASK-006
 title: 'CI no GitHub Actions: lint, typecheck, test e build da imagem'
-status: In Progress
+status: Done
 assignee:
   - '@claude'
 created_date: '2026-09-15 03:24'
-updated_date: '2026-09-15 05:33'
+updated_date: '2026-09-15 05:40'
 labels:
   - ci
   - infra
@@ -24,9 +24,9 @@ Repositório GitHub privado com Actions desde F0 (Q17), garantindo qualidade con
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 PRs e pushes na branch principal disparam lint, typecheck, test e build da imagem
+- [x] #1 PRs e pushes na branch principal disparam lint, typecheck, test e build da imagem
 - [x] #2 Falha em qualquer etapa deixa o check vermelho
-- [ ] #3 Pipeline verde na branch principal
+- [x] #3 Pipeline verde na branch principal
 <!-- AC:END -->
 
 ## Definition of Done
@@ -38,7 +38,7 @@ Repositório GitHub privado com Actions desde F0 (Q17), garantindo qualidade con
 - [x] #5 Comportamento confere com decisões do doc-005 (Qs citadas) e nada fora do escopo da task
 - [x] #6 Toca auth, ledger, prata ou saque: security-review sem achado crítico
 - [x] #7 Notas e final summary com evidências; commits Conventional atômicos sem co-autor
-- [ ] #8 PR merged na main com quality gate verde; branch e worktree removidos
+- [x] #8 PR merged na main com quality gate verde; branch e worktree removidos
 <!-- DOD:END -->
 
 ## Implementation Plan
@@ -53,4 +53,12 @@ Repositório GitHub privado com Actions desde F0 (Q17), garantindo qualidade con
 Check local image: pass ('build ok, SPA 200, /api 404 JSON, health ok'). Teste negativo: CMD quebrado no Dockerfile -> check image status fail, exit 1 (summary do CI falha em qualquer bloqueante).
 Pipeline: PR/push na main disparam lint, typecheck, coverage (testes), e2e, audit, duplication, deadcode e image; job summary falha se algum bloqueante falhar.
 Skills: task-done-check.
+
+AC#3: pipeline da main verde após merge (run 34933388612: lint, typecheck, coverage, e2e, image, audit, duplication, deadcode, summary = success).
 <!-- SECTION:NOTES:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+Quality gate do CI agora builda a imagem Docker e faz smoke no container; PR e push na main disparam todas as etapas e qualquer bloqueante deixa o summary vermelho. Verificado com teste negativo local e pipeline verde na main.
+<!-- SECTION:FINAL_SUMMARY:END -->
