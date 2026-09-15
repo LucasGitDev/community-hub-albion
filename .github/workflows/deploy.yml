@@ -1,0 +1,90 @@
+name: deploy
+
+# CD: roda quando o quality-gate termina verde num push na main (PR mergeado = push na main).
+# Build da imagem → push no Docker Hub → webhook de deploy do Easypanel.
+# Também pode ser disparado manualmente (Actions > deploy > Run workflow).
+
+on:
+  workflow_run:
+    workflows: [quality-gate]
+    types: [completed]
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: deploy-main
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      (github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.event == 'push')
+    runs-on: ubuntu-latest
+    environment: production
+    env:
+      # Imagem: variable DOCKERHUB_IMAGE ou, sem ela, <DOCKERHUB_USERNAME>/albion-hub.
+      DOCKERHUB_IMAGE: ${{ vars.DOCKERHUB_IMAGE != '' && vars.DOCKERHUB_IMAGE || format('{0}/albion-hub', secrets.DOCKERHUB_USERNAME) }}
+      # Commit exato que passou no gate (no manual, o HEAD da main).
+      DEPLOY_SHA: ${{ github.event.workflow_run.head_sha || github.sha }}
+    steps:
+      - name: Verifica secrets
+        shell: bash
+        env:
+          DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
+          DOCKERHUB_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}
+        run: |
+          missing=()
+          [ -z "$DOCKERHUB_USERNAME" ] && missing+=("DOCKERHUB_USERNAME")
+          [ -z "$DOCKERHUB_TOKEN" ] && missing+=("DOCKERHUB_TOKEN")
+          if [ ${#missing[@]} -gt 0 ]; then
+            echo "::error::Faltam secrets em Settings > Secrets and variables > Actions: ${missing[*]}"
+            exit 1
+          fi
+          echo "Imagem: $DOCKERHUB_IMAGE  commit: $DEPLOY_SHA"
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.DEPLOY_SHA }}
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+      - id: short
+        shell: bash
+        run: echo "sha=${DEPLOY_SHA::7}" >> "$GITHUB_OUTPUT"
+      - uses: docker/build-push-action@v6
+        with:
+          context: .
+          platforms: linux/amd64
+          push: true
+          tags: |
+            ${{ env.DOCKERHUB_IMAGE }}:latest
+            ${{ env.DOCKERHUB_IMAGE }}:sha-${{ steps.short.outputs.sha }}
+          labels: |
+            org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
+            org.opencontainers.image.revision=${{ env.DEPLOY_SHA }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+      - name: Deploy no Easypanel
+        shell: bash
+        env:
+          EASYPANEL_DEPLOY_WEBHOOK: ${{ secrets.EASYPANEL_DEPLOY_WEBHOOK }}
+        run: |
+          if [ -z "$EASYPANEL_DEPLOY_WEBHOOK" ]; then
+            echo "::warning::EASYPANEL_DEPLOY_WEBHOOK não configurado: imagem publicada, deploy não disparado."
+            exit 0
+          fi
+          curl -fsS -X POST "$EASYPANEL_DEPLOY_WEBHOOK" > /dev/null
+          echo "Deploy disparado no Easypanel (sha-${{ steps.short.outputs.sha }})."
+      - name: Resumo
+        shell: bash
+        run: |
+          {
+            echo "## Deploy"
+            echo "- Imagem: \`$DOCKERHUB_IMAGE:sha-${{ steps.short.outputs.sha }}\` e \`:latest\`"
+            echo "- Commit: \`$DEPLOY_SHA\`"
+          } >> "$GITHUB_STEP_SUMMARY"
