@@ -1,11 +1,11 @@
 ---
 id: TASK-005
 title: Imagem Docker multi-stage e docker compose com Postgres
-status: In Progress
+status: Done
 assignee:
   - '@claude'
 created_date: '2026-09-15 03:24'
-updated_date: '2026-09-15 05:29'
+updated_date: '2026-09-15 20:49'
 labels:
   - infra
 milestone: m-0
@@ -25,7 +25,7 @@ Deploy em VPS própria via docker compose (Q16): uma imagem com bot + API + SPA 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
 - [x] #1 docker compose up sobe app e Postgres e o app aplica migrations ou falha de forma clara
-- [ ] #2 Um único container responde health da API, serve a SPA e conecta o bot
+- [x] #2 Um único container responde health da API, serve a SPA e conecta o bot
 - [x] #3 Imagem final não contém dependências de dev nem código-fonte TS desnecessário
 <!-- AC:END -->
 
@@ -38,7 +38,7 @@ Deploy em VPS própria via docker compose (Q16): uma imagem com bot + API + SPA 
 - [x] #5 Comportamento confere com decisões do doc-005 (Qs citadas) e nada fora do escopo da task
 - [x] #6 Toca auth, ledger, prata ou saque: security-review sem achado crítico
 - [x] #7 Notas e final summary com evidências; commits Conventional atômicos sem co-autor
-- [ ] #8 PR merged na main com quality gate verde; branch e worktree removidos
+- [x] #8 PR merged na main com quality gate verde; branch e worktree removidos
 <!-- DOD:END -->
 
 ## Implementation Plan
@@ -57,6 +57,8 @@ Evidências:
 - AC#3: imagem 204MB; /app só tem dist, node_modules, package.json, web; nenhum .ts fora de .d.ts; typescript, vitest, @nestjs/testing, supertest, tsc-watch, drizzle-kit, eslint, turbo ausentes; roda como usuário node.
 Decisões: node:22.20-alpine; pnpm deploy --prod --legacy; WEB_DIST_DIR=/app/web; HEALTHCHECK via fetch no /api/health (503 quando banco cai); compose exige POSTGRES_PASSWORD/DISCORD_TOKEN/GUILD_ID (erro claro do compose se faltar). Gate agora avisa quando roda sem TEST_DATABASE_URL.
 Skills: task-done-check.
+
+Verificação real pelo usuário (2026-09-15): imagem multi-arch do Docker Hub rodando no Easypanel (VPS ARM) com Postgres; login, nick e bot funcionando em produção.
 <!-- SECTION:NOTES:END -->
 
 ## Final Summary
