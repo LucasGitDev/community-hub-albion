@@ -1,11 +1,11 @@
 ---
 id: TASK-015
 title: Notificação de solicitação com botões no Discord
-status: In Progress
+status: Done
 assignee:
   - '@claude'
 created_date: '2026-09-15 03:24'
-updated_date: '2026-09-15 13:34'
+updated_date: '2026-09-15 13:37'
 labels:
   - bot
 milestone: m-2
@@ -38,7 +38,7 @@ Staff pode aprovar/rejeitar direto por embed com botões (doc-004 F2), usando o 
 - [x] #5 Comportamento confere com decisões do doc-005 (Qs citadas) e nada fora do escopo da task
 - [x] #6 Toca auth, ledger, prata ou saque: security-review sem achado crítico
 - [x] #7 Notas e final summary com evidências; commits Conventional atômicos sem co-autor
-- [ ] #8 PR merged na main com quality gate verde; branch e worktree removidos
+- [x] #8 PR merged na main com quality gate verde; branch e worktree removidos
 <!-- DOD:END -->
 
 ## Implementation Plan

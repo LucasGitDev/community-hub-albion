@@ -1,11 +1,11 @@
 ---
 id: TASK-003
 title: Server NestJS com bot Necord e comando /ping
-status: In Progress
+status: Done
 assignee:
   - '@claude'
 created_date: '2026-09-15 03:24'
-updated_date: '2026-09-15 12:55'
+updated_date: '2026-09-15 13:37'
 labels:
   - backend
   - bot
@@ -25,7 +25,7 @@ Processo único (doc-002) começa com Nest + Necord conectando ao Discord single
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
 - [x] #1 Bot fica online na guild configurada por GUILD_ID
-- [ ] #2 /ping responde em PT-BR
+- [x] #2 /ping responde em PT-BR
 - [x] #3 API expõe endpoint de health que responde 200
 - [x] #4 Config inválida ou ausente (token, GUILD_ID) impede boot com erro claro
 <!-- AC:END -->
@@ -39,7 +39,7 @@ Processo único (doc-002) começa com Nest + Necord conectando ao Discord single
 - [x] #5 Comportamento confere com decisões do doc-005 (Qs citadas) e nada fora do escopo da task
 - [x] #6 Toca auth, ledger, prata ou saque: security-review sem achado crítico
 - [x] #7 Notas e final summary com evidências; commits Conventional atômicos sem co-autor
-- [ ] #8 PR merged na main com quality gate verde; branch e worktree removidos
+- [x] #8 PR merged na main com quality gate verde; branch e worktree removidos
 <!-- DOD:END -->
 
 ## Implementation Plan
@@ -68,4 +68,6 @@ Também entrega TASK-002 AC#2 (DbModule + health com ping real).
 Skills: task-done-check.
 
 Verificação real (2026-09-15, .env do usuário): 'Bot online como Javali da Turma#3896' e /api/health {status:ok, db:up, bot:online} → AC#1 ok. Registro dos slash commands falhou com DiscordAPIError 50001 Missing Access (bot sem escopo applications.commands/sem acesso à guild) e o erro não tratado derrubava o processo: corrigido com listener de 'error' + mensagem acionável. AC#2 (/ping) pendente de reconvite do bot com applications.commands e teste do usuário.
+
+Verificação real pelo usuário (2026-09-15): /ping respondeu no Discord.
 <!-- SECTION:NOTES:END -->
