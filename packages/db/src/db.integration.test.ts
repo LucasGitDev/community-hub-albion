@@ -5,6 +5,7 @@ import {
   closeVoiceSession,
   createDb,
   createSession,
+  decideNickRequest,
   getNickStatus,
   listPendingNickRequests,
   requestNick,
@@ -301,7 +302,7 @@ describe.skipIf(!url)("@albion-hub/db (Postgres real)", () => {
   describe("nick: solicitações (TASK-012, Q14/Q31)", () => {
     it("cria pendente, troca o nick da pendente sem duplicar e lista na fila (AC#1, AC#2)", async () => {
       const u = await upsertUserByDiscordId(handle.db, { discordId: "500000000000000001", discordUsername: "novato" });
-      expect(await getNickStatus(handle.db, u.id)).toEqual({ gameNick: null, pending: null });
+      expect(await getNickStatus(handle.db, u.id)).toEqual({ gameNick: null, pending: null, lastRejected: null });
 
       const first = await requestNick(handle.db, u.id, "Novato");
       expect(first.created).toBe(true);
@@ -345,6 +346,62 @@ describe.skipIf(!url)("@albion-hub/db (Postgres real)", () => {
       // login seguinte não apaga o nick vigente
       await upsertUserByDiscordId(handle.db, { discordId: "500000000000000003", discordUsername: "veterano2" });
       expect((await getNickStatus(handle.db, u.id)).gameNick).toBe("Veterano");
+    });
+  });
+
+  describe("nick: decisão da staff (TASK-013)", () => {
+    async function setup(discordId: string, gameNick: string | null, nick: string) {
+      const u = await upsertUserByDiscordId(handle.db, { discordId, discordUsername: `d${discordId.slice(-3)}` });
+      if (gameNick) await setGameNick(handle.db, u.id, gameNick);
+      const staff = await upsertUserByDiscordId(handle.db, { discordId: `9${discordId.slice(1)}`, discordUsername: `staff${discordId.slice(-3)}` });
+      const { request } = await requestNick(handle.db, u.id, nick);
+      return { u, staff, request };
+    }
+
+    it("aprovação torna o nick vigente e registra quem e quando (AC#2, AC#4)", async () => {
+      const { u, staff, request } = await setup("510000000000000001", "Antigo", "Novo");
+      const before = Date.now();
+      const res = await decideNickRequest(handle.db, { requestId: request.id, decision: "approved", deciderUserId: staff.id, note: null });
+      expect(res.ok && res.previousGameNick).toBe("Antigo");
+      const [row] = await handle.db.select().from(schema.nickRequests).where(eq(schema.nickRequests.id, request.id));
+      expect(row).toMatchObject({ status: "approved", decidedBy: staff.id, decisionNote: null });
+      expect(row!.decidedAt!.getTime()).toBeGreaterThanOrEqual(before - 5_000);
+      expect(await getNickStatus(handle.db, u.id)).toMatchObject({ gameNick: "Novo", pending: null, lastRejected: null });
+      expect(await listPendingNickRequests(handle.db).then((q) => q.filter((x) => x.request.id === request.id))).toEqual([]);
+    });
+
+    it("recusa mantém o nick anterior, grava motivo e expõe a última recusa (AC#2, AC#4)", async () => {
+      const { u, staff, request } = await setup("510000000000000002", "Antigo", "Errado");
+      const res = await decideNickRequest(handle.db, { requestId: request.id, decision: "rejected", deciderUserId: staff.id, note: "Nick não existe no jogo." });
+      expect(res.ok).toBe(true);
+      const status = await getNickStatus(handle.db, u.id);
+      expect(status.gameNick).toBe("Antigo");
+      expect(status.lastRejected).toMatchObject({ id: request.id, decidedBy: staff.id, decisionNote: "Nick não existe no jogo." });
+      // aprovação posterior some com a recusa
+      const { request: next } = await requestNick(handle.db, u.id, "Certo");
+      await decideNickRequest(handle.db, { requestId: next.id, decision: "approved", deciderUserId: staff.id, note: null });
+      expect((await getNickStatus(handle.db, u.id)).lastRejected).toBeNull();
+    });
+
+    it("decidir de novo, ou id inexistente, não altera nada", async () => {
+      const { u, staff, request } = await setup("510000000000000003", null, "Primeiro");
+      await decideNickRequest(handle.db, { requestId: request.id, decision: "approved", deciderUserId: staff.id, note: null });
+      const again = await decideNickRequest(handle.db, { requestId: request.id, decision: "rejected", deciderUserId: staff.id, note: "x" });
+      expect(again).toEqual({ ok: false, reason: "not_pending" });
+      expect((await getNickStatus(handle.db, u.id)).gameNick).toBe("Primeiro");
+      const missing = await decideNickRequest(handle.db, { requestId: "00000000-0000-4000-8000-000000000000", decision: "approved", deciderUserId: staff.id, note: null });
+      expect(missing).toEqual({ ok: false, reason: "not_found" });
+    });
+
+    it("aprovar e recusar simultâneos: só uma decisão vence", async () => {
+      const { u, staff, request } = await setup("510000000000000004", "Antigo", "Corrida");
+      const results = await Promise.all([
+        decideNickRequest(handle.db, { requestId: request.id, decision: "approved", deciderUserId: staff.id, note: null }),
+        decideNickRequest(handle.db, { requestId: request.id, decision: "rejected", deciderUserId: staff.id, note: "não" }),
+      ]);
+      expect(results.filter((r) => r.ok)).toHaveLength(1);
+      const [row] = await handle.db.select().from(schema.nickRequests).where(eq(schema.nickRequests.id, request.id));
+      expect((await getNickStatus(handle.db, u.id)).gameNick).toBe(row!.status === "approved" ? "Corrida" : "Antigo");
     });
   });
 });
