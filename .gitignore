@@ -12,3 +12,4 @@ coverage/
 .quality/
 test-results/
 playwright-report/
+*.tsbuildinfo
