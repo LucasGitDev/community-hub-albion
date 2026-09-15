@@ -7,7 +7,7 @@ import { Button } from "@/components/ui/button";
 import { useAuth, useCurrentUser } from "./AuthProvider";
 
 export function FullPageStatus({ children }: { children: ReactNode }) {
-  return <div className="grid min-h-dvh place-items-center px-4 text-muted">{children}</div>;
+  return <div className="grid min-h-dvh place-items-center px-4 text-muted-foreground">{children}</div>;
 }
 
 export function RequireAuth({ children }: { children: ReactNode }) {
@@ -19,7 +19,7 @@ export function RequireAuth({ children }: { children: ReactNode }) {
       <FullPageStatus>
         <div className="text-center">
           <p>Não foi possível falar com o servidor.</p>
-          <Button variant="secondary" className="mt-4" onClick={reload}>
+          <Button variant="outline" className="mt-4" onClick={reload}>
             Tentar de novo
           </Button>
         </div>
@@ -39,11 +39,11 @@ function AccessDenied() {
   return (
     <section aria-labelledby="denied-title">
       <PageHeader title="Acesso negado" description="Seu papel não permite abrir esta área." />
-      <div className="flex max-w-xl items-start gap-4 rounded-lg border border-rule bg-stone p-5">
-        <ShieldX className="mt-0.5 size-5 shrink-0 text-oxblood" aria-hidden />
+      <div className="flex max-w-xl items-start gap-4 rounded-xl border bg-card p-5">
+        <ShieldX className="mt-0.5 size-5 shrink-0 text-destructive" aria-hidden />
         <div>
           <p id="denied-title">Se você acha que deveria ter acesso, fale com um admin da comunidade no Discord.</p>
-          <Link to="/carteira" className="mt-3 inline-block text-sm text-brass hover:underline">
+          <Link to="/carteira" className="mt-3 inline-block text-sm font-medium underline-offset-4 hover:underline">
             Voltar pra carteira
           </Link>
         </div>

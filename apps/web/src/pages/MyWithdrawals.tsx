@@ -1,5 +1,6 @@
 import { Button } from "@/components/ui/button";
-import { PageHeader, Silver, StatusBadge } from "@/components/display";
+import { EmptyState, PageHeader, Silver, StatusBadge } from "@/components/display";
+import { HandCoins } from "lucide-react";
 import { WithdrawDialog } from "@/components/WithdrawDialog";
 import { cn } from "@/lib/utils";
 import { formatDateTime } from "@/lib/format";
@@ -21,9 +22,9 @@ export function MyWithdrawals() {
         action={<WithdrawDialog trigger={<Button disabled={available < MIN_WITHDRAWAL}>Pedir saque</Button>} />}
       />
       {list.length === 0 ? (
-        <p className="text-muted">Você ainda não pediu nenhum saque.</p>
+        <EmptyState icon={<HandCoins />} title="Você ainda não pediu nenhum saque." description={`Com pelo menos 1M disponível, peça aqui e a staff entrega a prata in-game.`} />
       ) : (
-        <ul className="space-y-3">
+        <ul className="divide-y overflow-hidden rounded-xl border bg-card">
           {list.map((w) => (
             <WithdrawalRow key={w.id} w={w} />
           ))}
@@ -35,7 +36,7 @@ export function MyWithdrawals() {
 
 export function WithdrawalTimeline({ w }: { w: Withdrawal }) {
   return (
-    <p className="text-sm text-faint">
+    <p className="text-sm text-muted-foreground">
       Pedido em {formatDateTime(w.requestedAt)}
       {w.decidedAt && `. ${w.status === "rejected" ? "Recusado" : "Aprovado"} por ${w.decidedBy} em ${formatDateTime(w.decidedAt)}`}
       {w.settledAt && `. Entregue por ${w.settledBy} em ${formatDateTime(w.settledAt)}`}
@@ -47,28 +48,24 @@ function WithdrawalRow({ w }: { w: Withdrawal }) {
   return (
     <li
       className={cn(
-        "rounded-lg border p-4 md:p-5",
-        w.status === "pending" && "border-dashed border-brass/50",
-        w.status === "approved" && "border-verdigris/40",
-        w.status === "rejected" && "border-rule",
-        w.status === "settled" && "border-rule",
+        "grid gap-x-6 gap-y-2 px-4 py-3 md:grid-cols-[12rem_minmax(0,1fr)] md:items-center",
+        w.status === "pending" && "shadow-[inset_3px_0_0_var(--warning)]",
+        w.status === "approved" && "shadow-[inset_3px_0_0_var(--info)]",
       )}
     >
-      <div className="flex flex-wrap items-center justify-between gap-3">
+      <div className="flex flex-wrap items-center justify-between gap-2 md:block">
         <Silver
           value={w.amount}
-          className={cn("text-3xl", w.status === "rejected" ? "text-faint line-through decoration-oxblood/70" : "text-silver")}
+          className={cn("text-2xl font-semibold", w.status === "rejected" && "text-muted-foreground line-through")}
         />
-        <StatusBadge status={w.status} />
+        <span className="md:mt-1 md:block">
+          <StatusBadge status={w.status} />
+        </span>
       </div>
-      <div className="mt-2">
+      <div className="min-w-0 space-y-1">
         <WithdrawalTimeline w={w} />
+        {w.note && <p className={cn("border-l-2 pl-3 text-sm", w.status === "rejected" && "border-destructive/60")}>{w.note}</p>}
       </div>
-      {w.note && (
-        <p className={cn("mt-3 border-l-2 pl-3 text-sm", w.status === "rejected" ? "border-oxblood/60" : "border-rule")}>
-          {w.note}
-        </p>
-      )}
     </li>
   );
 }

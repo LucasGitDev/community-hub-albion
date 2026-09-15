@@ -39,22 +39,22 @@ export function WithdrawDialog({ trigger }: { trigger: ReactNode }) {
     >
       <DialogTrigger asChild>{trigger}</DialogTrigger>
       <DialogContent>
-          <DialogTitle>Pedir saque</DialogTitle>
+          <DialogTitle className="text-xl">Pedir saque</DialogTitle>
           <DialogDescription>
             A staff entrega a prata in-game depois de aprovar. O valor fica reservado enquanto isso.
           </DialogDescription>
 
           {blocked ? (
-            <p className="mt-6 rounded-md border border-rule bg-ink p-4 text-sm text-muted">
-              Você precisa de pelo menos <Silver value={MIN_WITHDRAWAL} className="text-parchment" /> disponíveis. Hoje tem{" "}
-              <Silver value={available} className="text-parchment" />.
+            <p className="rounded-lg border bg-muted p-4 text-sm text-muted-foreground">
+              Você precisa de pelo menos <Silver value={MIN_WITHDRAWAL} className="text-foreground" /> disponíveis. Hoje tem{" "}
+              <Silver value={available} className="text-foreground" />.
             </p>
           ) : (
-            <form onSubmit={submit} className="mt-6">
-              <label htmlFor="amount" className="text-sm text-muted">
+            <form onSubmit={submit}>
+              <label htmlFor="amount" className="text-sm font-medium">
                 Valor
               </label>
-              <div className="mt-1.5 flex items-baseline gap-2 rounded-md border border-rule bg-ink px-3 focus-within:border-brass">
+              <div className="mt-2 flex items-center gap-2 rounded-lg border border-input bg-background px-3 transition-colors duration-150 focus-within:border-ring">
                 <input
                   id="amount"
                   autoFocus
@@ -68,25 +68,25 @@ export function WithdrawDialog({ trigger }: { trigger: ReactNode }) {
                   }}
                   aria-invalid={!!error}
                   aria-describedby="amount-help"
-                  className="num h-14 w-full bg-transparent text-3xl text-silver outline-none placeholder:text-faint"
+                  className="num h-14 w-full bg-transparent text-2xl font-semibold outline-none placeholder:text-muted-foreground/50"
                   style={{ outline: "none" }}
                 />
-                <span className="text-sm text-muted">prata</span>
+                <span className="text-sm text-muted-foreground">prata</span>
               </div>
               <div id="amount-help" className="mt-2 flex flex-wrap justify-between gap-2 text-xs" aria-live="polite">
                 {error ? (
-                  <span className="text-oxblood">{error}</span>
+                  <span className="text-destructive">{error}</span>
                 ) : (
-                  <span className="text-faint">
+                  <span className="text-muted-foreground">
                     Mínimo {formatSilverShort(MIN_WITHDRAWAL)}
                     {amount !== null && amount > 0n && `, você digitou ${formatSilver(amount)}`}
                   </span>
                 )}
-                <button type="button" className="text-brass hover:underline" onClick={() => setInput(formatSilver(available))}>
+                <button type="button" className="font-medium text-brand underline-offset-4 hover:underline" onClick={() => setInput(formatSilver(available))}>
                   Usar tudo ({formatSilverShort(available)})
                 </button>
               </div>
-              <div className="mt-8 flex justify-end gap-2">
+              <div className="mt-6 flex justify-end gap-2">
                 <DialogClose asChild>
                   <Button type="button" variant="ghost">
                     Cancelar
