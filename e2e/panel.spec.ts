@@ -13,6 +13,9 @@ const PEOPLE = {
   thalya: { discordId: "300000000000000102", roles: ["caller"] },
   grimwald: { discordId: "300000000000000103", roles: ["staff"] },
   kestrel: { discordId: "300000000000000104", roles: [] },
+  orin: { discordId: "300000000000000105", roles: [] },
+  valdris: { discordId: "300000000000000106", roles: ["admin"] },
+  brann: { discordId: "300000000000000107", roles: [] },
 } as const;
 
 /** Sessão real via dev-login (AUTH_DEV_LOGIN só em dev/e2e); cookie fica no contexto da página. */
@@ -145,5 +148,28 @@ test("refresh em rota client-side e /api servidos pelo Nest (TASK-004)", async (
   const missing = await request.get("/api/nao-existe");
   expect(missing.status()).toBe(404);
   expect(missing.headers()["content-type"]).toContain("application/json");
+});
+
+test("admin concede e remove caller pelo painel (TASK-011 AC#1)", async ({ page }, testInfo) => {
+  // Usuário próprio por projeto (desktop/mobile rodam em paralelo no mesmo banco).
+  const who = testInfo.project.name === "mobile" ? "brann" : "orin";
+  await loginAs(page, who);
+  await loginAs(page, "valdris");
+  await page.goto("/admin/papeis");
+  const row = page.getByRole("listitem").filter({ hasText: `@${who}` });
+  const caller = row.getByRole("button", { name: "Caller" });
+  await expect(caller).toHaveAttribute("aria-pressed", "false");
+  await caller.click();
+  await expect(page.getByText(`Caller concedido a ${who}`)).toBeVisible();
+  await expect(caller).toHaveAttribute("aria-pressed", "true");
+  await snap(page, "admin-papeis");
+
+  await loginAs(page, who);
+  await expect(page.getByRole("link", { name: "Eventos" }).first()).toBeVisible();
+
+  await loginAs(page, "valdris");
+  await page.goto("/admin/papeis");
+  await page.getByRole("listitem").filter({ hasText: `@${who}` }).getByRole("button", { name: "Caller" }).click();
+  await expect(page.getByText(`Caller removido de ${who}`)).toBeVisible();
 });
 
