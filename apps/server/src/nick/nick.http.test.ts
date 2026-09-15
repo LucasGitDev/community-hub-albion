@@ -39,6 +39,7 @@ describe.skipIf(!baseUrl)("nick do usuário HTTP (TASK-012, Q14/Q31)", () => {
       DISCORD_CLIENT_ID: "223456789012345678",
       DISCORD_CLIENT_SECRET: "secret",
       DISCORD_MEMBER_ROLE_ID: "323456789012345678",
+      DISCORD_STAFF_CHANNEL_ID: "423456789012345678",
       PUBLIC_URL,
     });
     if (!parsed.ok) throw new Error(parsed.message);
