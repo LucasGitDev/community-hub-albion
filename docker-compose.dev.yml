@@ -1,0 +1,22 @@
+# Postgres local SOMENTE para desenvolvimento/testes (compose de produção: TASK-005).
+#   docker compose -f docker-compose.dev.yml up -d
+#   docker compose -f docker-compose.dev.yml down        (-v apaga os dados)
+services:
+  postgres:
+    image: postgres:17
+    environment:
+      POSTGRES_USER: albion
+      POSTGRES_PASSWORD: albion
+      POSTGRES_DB: albion_hub
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+    volumes:
+      - pgdata-dev:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U albion -d albion_hub"]
+      interval: 2s
+      timeout: 3s
+      retries: 20
+
+volumes:
+  pgdata-dev:
