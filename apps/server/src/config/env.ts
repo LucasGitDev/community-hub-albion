@@ -40,6 +40,13 @@ const envSchema = z.object({
     .regex(SNOWFLAKE, { error: "formato inválido (esperado snowflake numérico de 17 a 20 dígitos)" })
     .optional()
     .or(z.literal("").transform(() => undefined)),
+  // Canal da staff onde o bot publica pedidos de nick com botões (TASK-015). Obrigatório com o bot ligado.
+  DISCORD_STAFF_CHANNEL_ID: z
+    .string()
+    .trim()
+    .regex(SNOWFLAKE, { error: "formato inválido (esperado snowflake numérico de 17 a 20 dígitos)" })
+    .optional()
+    .or(z.literal("").transform(() => undefined)),
   // Build da SPA servida na raiz. Default: apps/web/dist relativo ao dist do server (monorepo). Docker define explícito.
   WEB_DIST_DIR: z
     .string()
@@ -95,6 +102,9 @@ const envSchema = z.object({
 }).refine((env) => !env.DISCORD_BOT_ENABLED || env.DISCORD_MEMBER_ROLE_ID !== undefined, {
   error: "obrigatória com DISCORD_BOT_ENABLED=true",
   path: ["DISCORD_MEMBER_ROLE_ID"],
+}).refine((env) => !env.DISCORD_BOT_ENABLED || env.DISCORD_STAFF_CHANNEL_ID !== undefined, {
+  error: "obrigatória com DISCORD_BOT_ENABLED=true",
+  path: ["DISCORD_STAFF_CHANNEL_ID"],
 }).refine((env) => env.NODE_ENV !== "production" || !env.AUTH_DEV_LOGIN, {
   error: "não pode ser true em produção",
   path: ["AUTH_DEV_LOGIN"],
