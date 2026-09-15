@@ -67,9 +67,9 @@ describe("nick embed (TASK-015)", () => {
     expect(field(buildNickEmbed({ ...base, status: "rejected", decisionNote: null }), "Motivo")).toBe("Sem motivo registrado.");
   });
 
-  it("extensão TASK-016: resultado da busca no Albion aparece quando informado", () => {
-    expect(field(buildNickEmbed({ ...base, lookup: { summary: "Encontrado" } }), "API do Albion")).toBe("Encontrado");
-    expect(field(buildNickEmbed(base), "API do Albion")).toBeUndefined();
+  it("TASK-016: resultado da busca no Albion aparece quando informado", () => {
+    expect(field(buildNickEmbed({ ...base, lookup: { summary: "Encontrado" } }), "Albion")).toBe("Encontrado");
+    expect(field(buildNickEmbed(base), "Albion")).toBeUndefined();
   });
 
   it("modal de recusa exige motivo de 1 a 300 e título cabe no limite do Discord", () => {
