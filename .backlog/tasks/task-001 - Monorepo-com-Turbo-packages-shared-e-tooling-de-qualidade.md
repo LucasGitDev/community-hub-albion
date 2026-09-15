@@ -1,10 +1,10 @@
 ---
 id: TASK-001
 title: 'Monorepo com Turbo, packages shared e tooling de qualidade'
-status: To Do
+status: Done
 assignee: []
 created_date: '2026-09-15 03:23'
-updated_date: '2026-09-15 04:00'
+updated_date: '2026-09-15 05:23'
 labels:
   - infra
   - ci
@@ -36,7 +36,7 @@ Base do monorepo albion-hub (Q2) conforme doc-002: apps/server, apps/web, packag
 - [x] #5 Comportamento confere com decisões do doc-005 (Qs citadas) e nada fora do escopo da task
 - [x] #6 Toca auth, ledger, prata ou saque: security-review sem achado crítico
 - [x] #7 Notas e final summary com evidências; commits Conventional atômicos sem co-autor
-- [ ] #8 PR merged na main com quality gate verde; branch e worktree removidos
+- [x] #8 PR merged na main com quality gate verde; branch e worktree removidos
 <!-- DOD:END -->
 
 ## Implementation Notes

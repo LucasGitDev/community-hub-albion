@@ -3,7 +3,7 @@ id: doc-003
 title: Skills
 type: guide
 created_date: '2026-09-15 02:46'
-updated_date: '2026-09-15 03:50'
+updated_date: '2026-09-15 05:23'
 ---
 
 Skills ficam em `.agents/skills/` (symlink em `.claude/skills/`), versionadas via `skills-lock.json`.
@@ -19,7 +19,7 @@ Várias skills podem ser combinadas numa mesma tarefa.
 | `find-animation-opportunities` | emilkowalski/skill | tela pronta parece "seca" | fases de polish |
 | `animation-vocabulary` | emilkowalski/skill | descrição vaga de efeito → termo preciso | apoio |
 | `apple-design` | emilkowalski/skill | interações físicas/fluidas, gestos, sheets | `apps/web` |
-| `pick-ui-library` | emilkowalski/skill | antes de adicionar lib de frontend | `apps/web` |
+| `pick-ui-library` | emilkowalski/skill | antes de adicionar lib de frontend — **só o usuário invoca** (`/pick-ui-library`); agent registra a lib escolhida nas notas e pede revisão | `apps/web` |
 | `prototype` | emilkowalski/skill | decisão de layout com alternativas reais | telas novas |
 | `ask-sonner` | emilkowalski/skill | toasts/notificações no painel | `apps/web` |
 | `frontend-design` | global | direção estética, tipografia | `apps/web` |
