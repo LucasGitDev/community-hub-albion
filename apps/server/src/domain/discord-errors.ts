@@ -6,7 +6,13 @@ export function describeDiscordError(error: unknown): string {
     return `Discord recusou acesso (${message}). Convide o bot na guild GUILD_ID com os escopos "bot" e "applications.commands".`;
   }
   if (code === 50013) {
-    return `Bot sem permissão no Discord (${message}). Confira os cargos/permissões do bot na guild.`;
+    return `Bot sem permissão no Discord (${message}). Confira as permissões do bot (Gerenciar Apelidos/Cargos) e se o cargo do bot está acima do cargo alvo e do membro (o dono da guild nunca pode ter o apelido alterado por bots).`;
+  }
+  if (code === "GUILD_OWNER_NICKNAME") {
+    return `${message}. Limitação do Discord: altere o apelido do dono manualmente.`;
+  }
+  if (code === 10007) {
+    return `Membro não está na guild (${message}). Nada aplicado no Discord.`;
   }
   return `Erro do cliente Discord: ${message}`;
 }
