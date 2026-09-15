@@ -19,7 +19,12 @@ interface NickRequestDto {
 export interface MyNickResponse {
   gameNick: string | null;
   pending: NickRequestDto | null;
+  /** Última decisão foi recusa: nick recusado, motivo e quando (TASK-013). Não expõe quem recusou. */
+  lastRejection: { nick: string; note: string | null; decidedAt: string } | null;
 }
+
+const toRejection = (r: NickRequest | null): MyNickResponse["lastRejection"] =>
+  r ? { nick: r.nick, note: r.decisionNote, decidedAt: r.decidedAt!.toISOString() } : null;
 
 const toDto = (r: NickRequest): NickRequestDto => ({
   id: r.id,
@@ -31,7 +36,7 @@ const toDto = (r: NickRequest): NickRequestDto => ({
 
 const header = (value: unknown) => (typeof value === "string" ? value : undefined);
 
-/** Nick do próprio usuário (TASK-012). Fila e decisão da staff ficam na TASK-013. */
+/** Nick do próprio usuário (TASK-012). Decisão da staff: members/ (TASK-013). */
 @Controller("me/nick")
 export class NickController {
   constructor(
@@ -43,8 +48,8 @@ export class NickController {
   @Authorize("read", "MemberRequest")
   async status(@CurrentAuth() auth: AuthorizedRequest["auth"], @Res({ passthrough: true }) res: Response): Promise<MyNickResponse> {
     res.setHeader("Cache-Control", "no-store");
-    const { gameNick, pending } = await getNickStatus(this.handle.db, auth.user.id);
-    return { gameNick, pending: pending ? toDto(pending) : null };
+    const { gameNick, pending, lastRejected } = await getNickStatus(this.handle.db, auth.user.id);
+    return { gameNick, pending: pending ? toDto(pending) : null, lastRejection: toRejection(lastRejected) };
   }
 
   /**
@@ -70,6 +75,6 @@ export class NickController {
     const { request, created } = await requestNick(db, auth.user.id, parsed.nick);
     res.status(created ? 201 : 200);
     res.setHeader("Cache-Control", "no-store");
-    return { gameNick: current.gameNick, pending: toDto(request) };
+    return { gameNick: current.gameNick, pending: toDto(request), lastRejection: toRejection(current.lastRejected) };
   }
 }
