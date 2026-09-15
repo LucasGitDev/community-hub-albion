@@ -2,6 +2,12 @@ import { defineConfig, devices } from "@playwright/test";
 
 const PORT = 4173;
 
+// TASK-010: login real (sessão no Postgres) via dev-login; e2e precisa de banco.
+const E2E_DATABASE_URL = process.env.TEST_DATABASE_URL ?? process.env.DATABASE_URL;
+if (!E2E_DATABASE_URL) {
+  throw new Error("e2e precisa de Postgres: exporte TEST_DATABASE_URL (veja CLAUDE.md, seção Quality gate).");
+}
+
 export default defineConfig({
   testDir: "e2e",
   outputDir: "test-results",
@@ -19,10 +25,9 @@ export default defineConfig({
     { name: "desktop", use: { ...devices["Desktop Chrome"], viewport: { width: 1280, height: 860 } } },
     { name: "mobile", use: { ...devices["Pixel 7"], viewport: { width: 400, height: 860 } } },
   ],
-  // TASK-004: e2e roda contra o Nest real servindo a SPA (mesmo processo da produção), sem Discord.
+  // TASK-004/010: e2e roda contra o Nest real servindo a SPA, com banco e dev-login (sem Discord).
   webServer: {
     command: "pnpm exec turbo run build --filter=@albion-hub/web... --filter=@albion-hub/server... && node apps/server/dist/main.js",
-    // raiz = SPA (200). /api/health daria 503 sem banco e o Playwright não consideraria pronto.
     url: `http://localhost:${PORT}/`,
     reuseExistingServer: !process.env.CI,
     timeout: 180_000,
@@ -31,8 +36,9 @@ export default defineConfig({
       DISCORD_TOKEN: "e2e.fake.token",
       GUILD_ID: "123456789012345678",
       DISCORD_BOT_ENABLED: "false",
-      RUN_MIGRATIONS: "false",
-      DATABASE_URL: process.env.TEST_DATABASE_URL ?? "postgres://albion:albion@127.0.0.1:1/indisponivel",
+      RUN_MIGRATIONS: "true",
+      AUTH_DEV_LOGIN: "true",
+      DATABASE_URL: E2E_DATABASE_URL,
       NODE_ENV: "test",
       DISCORD_CLIENT_ID: "223456789012345678",
       DISCORD_CLIENT_SECRET: "e2e-fake-secret",
