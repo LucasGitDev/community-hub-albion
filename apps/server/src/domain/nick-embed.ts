@@ -24,7 +24,7 @@ export const NICK_EMBED_COLORS = { pending: 0xf1c40f, approved: 0x2ecc71, reject
 
 /** Extensão TASK-016: resultado da busca do nick na API do Albion (ajuda, não bloqueio — Q14). */
 export interface NickLookupView {
-  /** Texto curto já em PT-BR, ex.: "Encontrado na API do Albion (guilda X)". */
+  /** Texto curto já em PT-BR, ex.: saída de describeAlbionLookup. */
   summary: string;
 }
 
@@ -73,7 +73,7 @@ export function buildNickEmbed(input: NickEmbedInput): NickEmbedView {
     fields.push({ name: "Nick pedido", value: input.nick, inline: true });
   }
   fields.push({ name: "Pedido em", value: when(input.createdAt) });
-  if (input.lookup) fields.push({ name: "API do Albion", value: input.lookup.summary });
+  if (input.lookup) fields.push({ name: "Albion", value: input.lookup.summary });
 
   if (input.status === "pending") {
     fields.push({ name: "Status", value: "Aguardando staff" });

@@ -9,6 +9,8 @@ import { DB_HANDLE } from "../db/db.module.js";
 import { NICK_BUTTON_REPLIES, NICK_EMBED_COLORS, type NickEmbedView } from "../domain/nick-embed.js";
 import { NickDecisionService, type NickDecidedEvent } from "../members/nick-decision.service.js";
 import { NickRequestService } from "../members/nick-request.service.js";
+import { ALBION_PLAYER_LOOKUP } from "../members/albion-lookup.token.js";
+import type { AlbionLookupResult } from "@albion-hub/shared";
 import { NickEmbedInteractions, type ButtonInteractionLike, type ModalInteractionLike } from "./nick-embed.interactions.js";
 import { NickStaffEmbedService } from "./nick-staff-embed.service.js";
 import { STAFF_CHANNEL_GATEWAY, type StaffChannelGateway } from "./staff-channel.gateway.js";
@@ -40,6 +42,7 @@ describe.skipIf(!baseUrl)("embed de pedido de nick com botões (TASK-015, Postgr
   let seq = 0;
   const gateway = { postNickRequest: vi.fn<StaffChannelGateway["postNickRequest"]>(), editNickRequest: vi.fn<StaffChannelGateway["editNickRequest"]>() };
   const decided: NickDecidedEvent[] = [];
+  const albion = { lookup: vi.fn<(nick: string) => Promise<AlbionLookupResult>>() };
 
   beforeAll(async () => {
     const target = new URL(baseUrl!);
@@ -59,6 +62,7 @@ describe.skipIf(!baseUrl)("embed de pedido de nick com botões (TASK-015, Postgr
         NickEmbedInteractions,
         { provide: DB_HANDLE, useValue: handle },
         { provide: STAFF_CHANNEL_GATEWAY, useValue: gateway },
+        { provide: ALBION_PLAYER_LOOKUP, useValue: albion },
       ],
     }).compile();
     moduleRef.useLogger(false);
@@ -82,6 +86,7 @@ describe.skipIf(!baseUrl)("embed de pedido de nick com botões (TASK-015, Postgr
     decided.length = 0;
     gateway.postNickRequest.mockReset().mockImplementation(async () => `77700000000000${String(++posted).padStart(4, "0")}`);
     gateway.editNickRequest.mockReset().mockResolvedValue(undefined);
+    albion.lookup.mockReset().mockResolvedValue({ status: "disabled" });
   });
 
   async function user(roles: Role[], gameNick: string | null = null) {
@@ -258,7 +263,7 @@ describe.skipIf(!baseUrl)("embed de pedido de nick com botões (TASK-015, Postgr
     expect(gateway.postNickRequest).not.toHaveBeenCalled();
     await embeds.sync("00000000-0000-4000-8000-000000000000");
     expect(log).toHaveBeenCalledWith(expect.stringContaining("não encontrado"));
-    const broken = new NickStaffEmbedService(requests, decisions, { db: { select: () => { throw new Error("db down"); } } } as never, gateway);
+    const broken = new NickStaffEmbedService(requests, decisions, { db: { select: () => { throw new Error("db down"); } } } as never, gateway, albion);
     const brokenLog = logger(broken);
     await expect(broken.sync(request.id)).resolves.toBeUndefined();
     expect(brokenLog).toHaveBeenCalledWith(expect.stringContaining("db down"));
@@ -286,5 +291,30 @@ describe.skipIf(!baseUrl)("embed de pedido de nick com botões (TASK-015, Postgr
     expect(log).toHaveBeenCalledWith(expect.stringContaining("Não consegui responder"));
     spy.mockRestore();
     log.mockRestore();
+  });
+
+  it("embed mostra a consulta Albion; desligada omite; indisponível ou erro não impede publicar (TASK-016 AC#3)", async () => {
+    const albionField = (view: NickEmbedView) => view.fields.find((f) => f.name === "Albion")?.value;
+    const member = await user(["member"]);
+    albion.lookup.mockResolvedValue({ status: "found", region: "americas", playerId: "p1", name: "Achado", guildName: "Guilda X", checkedAt: new Date().toISOString() });
+    await requests.request(member.id, "Achado");
+    expect(albion.lookup).toHaveBeenCalledWith("Achado");
+    expect(albionField(gateway.postNickRequest.mock.calls[0]![0])).toMatch(/^Encontrado no Albion .*guilda Guilda X$/);
+
+    albion.lookup.mockResolvedValue({ status: "unavailable", region: "americas", checkedAt: new Date().toISOString() });
+    await requests.request(member.id, "Fora");
+    expect(albionField(lastEdit()![1])).toBeTruthy();
+
+    const log = vi.spyOn((embeds as unknown as { logger: { warn: (m: string) => void } }).logger, "warn").mockImplementation(() => {});
+    albion.lookup.mockRejectedValue(new Error("boom"));
+    await requests.request(member.id, "Explode");
+    expect(albionField(lastEdit()![1])).toBeUndefined();
+    expect(log).toHaveBeenCalledWith(expect.stringContaining("boom"));
+    log.mockRestore();
+
+    const other = await user(["member"]);
+    albion.lookup.mockResolvedValue({ status: "disabled" });
+    await requests.request(other.id, "Desligado");
+    expect(albionField(gateway.postNickRequest.mock.calls.at(-1)![0])).toBeUndefined();
   });
 });

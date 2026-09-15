@@ -1,5 +1,8 @@
 import { Inject, Injectable, Logger, type OnModuleDestroy, type OnModuleInit } from "@nestjs/common";
 import { getNickRequestEmbedData, setNickRequestDiscordMessageId, type DbHandle, type NickRequestEmbedData } from "@albion-hub/db";
+import { describeAlbionLookup } from "@albion-hub/shared";
+import type { AlbionPlayerLookup } from "../domain/albion-lookup.js";
+import { ALBION_PLAYER_LOOKUP } from "../members/albion-lookup.token.js";
 import { DB_HANDLE } from "../db/db.module.js";
 import { describeDiscordError } from "../domain/discord-errors.js";
 import { buildNickEmbed, type NickLookupView } from "../domain/nick-embed.js";
@@ -24,6 +27,7 @@ export class NickStaffEmbedService implements OnModuleInit, OnModuleDestroy {
     private readonly decisions: NickDecisionService,
     @Inject(DB_HANDLE) private readonly handle: DbHandle,
     @Inject(STAFF_CHANNEL_GATEWAY) private readonly gateway: StaffChannelGateway,
+    @Inject(ALBION_PLAYER_LOOKUP) private readonly albion: AlbionPlayerLookup,
   ) {}
 
   onModuleInit(): void {
@@ -60,7 +64,7 @@ export class NickStaffEmbedService implements OnModuleInit, OnModuleDestroy {
       decidedAt: data.request.decidedAt,
       deciderDiscordId: data.decider?.discordId ?? null,
       decisionNote: data.request.decisionNote,
-      lookup: this.lookupFor(data),
+      lookup: await this.lookupFor(data),
     });
     const messageId = data.request.discordMessageId;
     if (messageId) {
@@ -83,12 +87,15 @@ export class NickStaffEmbedService implements OnModuleInit, OnModuleDestroy {
     }
   }
 
-  /**
-   * Extensão TASK-016: resultado da busca do nick na API do Albion. Enquanto a busca não existir na main,
-   * o embed sai sem esse campo.
-   */
-  protected lookupFor(_data: NickRequestEmbedData): NickLookupView | null {
-    return null;
+  /** Resultado da consulta Albion (TASK-016 AC#3). Desligada → sem campo; falha nunca impede publicar/editar (Q14). */
+  private async lookupFor(data: NickRequestEmbedData): Promise<NickLookupView | null> {
+    try {
+      const summary = describeAlbionLookup(await this.albion.lookup(data.request.nick));
+      return summary ? { summary } : null;
+    } catch (error) {
+      this.logger.warn(`Embed do pedido ${data.request.id}: consulta Albion falhou: ${String(error)}`);
+      return null;
+    }
   }
 }
 
