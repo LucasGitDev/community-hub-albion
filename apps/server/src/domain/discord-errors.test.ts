@@ -12,6 +12,14 @@ describe("describeDiscordError", () => {
     expect(describeDiscordError(discordError(50013, "Missing Permissions"))).toContain("Bot sem permissão");
   });
 
+  it("10007 explica que o membro não está na guild", () => {
+    expect(describeDiscordError(discordError(10007, "Unknown Member"))).toContain("Membro não está na guild");
+  });
+
+  it("dono da guild orienta ajuste manual", () => {
+    expect(describeDiscordError(Object.assign(new Error("Dono"), { code: "GUILD_OWNER_NICKNAME" }))).toContain("manualmente");
+  });
+
   it("outros erros e valores não-Error", () => {
     expect(describeDiscordError(new Error("boom"))).toBe("Erro do cliente Discord: boom");
     expect(describeDiscordError("x")).toBe("Erro do cliente Discord: x");
