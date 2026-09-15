@@ -26,8 +26,8 @@ jobs:
     runs-on: ubuntu-latest
     environment: production
     env:
-      # Imagem: variable DOCKERHUB_IMAGE ou, sem ela, <DOCKERHUB_USERNAME>/albion-hub.
-      DOCKERHUB_IMAGE: ${{ vars.DOCKERHUB_IMAGE != '' && vars.DOCKERHUB_IMAGE || format('{0}/albion-hub', secrets.DOCKERHUB_USERNAME) }}
+      # Imagem: variable DOCKERHUB_IMAGE ou, sem ela, <DOCKERHUB_USERNAME>/albion-hub (resolvida no 1º step).
+      DOCKERHUB_IMAGE_VAR: ${{ vars.DOCKERHUB_IMAGE }}
       # Commit exato que passou no gate (no manual, o HEAD da main).
       DEPLOY_SHA: ${{ github.event.workflow_run.head_sha || github.sha }}
     steps:
@@ -44,15 +44,26 @@ jobs:
             echo "::error::Faltam secrets em Settings > Secrets and variables > Actions: ${missing[*]}"
             exit 1
           fi
-          echo "Imagem: $DOCKERHUB_IMAGE  commit: $DEPLOY_SHA"
+          user="$(printf '%s' "$DOCKERHUB_USERNAME" | tr -d '[:space:]' | tr '[:upper:]' '[:lower:]')"
+          image="${DOCKERHUB_IMAGE_VAR:-$user/albion-hub}"
+          echo "DOCKERHUB_IMAGE=$image" >> "$GITHUB_ENV"
+          echo "Imagem: $image  commit: $DEPLOY_SHA"
       - uses: actions/checkout@v4
         with:
           ref: ${{ env.DEPLOY_SHA }}
       - uses: docker/setup-buildx-action@v3
-      - uses: docker/login-action@v3
-        with:
-          username: ${{ secrets.DOCKERHUB_USERNAME }}
-          password: ${{ secrets.DOCKERHUB_TOKEN }}
+      # Login manual com trim: secret colado com quebra de linha/espaço gera
+      # "malformed HTTP Authorization header" no docker/login-action.
+      - name: Login no Docker Hub
+        shell: bash
+        env:
+          DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
+          DOCKERHUB_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}
+        run: |
+          user="$(printf '%s' "$DOCKERHUB_USERNAME" | tr -d '[:space:]')"
+          token="$(printf '%s' "$DOCKERHUB_TOKEN" | tr -d '[:space:]')"
+          case "$user" in *@*) echo "::error::DOCKERHUB_USERNAME deve ser o usuário do Docker Hub, não o e-mail"; exit 1;; esac
+          printf '%s' "$token" | docker login docker.io --username "$user" --password-stdin
       - id: short
         shell: bash
         run: echo "sha=${DEPLOY_SHA::7}" >> "$GITHUB_OUTPUT"
