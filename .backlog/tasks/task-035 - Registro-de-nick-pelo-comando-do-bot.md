@@ -1,10 +1,10 @@
 ---
 id: TASK-035
 title: Registro de nick pelo comando do bot
-status: In Progress
+status: Done
 assignee: []
 created_date: '2026-09-15 13:59'
-updated_date: '2026-09-15 14:06'
+updated_date: '2026-09-15 20:49'
 labels:
   - bot
   - backend
@@ -40,7 +40,7 @@ Mudança pedida pelo usuário (2026-09-15): membro registra ou troca o nick por 
 - [x] #5 Comportamento confere com decisões do doc-005 (Qs citadas) e nada fora do escopo da task
 - [x] #6 Toca auth, ledger, prata ou saque: security-review sem achado crítico
 - [x] #7 Notas e final summary com evidências; commits Conventional atômicos sem co-autor
-- [ ] #8 PR merged na main com quality gate verde; branch e worktree removidos
+- [x] #8 PR merged na main com quality gate verde; branch e worktree removidos
 <!-- DOD:END -->
 
 ## Implementation Plan
