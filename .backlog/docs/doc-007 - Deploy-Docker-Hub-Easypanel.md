@@ -3,7 +3,7 @@ id: doc-007
 title: Deploy (Docker Hub + Easypanel)
 type: guide
 created_date: '2026-09-15 12:56'
-updated_date: '2026-09-15 12:56'
+updated_date: '2026-09-15 13:01'
 ---
 Deploy de produção: **GitHub Actions → Docker Hub → Easypanel**.
 
@@ -20,7 +20,7 @@ Deploy de produção: **GitHub Actions → Docker Hub → Easypanel**.
 | Variable | `DOCKERHUB_IMAGE` | `usuario/albion-hub` |
 | Secret (opcional) | `EASYPANEL_DEPLOY_WEBHOOK` | URL do Deploy Webhook do serviço no Easypanel |
 
-Sem os obrigatórios, o job `publish` falha com mensagem dizendo o que falta.
+Sem os obrigatórios, o job `publish` pula a publicação com um aviso dizendo o que falta (a main não fica vermelha).
 
 ## Easypanel
 - **Postgres**: serviço Postgres 17 do Easypanel; usar a URL interna em `DATABASE_URL`.

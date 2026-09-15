@@ -150,7 +150,9 @@ jobs:
     env:
       DOCKERHUB_IMAGE: ${{ vars.DOCKERHUB_IMAGE }}
     steps:
+      # Sem secrets/variable, avisa e pula (não deixa a main vermelha antes da configuração).
       - name: Verifica configuração do Docker Hub
+        id: config
         shell: bash
         env:
           DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
@@ -161,16 +163,22 @@ jobs:
           [ -z "$DOCKERHUB_TOKEN" ] && missing+=("secret DOCKERHUB_TOKEN")
           [ -z "$DOCKERHUB_IMAGE" ] && missing+=("variable DOCKERHUB_IMAGE (ex: usuario/albion-hub)")
           if [ ${#missing[@]} -gt 0 ]; then
-            echo "::error::Configure em Settings > Secrets and variables > Actions: ${missing[*]}"
-            exit 1
+            echo "::warning::Publicação pulada. Configure em Settings > Secrets and variables > Actions: ${missing[*]}"
+            echo "ready=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "ready=true" >> "$GITHUB_OUTPUT"
           fi
       - uses: actions/checkout@v4
+        if: steps.config.outputs.ready == 'true'
       - uses: docker/setup-buildx-action@v3
+        if: steps.config.outputs.ready == 'true'
       - uses: docker/login-action@v3
+        if: steps.config.outputs.ready == 'true'
         with:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
       - id: meta
+        if: steps.config.outputs.ready == 'true'
         uses: docker/metadata-action@v5
         with:
           images: ${{ env.DOCKERHUB_IMAGE }}
@@ -178,6 +186,7 @@ jobs:
             type=raw,value=latest
             type=sha,prefix=sha-,format=short
       - uses: docker/build-push-action@v6
+        if: steps.config.outputs.ready == 'true'
         with:
           context: .
           platforms: linux/amd64
@@ -188,6 +197,7 @@ jobs:
           cache-to: type=gha,mode=max
       # Opcional: dispara o deploy no Easypanel (Deploy Webhook do serviço).
       - name: Deploy no Easypanel
+        if: steps.config.outputs.ready == 'true'
         shell: bash
         env:
           EASYPANEL_DEPLOY_WEBHOOK: ${{ secrets.EASYPANEL_DEPLOY_WEBHOOK }}
