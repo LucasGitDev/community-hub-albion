@@ -1,5 +1,5 @@
 import { BadRequestException, Body, ConflictException, Controller, ForbiddenException, Get, Inject, Post, Req, Res } from "@nestjs/common";
-import { getNickStatus, requestNick, type DbHandle, type NickRequest } from "@albion-hub/db";
+import { getNickStatus, type DbHandle, type NickRequest } from "@albion-hub/db";
 import { sameNick, validateNick, type NickRequestStatus } from "@albion-hub/shared";
 import type { Request, Response } from "express";
 import type { Env } from "../config/env.js";
@@ -9,6 +9,7 @@ import { ALBION_PLAYER_LOOKUP } from "../members/albion-lookup.token.js";
 import { AUTH_ENV } from "../auth/auth.controller.js";
 import { Authorize, CurrentAuth, type AuthorizedRequest } from "../auth/authorize.js";
 import { isSameOriginRequest } from "../domain/auth.js";
+import { NickRequestService } from "../members/nick-request.service.js";
 
 interface NickRequestDto {
   id: string;
@@ -45,6 +46,7 @@ export class NickController {
     @Inject(DB_HANDLE) private readonly handle: DbHandle,
     @Inject(AUTH_ENV) private readonly env: Env,
     @Inject(ALBION_PLAYER_LOOKUP) private readonly albion: AlbionPlayerLookup,
+    @Inject(NickRequestService) private readonly requests: NickRequestService,
   ) {}
 
   @Get()
@@ -75,7 +77,7 @@ export class NickController {
     const db = this.handle.db;
     const current = await getNickStatus(db, auth.user.id);
     if (sameNick(current.gameNick, parsed.nick)) throw new ConflictException("Esse já é o seu nick atual.");
-    const { request, created } = await requestNick(db, auth.user.id, parsed.nick);
+    const { request, created } = await this.requests.request(auth.user.id, parsed.nick);
     // Pré-aquece o cache da consulta Albion pra fila da staff (TASK-016). Sem await: nunca atrasa nem derruba o pedido.
     this.albion.lookup(request.nick).catch(() => undefined);
     res.status(created ? 201 : 200);

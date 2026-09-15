@@ -8,6 +8,7 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { AppModule, configureApp } from "../app.module.js";
 import { parseEnv } from "../config/env.js";
 import { ALBION_PLAYER_LOOKUP } from "../members/albion-lookup.token.js";
+import { NickRequestService, type NickRequestedEvent } from "../members/nick-request.service.js";
 
 const baseUrl = process.env.TEST_DATABASE_URL ?? process.env.DATABASE_URL;
 if (!baseUrl && process.env.CI) throw new Error("CI sem TEST_DATABASE_URL: testes HTTP de nick não podem ser pulados");
@@ -135,5 +136,24 @@ describe.skipIf(!baseUrl)("nick do usuário HTTP (TASK-012, Q14/Q31)", () => {
     expect((await post(cookie, { nick: "KestrelNovo" }, "https://evil.example")).status).toBe(403);
     const status = await request(app.getHttpServer()).get("/api/me/nick").set("Cookie", cookie);
     expect(status.body.pending).toBeNull();
+  });
+
+  it("hook onRequested recebe pedido criado e corrigido; listener com erro não quebra o pedido (TASK-015)", async () => {
+    const events: NickRequestedEvent[] = [];
+    const service = app.get(NickRequestService);
+    const off = service.onRequested((e) => void events.push(e));
+    const offBroken = service.onRequested(() => {
+      throw new Error("Discord fora");
+    });
+    const { cookie } = await member("600000000000000077");
+    expect((await post(cookie, { nick: "Gancho" })).status).toBe(201);
+    expect((await post(cookie, { nick: "GanchoDois" })).status).toBe(200);
+    off();
+    offBroken();
+    expect(events.map((e) => [e.created, e.request.nick])).toEqual([
+      [true, "Gancho"],
+      [false, "GanchoDois"],
+    ]);
+    expect(events[0]!.request.id).toBe(events[1]!.request.id);
   });
 });

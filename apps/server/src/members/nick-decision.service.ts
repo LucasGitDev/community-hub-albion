@@ -1,6 +1,7 @@
 import { Inject, Injectable, Logger } from "@nestjs/common";
 import { decideNickRequest, type DbHandle, type NickDecision, type NickRequest } from "@albion-hub/db";
 import { DB_HANDLE } from "../db/db.module.js";
+import { ListenerSet } from "./listener-set.js";
 
 /** Evento emitido depois que a decisão foi gravada (TASK-014 aplica apelido/cargo no Discord). */
 export interface NickDecidedEvent {
@@ -22,17 +23,13 @@ export type NickDecisionResult = { ok: true; request: NickRequest } | { ok: fals
 @Injectable()
 export class NickDecisionService {
   private readonly logger = new Logger(NickDecisionService.name);
-  private readonly listeners: NickDecidedListener[] = [];
+  private readonly listeners = new ListenerSet<NickDecidedEvent>(this.logger, "Listener de decisão de nick");
 
   constructor(@Inject(DB_HANDLE) private readonly handle: DbHandle) {}
 
   /** Registra um listener (ex.: módulo do bot no onModuleInit). Retorna função pra remover. */
   onDecided(listener: NickDecidedListener): () => void {
-    this.listeners.push(listener);
-    return () => {
-      const i = this.listeners.indexOf(listener);
-      if (i >= 0) this.listeners.splice(i, 1);
-    };
+    return this.listeners.add(listener);
   }
 
   approve(requestId: string, deciderUserId: string, note: string | null = null): Promise<NickDecisionResult> {
@@ -49,13 +46,7 @@ export class NickDecisionService {
     const result = await decideNickRequest(this.handle.db, { requestId, decision, deciderUserId, note });
     if (!result.ok) return result;
     const event: NickDecidedEvent = { decision, request: result.request, previousGameNick: result.previousGameNick, deciderUserId };
-    for (const listener of [...this.listeners]) {
-      try {
-        await listener(event);
-      } catch (error) {
-        this.logger.error(`Listener de decisão de nick falhou (request ${requestId}): ${error instanceof Error ? error.message : String(error)}`);
-      }
-    }
+    await this.listeners.emit(event, `request ${requestId}`);
     return { ok: true, request: result.request };
   }
 }
