@@ -3,24 +3,25 @@ id: doc-007
 title: Deploy (Docker Hub + Easypanel)
 type: guide
 created_date: '2026-09-15 12:56'
-updated_date: '2026-09-15 13:01'
+updated_date: '2026-09-15 14:02'
 ---
 Deploy de produção: **GitHub Actions → Docker Hub → Easypanel**.
 
 ## Pipeline
-1. PR: quality gate completo (não publica).
-2. Push na `main`: gate completo → se `summary` verde, job `publish` faz build `linux/amd64` e push para o Docker Hub com tags `latest` e `sha-<commit>`.
-3. Opcional: se o secret `EASYPANEL_DEPLOY_WEBHOOK` existir, o job chama o webhook e o Easypanel redeploya.
+1. PR: workflow `quality-gate` (não publica).
+2. PR mergeado = push na `main`: roda `quality-gate`.
+3. Gate verde → workflow `deploy` (`workflow_run`): checkout do commit aprovado, build `linux/amd64`, push `latest` + `sha-<commit>` no Docker Hub, chama o webhook do Easypanel.
+4. Manual: Actions > deploy > Run workflow (publica a `main` atual).
+
+Gate vermelho na `main` não publica nada.
 
 ## Configuração no GitHub (Settings > Secrets and variables > Actions)
 | Tipo | Nome | Valor |
 |---|---|---|
 | Secret | `DOCKERHUB_USERNAME` | usuário do Docker Hub |
 | Secret | `DOCKERHUB_TOKEN` | Access Token do Docker Hub (Read & Write) |
-| Variable | `DOCKERHUB_IMAGE` | `usuario/albion-hub` |
-| Secret (opcional) | `EASYPANEL_DEPLOY_WEBHOOK` | URL do Deploy Webhook do serviço no Easypanel |
-
-Sem os obrigatórios, o job `publish` pula a publicação com um aviso dizendo o que falta (a main não fica vermelha).
+| Secret | `EASYPANEL_DEPLOY_WEBHOOK` | URL do Deploy Webhook do serviço no Easypanel (sem ele, só publica a imagem) |
+| Variable (opcional) | `DOCKERHUB_IMAGE` | padrão `<DOCKERHUB_USERNAME>/albion-hub` |
 
 ## Easypanel
 - **Postgres**: serviço Postgres 17 do Easypanel; usar a URL interna em `DATABASE_URL`.
