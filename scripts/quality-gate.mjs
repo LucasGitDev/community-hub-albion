@@ -57,7 +57,9 @@ const checks = {
     const { code } = sh("pnpm coverage");
     const pct = readJson("coverage/coverage-summary.json")?.total?.branches?.pct;
     const ok = code === 0 && typeof pct === "number" && pct >= cfg.coverage.branches;
-    return { id: "coverage", label: "Testes + coverage (branch)", status: ok ? "pass" : "fail", value: pct == null ? "—" : `${pct}%`, threshold: `≥ ${cfg.coverage.branches}%`, blocking: true };
+    // Sem Postgres os testes de integração são pulados localmente e a cobertura cai.
+    const dbHint = process.env.TEST_DATABASE_URL || process.env.DATABASE_URL ? "" : " (sem TEST_DATABASE_URL: testes de banco pulados)";
+    return { id: "coverage", label: "Testes + coverage (branch)", status: ok ? "pass" : "fail", value: `${pct == null ? "—" : `${pct}%`}${dbHint}`, threshold: `≥ ${cfg.coverage.branches}%`, blocking: true };
   },
 
   e2e() {
