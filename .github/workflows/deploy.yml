@@ -51,6 +51,10 @@ jobs:
       - uses: actions/checkout@v4
         with:
           ref: ${{ env.DEPLOY_SHA }}
+      # VPS de produção é ARM: build multi-arch (arm64 via QEMU).
+      - uses: docker/setup-qemu-action@v3
+        with:
+          platforms: arm64
       - uses: docker/setup-buildx-action@v3
       # Login manual com trim: secret colado com quebra de linha/espaço gera
       # "malformed HTTP Authorization header" no docker/login-action.
@@ -70,7 +74,7 @@ jobs:
       - uses: docker/build-push-action@v6
         with:
           context: .
-          platforms: linux/amd64
+          platforms: linux/amd64,linux/arm64
           push: true
           tags: |
             ${{ env.DOCKERHUB_IMAGE }}:latest
