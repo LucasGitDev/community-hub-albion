@@ -1,10 +1,11 @@
 ---
 id: TASK-015
 title: Notificação de solicitação com botões no Discord
-status: To Do
-assignee: []
+status: In Progress
+assignee:
+  - '@claude'
 created_date: '2026-09-15 03:24'
-updated_date: '2026-09-15 03:50'
+updated_date: '2026-09-15 13:19'
 labels:
   - bot
 milestone: m-2
@@ -39,3 +40,15 @@ Staff pode aprovar/rejeitar direto por embed com botões (doc-004 F2), usando o 
 - [ ] #7 Notas e final summary com evidências; commits Conventional atômicos sem co-autor
 - [ ] #8 PR merged na main com quality gate verde; branch e worktree removidos
 <!-- DOD:END -->
+
+## Implementation Plan
+
+<!-- SECTION:PLAN:BEGIN -->
+1. Env DISCORD_STAFF_CHANNEL_ID (obrigatória com bot ligado) + .env.example/compose/test envs.
+2. Migration nick_requests.discord_message_id + repo (set message id, dados do embed, achar usuário por discord id).
+3. NickRequestService (members) com hook onRequested pós-commit; NickController usa o serviço.
+4. Domínio puro nick-embed.ts: view do embed PT-BR (pendente/aprovado/recusado), customIds e parse.
+5. Porta StaffChannelGateway (post/edit) + impl discord.js; NickStaffEmbedService assina onRequested/onDecided, grava message id, loga falhas com describeDiscordError.
+6. NickEmbedInteractions: @Button approve/reject, @Modal reject com motivo; auth discordId→user→roles→CASL approve MemberRequest; recusa efêmera PT-BR; conflito efêmero + refresh.
+7. Testes puros + Postgres real com gateway/interação falsos; security review; pnpm quality; PR.
+<!-- SECTION:PLAN:END -->
