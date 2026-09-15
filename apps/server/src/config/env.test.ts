@@ -3,19 +3,32 @@ import { parseEnv } from "./env.js";
 
 const TOKEN = "MTIzNDU2Nzg5MDEyMzQ1Njc4.GhIjKl.s3cr3t-token_value";
 const DB = "postgres://albion:albion@localhost:5432/albion_hub";
-const valid = { DISCORD_TOKEN: TOKEN, GUILD_ID: "123456789012345678", DATABASE_URL: DB };
+const OAUTH = { DISCORD_CLIENT_ID: "223456789012345678", DISCORD_CLIENT_SECRET: "client-secret", PUBLIC_URL: "http://localhost:3000" };
+const valid = { DISCORD_TOKEN: TOKEN, GUILD_ID: "123456789012345678", DATABASE_URL: DB, ...OAUTH };
 
 describe("parseEnv", () => {
   it("aceita config válida e aplica defaults", () => {
     const result = parseEnv(valid);
     expect(result).toEqual({
       ok: true,
-      env: { DISCORD_TOKEN: TOKEN, GUILD_ID: "123456789012345678", DATABASE_URL: DB, PORT: 3000, NODE_ENV: "development", DISCORD_BOT_ENABLED: true, RUN_MIGRATIONS: true, WEB_DIST_DIR: expect.stringMatching(/apps[\\/]web[\\/]dist$/) },
+      env: {
+        DISCORD_TOKEN: TOKEN,
+        GUILD_ID: "123456789012345678",
+        DATABASE_URL: DB,
+        ...OAUTH,
+        SESSION_TTL_DAYS: 30,
+        BOOTSTRAP_ADMIN_DISCORD_IDS: [],
+        PORT: 3000,
+        NODE_ENV: "development",
+        DISCORD_BOT_ENABLED: true,
+        RUN_MIGRATIONS: true,
+        WEB_DIST_DIR: expect.stringMatching(/apps[\\/]web[\\/]dist$/),
+      },
     });
   });
 
   it("converte PORT e DISCORD_BOT_ENABLED", () => {
-    const result = parseEnv({ ...valid, PORT: "8080", DISCORD_BOT_ENABLED: "false", NODE_ENV: "production" });
+    const result = parseEnv({ ...valid, PORT: "8080", DISCORD_BOT_ENABLED: "false", NODE_ENV: "production", PUBLIC_URL: "https://painel.exemplo.com" });
     expect(result.ok && result.env).toMatchObject({ PORT: 8080, DISCORD_BOT_ENABLED: false, NODE_ENV: "production" });
   });
 
@@ -53,10 +66,42 @@ describe("parseEnv", () => {
   });
 
   it("exige DATABASE_URL postgres", () => {
-    const missing = parseEnv({ DISCORD_TOKEN: TOKEN, GUILD_ID: "123456789012345678" });
+    const missing = parseEnv({ DISCORD_TOKEN: TOKEN, GUILD_ID: "123456789012345678", ...OAUTH });
     expect(!missing.ok && missing.message).toContain("DATABASE_URL: obrigatória");
     const wrong = parseEnv({ ...valid, DATABASE_URL: "mysql://x" });
     expect(!wrong.ok && wrong.message).toContain("DATABASE_URL: formato inválido");
     expect(!wrong.ok && wrong.message).not.toContain("mysql://x");
+  });
+
+  describe("OAuth do painel (TASK-008)", () => {
+    it("exige client id, secret e PUBLIC_URL sem vazar o secret", () => {
+      const result = parseEnv({ DISCORD_TOKEN: TOKEN, GUILD_ID: "123456789012345678", DATABASE_URL: DB });
+      const message = !result.ok ? result.message : "";
+      expect(message).toContain("DISCORD_CLIENT_ID: obrigatória");
+      expect(message).toContain("DISCORD_CLIENT_SECRET: obrigatória");
+      expect(message).toContain("PUBLIC_URL: obrigatória");
+      const bad = parseEnv({ ...valid, DISCORD_CLIENT_ID: "abc", DISCORD_CLIENT_SECRET: "super-secreto" , PUBLIC_URL: "http://localhost:3000/" });
+      expect(!bad.ok && bad.message).toContain("DISCORD_CLIENT_ID: formato inválido");
+      expect(!bad.ok && bad.message).toContain("PUBLIC_URL: formato inválido");
+      expect(!bad.ok && bad.message).not.toContain("super-secreto");
+    });
+
+    it("exige PUBLIC_URL https em produção", () => {
+      const result = parseEnv({ ...valid, NODE_ENV: "production" });
+      expect(!result.ok && result.message).toContain("PUBLIC_URL: deve usar https em produção");
+    });
+
+    it("SESSION_TTL_DAYS entre 1 e 90", () => {
+      expect(parseEnv({ ...valid, SESSION_TTL_DAYS: "7" })).toMatchObject({ ok: true, env: { SESSION_TTL_DAYS: 7 } });
+      const result = parseEnv({ ...valid, SESSION_TTL_DAYS: "0" });
+      expect(!result.ok && result.message).toContain("SESSION_TTL_DAYS: deve estar entre 1 e 90");
+    });
+
+    it("BOOTSTRAP_ADMIN_DISCORD_IDS vira lista de snowflakes", () => {
+      const result = parseEnv({ ...valid, BOOTSTRAP_ADMIN_DISCORD_IDS: " 111111111111111111, 222222222222222222 ," });
+      expect(result.ok && result.env.BOOTSTRAP_ADMIN_DISCORD_IDS).toEqual(["111111111111111111", "222222222222222222"]);
+      const bad = parseEnv({ ...valid, BOOTSTRAP_ADMIN_DISCORD_IDS: "111111111111111111,fulano" });
+      expect(!bad.ok && bad.message).toContain("BOOTSTRAP_ADMIN_DISCORD_IDS.1: formato inválido");
+    });
   });
 });

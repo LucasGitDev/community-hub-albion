@@ -43,7 +43,40 @@ const envSchema = z.object({
     .enum(["true", "false"], { error: "deve ser true ou false" })
     .default("true")
     .transform((value) => value === "true"),
+  // OAuth2 do painel (TASK-008): Discord Developer Portal > OAuth2.
+  DISCORD_CLIENT_ID: z
+    .string({ error: "obrigatória" })
+    .trim()
+    .min(1, { error: "obrigatória" })
+    .regex(SNOWFLAKE, { error: "formato inválido (esperado snowflake numérico de 17 a 20 dígitos)" }),
+  DISCORD_CLIENT_SECRET: z.string({ error: "obrigatória" }).trim().min(1, { error: "obrigatória" }),
+  // Origem pública do painel; redirect OAuth = PUBLIC_URL/api/auth/discord/callback.
+  PUBLIC_URL: z
+    .string({ error: "obrigatória" })
+    .trim()
+    .min(1, { error: "obrigatória" })
+    .regex(/^https?:\/\/[^/?#\s]+$/, { error: "formato inválido (esperado origem http(s)://host[:porta], sem caminho nem barra final)" }),
+  SESSION_TTL_DAYS: z.coerce
+    .number({ error: "deve ser um número" })
+    .int({ error: "deve ser inteiro" })
+    .min(1, { error: "deve estar entre 1 e 90" })
+    .max(90, { error: "deve estar entre 1 e 90" })
+    .default(30),
+  // Snowflakes separados por vírgula que recebem `admin` ao logar (bootstrap do primeiro admin, TASK-011).
+  BOOTSTRAP_ADMIN_DISCORD_IDS: z
+    .string()
+    .default("")
+    .transform((value) =>
+      value
+        .split(",")
+        .map((id) => id.trim())
+        .filter(Boolean),
+    )
+    .pipe(z.array(z.string().regex(SNOWFLAKE, { error: "formato inválido (esperado snowflakes separados por vírgula)" }))),
   NODE_ENV: z.enum(["development", "test", "production"], { error: "deve ser development, test ou production" }).default("development"),
+}).refine((env) => env.NODE_ENV !== "production" || env.PUBLIC_URL.startsWith("https://"), {
+  error: "deve usar https em produção (cookie secure)",
+  path: ["PUBLIC_URL"],
 });
 
 export type Env = z.infer<typeof envSchema>;
