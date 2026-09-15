@@ -71,7 +71,7 @@ function LastRejection({ rejection }: { rejection: NonNullable<MyNick["lastRejec
         A staff recusou o nick {rejection.nick}
       </p>
       {rejection.note && <p className="mt-2 border-l-2 border-oxblood/50 pl-3 text-parchment">{rejection.note}</p>}
-      <p className="mt-2 text-sm text-faint">Em {formatDateTime(rejection.decidedAt)}. Corrija e envie de novo abaixo.</p>
+      <p className="mt-2 text-sm text-faint">Em {formatDateTime(rejection.decidedAt)}. Você pode enviar outro nick quando quiser.</p>
     </section>
   );
 }
