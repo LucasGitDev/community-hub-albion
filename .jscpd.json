@@ -1,0 +1,10 @@
+{
+  "path": ["apps", "packages"],
+  "format": ["typescript", "tsx"],
+  "ignore": ["**/node_modules/**", "**/dist/**", "**/*.test.ts", "**/mock/seed.ts"],
+  "minTokens": 50,
+  "reporters": ["console", "json"],
+  "output": ".quality/jscpd",
+  "absolute": false,
+  "gitignore": true
+}

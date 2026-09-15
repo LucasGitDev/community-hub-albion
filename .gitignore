@@ -8,3 +8,7 @@ coverage/
 .DS_Store
 *.log
 .playwright-mcp/
+.vitest/
+.quality/
+test-results/
+playwright-report/
