@@ -40,7 +40,6 @@ export function parseSilver(input: string): bigint | null {
   return /^\d+$/.test(digits) ? BigInt(digits) : null;
 }
 
-const dateFmt = new Intl.DateTimeFormat("pt-BR", { day: "2-digit", month: "short" });
 const dateTimeFmt = new Intl.DateTimeFormat("pt-BR", {
   day: "2-digit",
   month: "short",
@@ -49,7 +48,6 @@ const dateTimeFmt = new Intl.DateTimeFormat("pt-BR", {
 });
 const dayHeadingFmt = new Intl.DateTimeFormat("pt-BR", { weekday: "long", day: "numeric", month: "long" });
 
-export const formatDate = (iso: string) => dateFmt.format(new Date(iso)).replace(".", "");
 export const formatDateTime = (iso: string) => dateTimeFmt.format(new Date(iso)).replace(".", "");
 export const formatDayHeading = (iso: string) => {
   const s = dayHeadingFmt.format(new Date(iso));

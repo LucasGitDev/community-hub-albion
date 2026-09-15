@@ -1,5 +1,6 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from "react";
 import * as seed from "./seed";
+import { computeBalance, transitionWithdrawal, validateWithdrawal, type Balance, type WithdrawalCheck } from "./rules";
 import type { LedgerEntry, Role, User, Withdrawal } from "./types";
 
 /**
@@ -29,15 +30,9 @@ function load(): State {
   return { sessionUserId: null, ledger: seed.ledger, withdrawals: seed.withdrawals };
 }
 
-export const STAFF_ROLES: Role[] = ["caller", "staff", "admin"];
+const STAFF_ROLES: Role[] = ["caller", "staff", "admin"];
 export const canManageWithdrawals = (role: Role) => role === "staff" || role === "admin";
 export const isStaffArea = (role: Role) => STAFF_ROLES.includes(role);
-
-interface Balance {
-  total: bigint;
-  reserved: bigint;
-  available: bigint;
-}
 
 interface Store {
   user: User | null;
@@ -48,10 +43,9 @@ interface Store {
   withdrawalsFor: (userId: string) => Withdrawal[];
   allWithdrawals: Withdrawal[];
   balanceFor: (userId: string) => Balance;
-  requestWithdrawal: (amount: bigint) => { ok: true } | { ok: false; error: string };
+  requestWithdrawal: (amount: bigint) => WithdrawalCheck;
   decideWithdrawal: (id: string, decision: "approved" | "rejected", note?: string) => void;
   settleWithdrawal: (id: string, note?: string) => void;
-  resetMock: () => void;
 }
 
 const StoreContext = createContext<Store | null>(null);
@@ -68,19 +62,25 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   const user = seed.users.find((u) => u.id === state.sessionUserId) ?? null;
 
   const balanceFor = useCallback(
-    (userId: string): Balance => {
-      const total = state.ledger.filter((e) => e.userId === userId).reduce((s, e) => s + e.amount, 0n);
-      // Q25: pending reserva saldo; débito só entra no ledger no approved
-      const reserved = state.withdrawals
-        .filter((w) => w.userId === userId && w.status === "pending")
-        .reduce((s, w) => s + w.amount, 0n);
-      return { total, reserved, available: total - reserved };
-    },
+    (userId: string) => computeBalance(userId, state.ledger, state.withdrawals),
     [state.ledger, state.withdrawals],
   );
 
-  const store = useMemo<Store>(
-    () => ({
+  const store = useMemo<Store>(() => {
+    const transition = (id: string, to: "approved" | "rejected" | "settled", note?: string) =>
+      setState((s) => {
+        const w = s.withdrawals.find((x) => x.id === id);
+        const now = new Date().toISOString();
+        const updated = w && user ? transitionWithdrawal(w, to, user.nick, now, note) : null;
+        if (!w || !updated) return s;
+        const ledger =
+          to === "approved"
+            ? [...s.ledger, { id: uid(), userId: w.userId, kind: "withdrawal_debit" as const, amount: -w.amount, description: "Saque aprovado", createdAt: now }]
+            : s.ledger;
+        return { ...s, ledger, withdrawals: s.withdrawals.map((x) => (x.id === id ? updated : x)) };
+      });
+
+    return {
       user,
       users: seed.users,
       loginAs: (userId) => setState((s) => ({ ...s, sessionUserId: userId })),
@@ -93,38 +93,16 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       balanceFor,
       requestWithdrawal: (amount) => {
         if (!user) return { ok: false, error: "Sessão expirada. Entre de novo." };
-        if (amount < seed.MIN_WITHDRAWAL) return { ok: false, error: "Valor abaixo do saque mínimo." };
-        const { available } = balanceFor(user.id);
-        if (amount > available) return { ok: false, error: "Valor maior que o saldo disponível." };
+        const check = validateWithdrawal(amount, balanceFor(user.id));
+        if (!check.ok) return check;
         const w: Withdrawal = { id: uid(), userId: user.id, amount, status: "pending", requestedAt: new Date().toISOString() };
         setState((s) => ({ ...s, withdrawals: [...s.withdrawals, w] }));
-        return { ok: true };
+        return check;
       },
-      decideWithdrawal: (id, decision, note) =>
-        setState((s) => {
-          const w = s.withdrawals.find((x) => x.id === id);
-          if (!w || w.status !== "pending") return s;
-          const now = new Date().toISOString();
-          const updated: Withdrawal = { ...w, status: decision, decidedAt: now, decidedBy: user?.nick, note: note || w.note };
-          const ledger =
-            decision === "approved"
-              ? [...s.ledger, { id: uid(), userId: w.userId, kind: "withdrawal_debit" as const, amount: -w.amount, description: "Saque aprovado", createdAt: now }]
-              : s.ledger;
-          return { ...s, ledger, withdrawals: s.withdrawals.map((x) => (x.id === id ? updated : x)) };
-        }),
-      settleWithdrawal: (id, note) =>
-        setState((s) => ({
-          ...s,
-          withdrawals: s.withdrawals.map((w) =>
-            w.id === id && w.status === "approved"
-              ? { ...w, status: "settled", settledAt: new Date().toISOString(), settledBy: user?.nick, note: note || w.note }
-              : w,
-          ),
-        })),
-      resetMock: () => setState({ sessionUserId: state.sessionUserId, ledger: seed.ledger, withdrawals: seed.withdrawals }),
-    }),
-    [user, state, balanceFor],
-  );
+      decideWithdrawal: (id, decision, note) => transition(id, decision, note),
+      settleWithdrawal: (id, note) => transition(id, "settled", note),
+    };
+  }, [user, state, balanceFor]);
 
   return <StoreContext.Provider value={store}>{children}</StoreContext.Provider>;
 }
@@ -142,4 +120,4 @@ export function useUser(): User {
 }
 
 export const nickOf = (userId: string) => seed.users.find((u) => u.id === userId)?.nick ?? "Desconhecido";
-export { MIN_WITHDRAWAL } from "./seed";
+export { MIN_WITHDRAWAL } from "./rules";

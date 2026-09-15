@@ -1,7 +1,5 @@
 import type { LedgerEntry, User, Withdrawal } from "./types";
 
-export const MIN_WITHDRAWAL = 1_000_000n;
-
 export const users: User[] = [
   { id: "u1", discordName: "ravenmoor", nick: "Ravenmoor", role: "member", initials: "RA" },
   { id: "u2", discordName: "thalya.heals", nick: "Thalya", role: "caller", initials: "TH" },
