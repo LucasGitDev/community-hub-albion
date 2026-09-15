@@ -5,9 +5,9 @@ import { REJECTION_NOTE_MAX_LENGTH } from "@albion-hub/shared";
  * (sem discord.js) que o gateway converte em mensagem. Copy PT-BR.
  */
 
-export const NICK_APPROVE_BUTTON = "nick:approve/:id";
-export const NICK_REJECT_BUTTON = "nick:reject/:id";
-export const NICK_REJECT_MODAL = "nick:reject-modal/:id";
+export const NICK_APPROVE_BUTTON = "nick/approve/:id";
+export const NICK_REJECT_BUTTON = "nick/reject/:id";
+export const NICK_REJECT_MODAL = "nick/reject-modal/:id";
 /** Campo de texto do modal de recusa. */
 export const NICK_REJECT_NOTE_FIELD = "note";
 
