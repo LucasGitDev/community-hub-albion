@@ -7,6 +7,7 @@ import { DISCORD_MEMBER_ROLE_ID, DiscordMemberSync } from "./discord-member-sync
 import { NickEmbedInteractions } from "./nick-embed.interactions.js";
 import { NickStaffEmbedService } from "./nick-staff-embed.service.js";
 import { PingCommand } from "./ping.command.js";
+import { RegisterNickCommand } from "./register-nick.command.js";
 import { ReadyListener } from "./ready.listener.js";
 import { DISCORD_STAFF_CHANNEL_ID, DiscordJsStaffChannelGateway, STAFF_CHANNEL_GATEWAY } from "./staff-channel.gateway.js";
 import { VoiceBootListener } from "./voice-boot.listener.js";
@@ -50,6 +51,8 @@ export class BotModule {
         { provide: STAFF_CHANNEL_GATEWAY, useClass: DiscordJsStaffChannelGateway },
         NickStaffEmbedService,
         NickEmbedInteractions,
+        // TASK-035: /registrar nick pelo Discord (mesmo serviço do painel).
+        RegisterNickCommand,
       ],
     };
   }
