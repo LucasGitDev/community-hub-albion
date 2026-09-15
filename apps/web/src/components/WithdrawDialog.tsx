@@ -1,7 +1,7 @@
 import * as Dialog from "@radix-ui/react-dialog";
 import { useState, type FormEvent, type ReactNode } from "react";
 import { toast } from "sonner";
-import { formatSilver, formatSilverShort, parseSilver } from "@/lib/format";
+import { formatSilver, formatSilverShort, parseSilver } from "@albion-hub/shared";
 import { MIN_WITHDRAWAL, useStore, useUser } from "@/mock/store";
 import { Button, Silver } from "./ui";
 

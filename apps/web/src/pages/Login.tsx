@@ -1,9 +1,9 @@
+import { ROLE_LABELS } from "@albion-hub/shared";
 import { Navigate } from "react-router";
 import { useState } from "react";
 import { Button } from "@/components/ui";
 import { useStore } from "@/mock/store";
 
-const roleLabel = { member: "Membro", caller: "Caller", staff: "Staff", admin: "Admin" } as const;
 
 function DiscordMark() {
   return (
@@ -49,7 +49,7 @@ export function Login() {
                       <span className="block text-sm font-medium">{u.nick}</span>
                       <span className="block text-xs text-muted">@{u.discordName}</span>
                     </span>
-                    <span className="text-xs text-muted">{roleLabel[u.role]}</span>
+                    <span className="text-xs text-muted">{ROLE_LABELS[u.role]}</span>
                   </button>
                 </li>
               ))}

@@ -1,7 +1,8 @@
 import { useState } from "react";
 import { toast } from "sonner";
 import { Button, PageHeader, Silver, StatusBadge } from "@/components/ui";
-import { cn, formatSilver } from "@/lib/format";
+import { cn } from "@/lib/format";
+import { formatSilver } from "@albion-hub/shared";
 import { nickOf, useStore } from "@/mock/store";
 import type { Withdrawal, WithdrawalStatus } from "@/mock/types";
 import { WithdrawalTimeline } from "./MyWithdrawals";

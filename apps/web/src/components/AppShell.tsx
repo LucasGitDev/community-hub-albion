@@ -1,10 +1,10 @@
+import { ROLE_LABELS } from "@albion-hub/shared";
 import { NavLink, Outlet } from "react-router";
 import { CalendarRange, Coins, HandCoins, LogOut, ScrollText, Users, Vault } from "lucide-react";
 import type { ReactNode } from "react";
 import { cn } from "@/lib/format";
 import { canManageWithdrawals, isStaffArea, useStore, useUser } from "@/mock/store";
 
-const roleLabel = { member: "Membro", caller: "Caller", staff: "Staff", admin: "Admin" } as const;
 
 interface NavItem {
   to: string;
@@ -46,7 +46,7 @@ export function AppShell() {
           <Avatar initials={user.initials} />
           <div className="min-w-0 flex-1">
             <p className="truncate text-sm font-medium">{user.nick}</p>
-            <p className="truncate text-xs text-muted">{roleLabel[user.role]}</p>
+            <p className="truncate text-xs text-muted">{ROLE_LABELS[user.role]}</p>
           </div>
           <button onClick={logout} className="press rounded-md p-2 text-muted hover:text-parchment" aria-label="Sair">
             <LogOut className="size-4" />
