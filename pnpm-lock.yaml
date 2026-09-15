@@ -114,10 +114,7 @@ importers:
       '@albion-hub/shared':
         specifier: workspace:*
         version: link:../../packages/shared
-      '@fontsource-variable/hanken-grotesk':
-        specifier: ^5.3.0
-        version: 5.3.0
-      '@fontsource/spectral':
+      '@fontsource-variable/geist':
         specifier: ^5.3.0
         version: 5.3.0
       class-variance-authority:
@@ -823,11 +820,8 @@ packages:
   '@floating-ui/utils@0.2.12':
     resolution: {integrity: sha512-HpCo8tmWzLVad5s2d19EhAz5zqrrQ6s69qd6moPMQvkOuSwDT1YgRfWSVuc4ennqrgv3OHppiOGMQ7oC13yIww==}
 
-  '@fontsource-variable/hanken-grotesk@5.3.0':
-    resolution: {integrity: sha512-DOd0FqL+3cH2dfNy0JtSq9tUfxBz5mLmHMjTU0DOr3E9Zo6wxuatCl53DIPNrSPgCsnuKyM739BTIG5glCLirw==}
-
-  '@fontsource/spectral@5.3.0':
-    resolution: {integrity: sha512-2TL5WWGOZj4SIsBmPFEzKeA60tXXd1Qp1OqaaVEWkJL8IfSGLk6YmiusmC441iFkdJDIuFelu1r8lhCmQUU3mw==}
+  '@fontsource-variable/geist@5.3.0':
+    resolution: {integrity: sha512-j0m+vLQuG5XAYoHtGCVu0spvlGreR3EzpECUVzkFmI1mTVnAO38l/NEPDCFgZ177JxzYJCLSmTQibIiYPilGrA==}
 
   '@humanfs/core@0.19.2':
     resolution: {integrity: sha512-UhXNm+CFMWcbChXywFwkmhqjs3PRCmcSa/hfBgLIb7oQ5HNb1wS0icWsGtSAUNgefHeI+eBrA8I1fxmbHsGdvA==}
@@ -4459,9 +4453,7 @@ snapshots:
 
   '@floating-ui/utils@0.2.12': {}
 
-  '@fontsource-variable/hanken-grotesk@5.3.0': {}
-
-  '@fontsource/spectral@5.3.0': {}
+  '@fontsource-variable/geist@5.3.0': {}
 
   '@humanfs/core@0.19.2':
     dependencies:
