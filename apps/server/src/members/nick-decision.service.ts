@@ -7,7 +7,7 @@ import { ListenerSet } from "./listener-set.js";
 export interface NickDecidedEvent {
   decision: NickDecision;
   request: NickRequest;
-  /** Nick vigente antes da decisão (null = primeira aprovação, TASK-014 concede cargo Membro). */
+  /** Nick vigente antes da decisão (null = primeira aprovação). Informativo: cargo Membro vem em toda aprovação (TASK-034). */
   previousGameNick: string | null;
   deciderUserId: string;
 }
