@@ -3,14 +3,15 @@ import { PageHeader, Silver, StatusBadge } from "@/components/display";
 import { WithdrawDialog } from "@/components/WithdrawDialog";
 import { cn } from "@/lib/utils";
 import { formatDateTime } from "@/lib/format";
-import { MIN_WITHDRAWAL, useStore, useUser } from "@/mock/store";
+import { useCurrentUser } from "@/auth/AuthProvider";
+import { MIN_WITHDRAWAL, useStore } from "@/mock/store";
 import type { Withdrawal } from "@/mock/types";
 
 export function MyWithdrawals() {
-  const user = useUser();
+  const { user } = useCurrentUser();
   const { withdrawalsFor, balanceFor } = useStore();
-  const list = withdrawalsFor(user.id);
-  const { available } = balanceFor(user.id);
+  const list = withdrawalsFor(user.discordId);
+  const { available } = balanceFor(user.discordId);
 
   return (
     <>

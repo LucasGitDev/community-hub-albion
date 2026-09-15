@@ -1,15 +1,16 @@
 import { useState, type FormEvent, type ReactNode } from "react";
 import { toast } from "sonner";
 import { formatSilver, formatSilverShort, parseSilver } from "@albion-hub/shared";
-import { MIN_WITHDRAWAL, useStore, useUser } from "@/mock/store";
+import { useCurrentUser } from "@/auth/AuthProvider";
+import { MIN_WITHDRAWAL, useStore } from "@/mock/store";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogClose, DialogContent, DialogDescription, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Silver } from "@/components/display";
 
 export function WithdrawDialog({ trigger }: { trigger: ReactNode }) {
-  const user = useUser();
+  const { user } = useCurrentUser();
   const { balanceFor, requestWithdrawal } = useStore();
-  const { available } = balanceFor(user.id);
+  const { available } = balanceFor(user.discordId);
   const [open, setOpen] = useState(false);
   const [input, setInput] = useState("");
   const [error, setError] = useState<string | null>(null);

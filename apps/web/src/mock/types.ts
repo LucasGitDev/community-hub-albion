@@ -1,19 +1,14 @@
-import type { Role } from "@albion-hub/shared";
-
-export type { Role };
-
-export interface User {
-  id: string;
-  discordName: string;
+/** Membro de demonstração (nome exibido na fila da staff). */
+export interface DemoMember {
+  discordId: string;
   nick: string;
-  role: Role;
-  initials: string;
 }
 
 type LedgerKind = "split_credit" | "split_remainder" | "withdrawal_debit" | "reversal";
 
 export interface LedgerEntry {
   id: string;
+  /** Discord ID do membro */
   userId: string;
   kind: LedgerKind;
   /** positivo = crédito, negativo = débito */
