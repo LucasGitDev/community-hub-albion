@@ -1,10 +1,11 @@
 ---
 id: TASK-016
 title: Validação opcional de nick via API Albion
-status: To Do
-assignee: []
+status: In Progress
+assignee:
+  - '@claude'
 created_date: '2026-09-15 03:24'
-updated_date: '2026-09-15 03:50'
+updated_date: '2026-09-15 13:11'
 labels:
   - backend
 milestone: m-2
@@ -38,3 +39,9 @@ Ajuda ao staff, não bloqueio (Q14): consulta nick na API Albion da ALBION_REGIO
 - [ ] #7 Notas e final summary com evidências; commits Conventional atômicos sem co-autor
 - [ ] #8 PR merged na main com quality gate verde; branch e worktree removidos
 <!-- DOD:END -->
+
+## Implementation Plan
+
+<!-- SECTION:PLAN:BEGIN -->
+1. Pesquisar API gameinfo (hosts por região, shape). 2. packages/shared/src/albion.ts: regiões, tipo AlbionLookupResult, matchPlayer exato sem caixa (puro, testado). 3. apps/server: env ALBION_REGION opcional; AlbionPlayerLookup (fetch, timeout 3s, cache TTL, sem retry) + AlbionNickCheckService exportado (reuso TASK-015). 4. Consulta lazy na leitura da fila staff (paralela, cache) + pré-aquecimento fire-and-forget após POST /api/me/nick; sem coluna nova. 5. GET /api/staff/nick-requests ganha albion; UI mostra status. 6. Testes unit/HTTP com lookup fake; e2e com lookup desligado. 7. Env docs/compose. 8. Visual 1280/400, security-review, gate, PR.
+<!-- SECTION:PLAN:END -->
