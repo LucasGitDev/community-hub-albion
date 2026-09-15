@@ -25,3 +25,4 @@ export {
   type VoiceSession,
 } from "./voice-repo.js";
 export { listUsersWithRoles, revokeRoleGuarded, userExists, type RevokeRoleResult, type UserWithRoles } from "./admin-roles-repo.js";
+export { getNickStatus, listPendingNickRequests, requestNick, type NickRequest, type NickStatus } from "./nick-repo.js";
