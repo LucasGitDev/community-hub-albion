@@ -1,4 +1,4 @@
-import { and, asc, desc, eq, sql } from "drizzle-orm";
+import { and, asc, desc, eq, getTableColumns, sql } from "drizzle-orm";
 import type { Database } from "./client.js";
 import { nickRequests, users } from "./schema.js";
 
@@ -36,8 +36,10 @@ export async function requestNick(db: Database, userId: string, nick: string): P
       targetWhere: sql`${nickRequests.status} = 'pending'`,
       set: { nick, updatedAt: sql`now()` },
     })
-    .returning({ request: nickRequests, inserted: sql<boolean>`(xmax = 0)` });
-  return { request: row!.request, created: row!.inserted };
+    // xmax = 0 só em linha recém-inserida (no upsert que atualiza, xmax é o id da transação).
+    .returning({ ...getTableColumns(nickRequests), inserted: sql<boolean>`(xmax = 0)` });
+  const { inserted, ...request } = row!;
+  return { request, created: inserted };
 }
 
 /** Fila da staff (TASK-013): pendentes, mais antigas primeiro, com o usuário. */
