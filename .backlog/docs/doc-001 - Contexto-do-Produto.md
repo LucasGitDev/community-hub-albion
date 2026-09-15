@@ -3,8 +3,9 @@ id: doc-001
 title: Contexto do Produto
 type: specification
 created_date: '2026-09-15 02:46'
-updated_date: '2026-09-15 02:46'
+updated_date: '2026-09-15 03:22'
 ---
+> Escopo v1 e decisões fechadas: ver doc-004 Roadmap e doc-005 Decisões v1. Este doc é a visão completa (inclui pós-v1).
 
 ## Visão geral
 Servidor Discord de conteúdo de Albion Online (comunidade independente, não guilda). Bot + API + painel web.
@@ -75,7 +76,8 @@ Valores de moeda: calibrar começando por DG grupo e Raid do Dragão.
 Discord OAuth2 (garante membro). Stack de permissão: RBAC próprio (CASL), separado de cargos Discord.
 
 ## Em aberto
-- Nome final.
+- Servidor Albion (`ALBION_REGION`).
+- Proxy da VPS.
 - Valores de moeda por tipo.
 - Cargos/cosméticos na loja.
 - Giveaway jackpot (v2).
