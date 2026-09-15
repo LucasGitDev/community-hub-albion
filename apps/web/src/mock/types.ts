@@ -8,7 +8,7 @@ export interface User {
   initials: string;
 }
 
-export type LedgerKind = "split_credit" | "split_remainder" | "withdrawal_debit" | "reversal";
+type LedgerKind = "split_credit" | "split_remainder" | "withdrawal_debit" | "reversal";
 
 export interface LedgerEntry {
   id: string;
