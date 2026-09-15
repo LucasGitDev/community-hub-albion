@@ -75,6 +75,26 @@ export function AppShell() {
           </button>
         </div>
       </header>
+      {/* mobile: toda área de gestão acessível (barra inferior só cabe 4 itens) */}
+      {management.length > 0 && (
+        <nav aria-label="Gestão" className="flex gap-2 overflow-x-auto border-b border-rule bg-stone px-4 py-2 [scrollbar-width:none] md:hidden">
+          {management.map((item) => (
+            <NavLink
+              key={item.to}
+              to={item.to}
+              className={({ isActive }) =>
+                cn(
+                  "flex h-8 shrink-0 items-center gap-1.5 rounded-full border px-3 text-xs",
+                  isActive ? "border-brass/60 bg-brass/15 text-brass" : "border-rule text-muted",
+                )
+              }
+            >
+              {item.icon}
+              {item.label}
+            </NavLink>
+          ))}
+        </nav>
+      )}
 
       <main className="mx-auto w-full max-w-4xl px-4 pt-8 pb-28 md:px-10 md:pt-12 md:pb-16">
         <Outlet />
@@ -85,7 +105,7 @@ export function AppShell() {
         className="fixed inset-x-0 bottom-0 z-10 flex border-t border-rule bg-stone/95 backdrop-blur md:hidden"
         style={{ paddingBottom: "env(safe-area-inset-bottom)" }}
       >
-        {[...personal, ...management.slice(0, 2)].map((item) => (
+        {personal.map((item) => (
           <NavLink
             key={item.to}
             to={item.to}

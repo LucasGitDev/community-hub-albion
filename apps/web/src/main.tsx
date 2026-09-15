@@ -10,6 +10,7 @@ import "./index.css";
 import { AuthProvider } from "./auth/AuthProvider";
 import { RequireAuth, RequirePermission } from "./auth/guards";
 import { AppShell } from "./components/AppShell";
+import { AdminRoles } from "./pages/AdminRoles";
 import { StoreProvider } from "./mock/store";
 import { Login } from "./pages/Login";
 import { MyWithdrawals } from "./pages/MyWithdrawals";
@@ -71,7 +72,7 @@ createRoot(document.getElementById("root")!).render(
               path="/admin/papeis"
               element={
                 <RequirePermission action="read" subject="UserRole">
-                  <Placeholder title="Papéis" description="Conceder e remover papéis de caller, staff e admin." task="TASK-011" />
+                  <AdminRoles />
                 </RequirePermission>
               }
             />
