@@ -10,7 +10,7 @@ describe("parseEnv", () => {
     const result = parseEnv(valid);
     expect(result).toEqual({
       ok: true,
-      env: { DISCORD_TOKEN: TOKEN, GUILD_ID: "123456789012345678", DATABASE_URL: DB, PORT: 3000, NODE_ENV: "development", DISCORD_BOT_ENABLED: true, WEB_DIST_DIR: expect.stringMatching(/apps[\\/]web[\\/]dist$/) },
+      env: { DISCORD_TOKEN: TOKEN, GUILD_ID: "123456789012345678", DATABASE_URL: DB, PORT: 3000, NODE_ENV: "development", DISCORD_BOT_ENABLED: true, RUN_MIGRATIONS: true, WEB_DIST_DIR: expect.stringMatching(/apps[\\/]web[\\/]dist$/) },
     });
   });
 

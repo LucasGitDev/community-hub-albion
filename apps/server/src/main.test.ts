@@ -50,6 +50,7 @@ describe("boot do servidor compilado", () => {
         GUILD_ID: "123456789012345678",
         DATABASE_URL: "postgres://albion:albion@127.0.0.1:1/indisponivel",
         DISCORD_BOT_ENABLED: "false",
+        RUN_MIGRATIONS: "false",
         WEB_DIST_DIR: spaDir,
         PORT: String(port),
       },
