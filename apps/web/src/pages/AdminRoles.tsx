@@ -64,24 +64,24 @@ export function AdminRoles() {
     <>
       <PageHeader title="Papéis" description="Conceda ou remova caller, staff e admin. Todo usuário logado já é membro." />
       {error && (
-        <p role="alert" className="mb-6 rounded-md border border-oxblood/40 bg-oxblood/10 p-4 text-sm">
+        <p role="alert" className="mb-4 rounded-xl border border-destructive/40 bg-destructive/10 p-4 text-sm">
           {error}
         </p>
       )}
-      {!users && !error && <p className="text-muted">Carregando usuários…</p>}
-      {users && users.length === 0 && <p className="text-muted">Nenhum usuário entrou no painel ainda.</p>}
+      {!users && !error && <p className="text-muted-foreground">Carregando usuários…</p>}
+      {users && users.length === 0 && <p className="text-muted-foreground">Nenhum usuário entrou no painel ainda.</p>}
       {users && users.length > 0 && (
-        <ul className="divide-y divide-rule rounded-lg border border-rule bg-stone">
+        <ul className="divide-y overflow-hidden rounded-xl border bg-card">
           {users.map((u) => {
             const name = u.displayName || u.discordUsername;
             return (
-              <li key={u.id} className="flex flex-wrap items-center gap-x-6 gap-y-3 px-4 py-4 md:px-5">
+              <li key={u.id} className="flex flex-wrap items-center gap-x-6 gap-y-2 px-4 py-3">
                 <div className="min-w-0 flex-1">
                   <p className="truncate font-medium">
                     {name}
-                    {u.id === me.id && <span className="ml-2 text-xs text-faint">você</span>}
+                    {u.id === me.id && <span className="ml-2 rounded-full bg-muted px-1.5 py-0.5 text-xs font-normal text-muted-foreground">você</span>}
                   </p>
-                  <p className="truncate text-sm text-muted">@{u.discordUsername}</p>
+                  <p className="truncate text-xs text-muted-foreground">@{u.discordUsername}</p>
                 </div>
                 <div className="flex flex-wrap gap-2" role="group" aria-label={`Papéis de ${name}`}>
                   {MANAGEABLE.map((role) => {
@@ -96,8 +96,8 @@ export function AdminRoles() {
                         title={lastAdmin ? "Não é possível remover o último admin" : undefined}
                         onClick={() => void toggle(u, role)}
                         className={cn(
-                          "press h-8 rounded-full border px-3 text-sm disabled:cursor-not-allowed disabled:opacity-50",
-                          on ? "border-brass/60 bg-brass/15 text-brass" : "border-rule text-muted hover:text-parchment",
+                          "press h-8 rounded-full border px-3 text-sm font-medium disabled:cursor-not-allowed disabled:opacity-50",
+                          on ? "border-primary bg-primary text-primary-foreground" : "text-muted-foreground hover:bg-accent hover:text-foreground",
                         )}
                       >
                         {ROLE_LABELS[role]}

@@ -4,6 +4,7 @@ import { DISCORD_LOGIN_URL } from "@/auth/api";
 import { useAuth } from "@/auth/AuthProvider";
 import { FullPageStatus } from "@/auth/guards";
 import { Button } from "@/components/ui/button";
+import { Swords } from "lucide-react";
 
 function DiscordMark() {
   return (
@@ -24,23 +25,28 @@ export function Login() {
   return (
     <div className="grid min-h-dvh place-items-center px-4 py-12">
       <div className="w-full max-w-sm">
-        <h1 className="font-display text-5xl leading-none font-medium tracking-tight">albion-hub</h1>
-        <p className="mt-4 text-muted">Sua prata dos loot splits da comunidade, com extrato de cada evento e pedido de saque.</p>
+        <div className="flex items-center gap-3">
+          <span className="grid size-10 place-items-center rounded-lg bg-primary text-primary-foreground">
+            <Swords className="size-5" aria-hidden />
+          </span>
+          <h1 className="text-3xl font-semibold">albion-hub</h1>
+        </div>
+        <p className="mt-4 text-lg text-muted-foreground">Sua prata dos loot splits da comunidade, com extrato de cada evento e pedido de saque.</p>
 
         {error && (
-          <p role="alert" className="mt-8 rounded-md border border-oxblood/40 bg-oxblood/10 p-4 text-sm">
+          <p role="alert" className="mt-6 rounded-xl border border-destructive/40 bg-destructive/10 p-4 text-sm">
             {loginErrorMessage(error)}
           </p>
         )}
 
-        <Button asChild className="mt-10 h-12 w-full bg-[#5865f2] text-white hover:bg-[#4752c4]">
+        <Button asChild className="mt-8 h-11 w-full bg-[#5865f2] text-white hover:bg-[#4752c4]">
           <a href={DISCORD_LOGIN_URL}>
             <DiscordMark />
             Entrar com Discord
           </a>
         </Button>
 
-        <p className="mt-6 text-xs text-faint">Só membros do servidor da comunidade conseguem entrar.</p>
+        <p className="mt-4 text-xs text-muted-foreground">Só membros do servidor da comunidade conseguem entrar.</p>
       </div>
     </div>
   );

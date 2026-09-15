@@ -1,161 +1,251 @@
+import type { ReactNode } from "react";
 import { Link } from "react-router";
+import { ArrowDownLeft, ArrowUpRight, CalendarDays, Check, Coins, Lock, RotateCcw, Swords, TriangleAlert } from "lucide-react";
+import { formatSilverShort } from "@albion-hub/shared";
 import { Button } from "@/components/ui/button";
-import { Silver, StatusBadge } from "@/components/display";
+import { Progress } from "@/components/ui/progress";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { CountUpSilver, PageHeader, Panel, Pill, Silver, StatCard, StatusBadge } from "@/components/display";
 import { WithdrawDialog } from "@/components/WithdrawDialog";
 import { cn } from "@/lib/utils";
-import { formatDateTime, formatDayHeading } from "@/lib/format";
-import { formatSilverShort } from "@albion-hub/shared";
+import { formatDateTime } from "@/lib/format";
+import { lastSplit, monthEarnings } from "@/lib/wallet";
 import { useCurrentUser } from "@/auth/AuthProvider";
 import { useMyNick } from "@/nick/api";
 import { MIN_WITHDRAWAL, useStore } from "@/mock/store";
 import type { LedgerEntry } from "@/mock/types";
+
+const monthFmt = new Intl.DateTimeFormat("pt-BR", { month: "long" });
 
 export function Wallet() {
   const { user } = useCurrentUser();
   const { balanceFor, ledgerFor, withdrawalsFor } = useStore();
   const { total, reserved, available } = balanceFor(user.discordId);
   const entries = ledgerFor(user.discordId);
-  const pending = withdrawalsFor(user.discordId).filter((w) => w.status === "pending" || w.status === "approved");
+  const open = withdrawalsFor(user.discordId).filter((w) => w.status === "pending" || w.status === "approved");
+  const pendingCount = open.filter((w) => w.status === "pending").length;
 
+  const now = new Date();
+  const month = monthEarnings(entries, now);
+  const last = lastSplit(entries);
   const negative = total < 0n;
-  const reservedPct = total > 0n ? Number((reserved * 1000n) / total) / 10 : 0;
+  const canWithdraw = available >= MIN_WITHDRAWAL;
+  const hasData = entries.length > 0;
 
   return (
     <>
-      <section aria-labelledby="balance-label" className="pb-10">
-        <p id="balance-label" className="text-muted">
-          Disponível pra saque
+      <PageHeader
+        title="Carteira"
+        description="Sua prata dos loot splits da comunidade. Cada evento vira uma linha no extrato."
+        action={
+          hasData && (
+            <>
+              <Button variant="outline" asChild>
+                <Link to="/saques">Meus saques</Link>
+              </Button>
+              <WithdrawDialog
+                trigger={
+                  <Button disabled={!canWithdraw}>
+                    <ArrowUpRight />
+                    Pedir saque
+                  </Button>
+                }
+              />
+            </>
+          )
+        }
+      />
+
+      {negative && (
+        <p role="alert" className="mb-4 flex items-start gap-3 rounded-xl border border-destructive/40 bg-destructive/10 p-4 text-sm">
+          <TriangleAlert className="mt-0.5 size-4 shrink-0 text-destructive" aria-hidden />
+          Seu saldo ficou negativo por um estorno. Novos saques ficam bloqueados até ele voltar a zero.
         </p>
-        <p className={cn("num mt-1 text-[clamp(3rem,11vw,5.5rem)] leading-[0.95] font-medium tracking-tight", negative ? "text-oxblood" : "text-silver")}>
-          <Silver value={available} />
-        </p>
-        <p className="mt-2 text-sm text-faint">prata</p>
-
-        {/* barra: fatia disponível vs reservada por saques em análise */}
-        {total > 0n && (
-          <div className="mt-8 max-w-xl">
-            <div className="flex h-2 overflow-hidden rounded-full bg-rule" aria-hidden>
-              <div className="bg-silver" style={{ width: `${100 - reservedPct}%` }} />
-              {reserved > 0n && (
-                <div
-                  className="bg-brass/70"
-                  style={{
-                    width: `${reservedPct}%`,
-                    backgroundImage: "repeating-linear-gradient(135deg, transparent 0 4px, rgba(19,23,28,.45) 4px 6px)",
-                  }}
-                />
-              )}
-            </div>
-            <dl className="mt-3 flex flex-wrap gap-x-8 gap-y-2 text-sm">
-              <div className="flex items-center gap-2">
-                <span className="size-2 rounded-full bg-silver" />
-                <dt className="text-muted">Saldo total</dt>
-                <dd><Silver value={total} className="text-parchment" /></dd>
-              </div>
-              <div className="flex items-center gap-2">
-                <span className="size-2 rounded-full bg-brass/70" />
-                <dt className="text-muted">Reservado em saques</dt>
-                <dd><Silver value={reserved} className="text-parchment" /></dd>
-              </div>
-            </dl>
-          </div>
-        )}
-
-        {negative && (
-          <p className="mt-6 max-w-xl rounded-md border border-oxblood/40 bg-oxblood/10 p-4 text-sm">
-            Seu saldo ficou negativo por um estorno. Novos saques ficam bloqueados até ele voltar a zero.
-          </p>
-        )}
-
-        {/* Sem nenhum lançamento, o próximo passo é o guia do extrato, não um botão desabilitado. */}
-        {entries.length > 0 && (
-        <div className="mt-8 flex flex-wrap items-center gap-3">
-          <WithdrawDialog trigger={<Button disabled={available < MIN_WITHDRAWAL}>Pedir saque</Button>} />
-          {available >= 0n && available < MIN_WITHDRAWAL && (
-            <span className="text-sm text-muted">Saque mínimo de {formatSilverShort(MIN_WITHDRAWAL)}.</span>
-          )}
-        </div>
-        )}
-      </section>
-
-      {pending.length > 0 && (
-        <section className="mb-12 border-t border-rule pt-8">
-          <h2 className="font-display text-xl font-medium">Saques em andamento</h2>
-          <ul className="mt-4 divide-y divide-rule">
-            {pending.map((w) => (
-              <li key={w.id} className="flex flex-wrap items-center justify-between gap-3 py-3">
-                <div className="flex items-center gap-4">
-                  <Silver value={w.amount} className="text-xl text-parchment" />
-                  <StatusBadge status={w.status} />
-                </div>
-                <span className="text-sm text-faint">Pedido em {formatDateTime(w.requestedAt)}</span>
-              </li>
-            ))}
-          </ul>
-          <Link to="/saques" className="mt-2 inline-block text-sm text-brass hover:underline">
-            Ver todos os saques
-          </Link>
-        </section>
       )}
 
-      <section className="border-t border-rule pt-8">
-        <h2 className="font-display text-xl font-medium">Extrato</h2>
-        {entries.length === 0 ? (
-          <FirstSteps />
-        ) : (
-          <Statement entries={entries} />
-        )}
-      </section>
+      <div className="grid grid-cols-2 gap-3 xl:grid-cols-4">
+        <StatCard
+          emphasis
+          labelId="balance-label"
+          label="Disponível pra saque"
+          icon={<Coins />}
+          className="col-span-2 xl:col-span-1"
+          value={<CountUpSilver value={available} className={negative ? "text-destructive" : undefined} />}
+          hint={
+            canWithdraw ? (
+              <>Saldo total <Silver value={total} className="text-foreground" /></>
+            ) : available >= 0n ? (
+              <>Saque mínimo de {formatSilverShort(MIN_WITHDRAWAL)}</>
+            ) : (
+              "Saques bloqueados até o saldo voltar a zero"
+            )
+          }
+        />
+        <StatCard
+          label="Reservado em saques"
+          icon={<Lock />}
+          value={<Silver value={reserved} />}
+          hint={pendingCount === 0 ? "Nenhum saque em análise" : `${pendingCount} ${pendingCount === 1 ? "saque em análise" : "saques em análise"}`}
+        />
+        <StatCard
+          label={`Ganhos em ${monthFmt.format(now)}`}
+          icon={<CalendarDays />}
+          value={<Silver value={month.total} signed={month.total > 0n} className={month.total > 0n ? "text-success" : undefined} />}
+          hint={month.splits === 0 ? "Nenhum split neste mês ainda" : `${month.splits} ${month.splits === 1 ? "split recebido" : "splits recebidos"}`}
+        />
+        <StatCard
+          label="Último split"
+          className="col-span-2 xl:col-span-1"
+          icon={<Swords />}
+          value={last ? <Silver value={last.amount} signed /> : <span className="text-muted-foreground">—</span>}
+          hint={last ? <span className="block truncate">{last.eventName ?? last.description}, {formatDateTime(last.createdAt)}</span> : "Participe de um evento pra receber"}
+        />
+      </div>
+
+      {hasData && <ReservedBar total={total} reserved={reserved} />}
+
+      <div className="mt-4 grid items-start gap-4 lg:grid-cols-[minmax(0,1fr)_20rem]">
+        <Panel title="Extrato" action={hasData && <span className="text-xs text-muted-foreground">{entries.length} lançamentos</span>}>
+          {hasData ? <Statement entries={entries} /> : <FirstSteps />}
+        </Panel>
+
+        <div className="grid gap-4">
+          <Panel
+            title="Saques em andamento"
+            action={
+              <Link to="/saques" className="text-sm text-muted-foreground underline-offset-4 hover:text-foreground hover:underline">
+                Ver todos
+              </Link>
+            }
+          >
+            {open.length === 0 ? (
+              <p className="px-4 py-5 text-sm text-muted-foreground">
+                {canWithdraw ? "Nenhum saque aberto. Seu disponível já pode ser sacado." : "Nenhum saque aberto."}
+              </p>
+            ) : (
+              <ul className="divide-y">
+                {open.map((w) => (
+                  <li key={w.id} className="flex flex-col gap-1.5 px-4 py-3">
+                    <div className="flex items-center justify-between gap-2">
+                      <Silver value={w.amount} className="text-lg font-semibold" />
+                      <StatusBadge status={w.status} />
+                    </div>
+                    <span className="text-xs text-muted-foreground">Pedido em {formatDateTime(w.requestedAt)}</span>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </Panel>
+          <WithdrawalSummary />
+        </div>
+      </div>
     </>
   );
 }
 
-function Statement({ entries }: { entries: LedgerEntry[] }) {
-  const groups = new Map<string, LedgerEntry[]>();
-  for (const e of entries) {
-    const key = new Date(e.createdAt).toLocaleDateString("pt-BR");
-    groups.set(key, [...(groups.get(key) ?? []), e]);
-  }
-  const reversed = new Set(entries.map((e) => e.reversesId).filter(Boolean));
-
+/** Histórico de saques em números: dá contexto ao "Pedir saque" sem abrir outra tela. */
+function WithdrawalSummary() {
+  const { user } = useCurrentUser();
+  const { withdrawalsFor } = useStore();
+  const all = withdrawalsFor(user.discordId);
+  const settled = all.filter((w) => w.status === "settled");
+  const rows: { label: string; value: ReactNode }[] = [
+    { label: "Pedidos", value: <span className="num">{all.length}</span> },
+    { label: "Entregues", value: <span className="num">{settled.length}</span> },
+    { label: "Recusados", value: <span className="num">{all.filter((w) => w.status === "rejected").length}</span> },
+    { label: "Prata já sacada", value: <Silver value={settled.reduce((s, w) => s + w.amount, 0n)} /> },
+  ];
+  if (all.length === 0) return null;
   return (
-    <div className="mt-2">
-      {[...groups.entries()].map(([day, items]) => (
-        <div key={day} className="mt-6">
-          <h3 className="text-sm text-faint">{formatDayHeading(items[0].createdAt)}</h3>
-          <ul className="mt-2">
-            {items.map((e) => {
-              const credit = e.amount > 0n;
-              const isReversed = reversed.has(e.id);
-              return (
-                <li key={e.id} className="grid grid-cols-[1fr_auto] items-baseline gap-x-4 border-b border-rule/60 py-3 last:border-0">
-                  <div className="min-w-0">
-                    <p className={cn("truncate", isReversed && "text-muted line-through decoration-faint")}>
-                      {e.eventName ?? e.description}
-                    </p>
-                    <p className={cn("truncate text-sm", e.kind === "reversal" ? "text-oxblood" : "text-muted")}>
-                      {e.eventName ? e.description : null}
-                      {isReversed && " (estornado)"}
-                    </p>
-                  </div>
-                  <Silver
-                    value={e.amount}
-                    signed
-                    className={cn("text-lg", isReversed ? "text-faint line-through" : credit ? "text-parchment" : "text-muted")}
-                  />
-                </li>
-              );
-            })}
-          </ul>
-        </div>
-      ))}
+    <Panel title="Histórico de saques">
+      <dl className="divide-y text-sm">
+        {rows.map((r) => (
+          <div key={r.label} className="flex items-center justify-between px-4 py-2.5">
+            <dt className="text-muted-foreground">{r.label}</dt>
+            <dd className="font-semibold">{r.value}</dd>
+          </div>
+        ))}
+      </dl>
+    </Panel>
+  );
+}
+
+/** Barra disponível vs reservado: mostra de onde vem a diferença entre total e disponível. */
+function ReservedBar({ total, reserved }: { total: bigint; reserved: bigint }) {
+  if (total <= 0n || reserved <= 0n) return null;
+  const reservedPermille = Number((reserved * 1000n) / total);
+  return (
+    <div className="mt-3 flex items-center gap-3 rounded-xl border bg-card px-4 py-3 text-xs text-muted-foreground" aria-hidden>
+      <span className="shrink-0">Disponível</span>
+      <div className="flex h-2 flex-1 overflow-hidden rounded-full bg-muted">
+        <div className="bg-brand" style={{ width: `${100 - reservedPermille / 10}%` }} />
+        <div className="bg-warning" style={{ width: `${reservedPermille / 10}%` }} />
+      </div>
+      <span className="shrink-0">Reservado {Math.round(reservedPermille / 10)}%</span>
     </div>
   );
 }
 
+const kindMeta: Record<LedgerEntry["kind"], { label: string; icon: ReactNode }> = {
+  split_credit: { label: "Split", icon: <ArrowDownLeft /> },
+  split_remainder: { label: "Sobra", icon: <ArrowDownLeft /> },
+  withdrawal_debit: { label: "Saque", icon: <ArrowUpRight /> },
+  reversal: { label: "Estorno", icon: <RotateCcw /> },
+};
+
+function Statement({ entries }: { entries: LedgerEntry[] }) {
+  const reversed = new Set(entries.map((e) => e.reversesId).filter(Boolean));
+  return (
+    <Table>
+      <TableHeader>
+        <TableRow className="hover:bg-transparent">
+          <TableHead className="hidden sm:table-cell">Data</TableHead>
+          <TableHead>Lançamento</TableHead>
+          <TableHead className="hidden md:table-cell">Tipo</TableHead>
+          <TableHead className="text-right">Valor</TableHead>
+        </TableRow>
+      </TableHeader>
+      <TableBody>
+        {entries.map((e) => {
+          const isReversed = reversed.has(e.id);
+          const meta = kindMeta[e.kind];
+          return (
+            <TableRow key={e.id}>
+              <TableCell className="num hidden text-sm text-muted-foreground sm:table-cell">{formatDateTime(e.createdAt)}</TableCell>
+              <TableCell className="max-w-0 w-full whitespace-normal">
+                <p className={cn("truncate font-medium", isReversed && "text-muted-foreground line-through")}>{e.eventName ?? e.description}</p>
+                <p className={cn("truncate text-xs", e.kind === "reversal" ? "text-destructive" : "text-muted-foreground")}>
+                  <span className="sm:hidden">{formatDateTime(e.createdAt)} · </span>
+                  {e.eventName ? e.description : meta.label}
+                  {isReversed && " (estornado)"}
+                </p>
+              </TableCell>
+              <TableCell className="hidden md:table-cell">
+                <Pill tone={e.kind === "reversal" ? "destructive" : e.kind === "withdrawal_debit" ? "info" : "neutral"} icon={meta.icon}>
+                  {meta.label}
+                </Pill>
+              </TableCell>
+              <TableCell className="text-right">
+                <Silver
+                  value={e.amount}
+                  signed
+                  className={cn(
+                    "font-semibold",
+                    isReversed ? "text-muted-foreground line-through" : e.amount > 0n ? "text-success" : "text-foreground",
+                  )}
+                />
+              </TableCell>
+            </TableRow>
+          );
+        })}
+      </TableBody>
+    </Table>
+  );
+}
+
 /**
- * Estado vazio com um próximo passo (revenue-centric-design: empty state que direciona,
- * progresso visível desde o primeiro passo). Conta ativada já conta como feito.
+ * Estado vazio com um próximo passo (revenue-centric-design, "Never ship a blank dashboard"):
+ * checklist com progresso já começado (conta ativada conta como feito) e um único CTA por passo.
  */
 function FirstSteps() {
   const { state } = useMyNick();
@@ -171,34 +261,42 @@ function FirstSteps() {
     { done: false, title: "Participe de um evento com loot split", detail: "Entre na call do evento pelo Discord quando o caller chamar. Seu tempo na call define sua parte." },
     { done: false, title: "Receba sua parte aqui", detail: "Quando a staff confirmar a divisão, o valor aparece neste extrato e pode ser sacado." },
   ];
+  const done = steps.filter((s) => s.done).length;
   return (
-    <ol className="mt-6 max-w-xl space-y-4" aria-label="Como receber sua primeira prata">
-      {steps.map((step, i) => (
-        <li key={step.title} className="flex gap-4">
-          <span
-            className={cn(
-              "num grid size-7 shrink-0 place-items-center rounded-full border text-sm",
-              step.done ? "border-verdigris/50 bg-verdigris/10 text-verdigris" : "border-rule text-muted",
-            )}
-            aria-hidden
-          >
-            {step.done ? "✓" : i + 1}
-          </span>
-          <div>
-            <p className={step.done ? "text-muted" : "text-parchment"}>
-              {step.title}
-              {step.done && <span className="sr-only"> (feito)</span>}
-            </p>
-            <p className="text-sm text-faint">{step.detail}</p>
+    <div className="p-4">
+      <div className="mb-4 flex items-center gap-3">
+        <Progress value={(done / steps.length) * 100} className="h-2 flex-1" aria-label="Progresso até a primeira prata" />
+        <span className="num text-xs text-muted-foreground">
+          {done} de {steps.length}
+        </span>
+      </div>
+      <ol className="space-y-1" aria-label="Como receber sua primeira prata">
+        {steps.map((step, i) => (
+          <li key={step.title} className={cn("flex gap-3 rounded-lg p-3", !step.done && step.link && "bg-muted")}>
+            <span
+              className={cn(
+                "num grid size-6 shrink-0 place-items-center rounded-full border text-xs font-semibold",
+                step.done ? "border-success bg-success text-background" : "text-muted-foreground",
+              )}
+              aria-hidden
+            >
+              {step.done ? <Check className="size-3.5" strokeWidth={3} /> : i + 1}
+            </span>
+            <div className="min-w-0 flex-1">
+              <p className={cn("font-medium", step.done && "text-muted-foreground")}>
+                {step.title}
+                {step.done && <span className="sr-only"> (feito)</span>}
+              </p>
+              <p className="text-sm text-muted-foreground">{step.detail}</p>
+            </div>
             {step.link && (
-              <Link to={step.link.to} className="mt-1 inline-block text-sm text-brass hover:underline">
-                {step.link.label}
-              </Link>
+              <Button size="sm" asChild className="self-center">
+                <Link to={step.link.to}>{step.link.label}</Link>
+              </Button>
             )}
-          </div>
-        </li>
-      ))}
-    </ol>
+          </li>
+        ))}
+      </ol>
+    </div>
   );
 }
-

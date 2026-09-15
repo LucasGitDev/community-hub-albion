@@ -4,7 +4,7 @@ export function Placeholder({ title, description, task }: { title: string; descr
   return (
     <>
       <PageHeader title={title} description={description} />
-      <div className="rounded-lg border border-dashed border-rule p-8 text-muted">
+      <div className="rounded-xl border border-dashed p-8 text-muted-foreground">
         Tela ainda não desenhada. Entra com a {task} do backlog.
       </div>
     </>

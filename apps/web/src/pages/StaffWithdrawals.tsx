@@ -1,10 +1,14 @@
 import { useState } from "react";
-import { toast } from "sonner";
-import { Button } from "@/components/ui/button";
-import { PageHeader, Silver, StatusBadge } from "@/components/display";
-import { cn } from "@/lib/utils";
+import { Check, Hourglass, Inbox, PackageCheck, Truck } from "lucide-react";
 import { formatSilver } from "@albion-hub/shared";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
+import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { EmptyState, PageHeader, Silver, StatCard, StatusBadge } from "@/components/display";
+import { cn } from "@/lib/utils";
 import { nickOf, useStore } from "@/mock/store";
+import { useDecisionFeedback } from "@/theme/feedback";
 import type { Withdrawal, WithdrawalStatus } from "@/mock/types";
 import { WithdrawalTimeline } from "./MyWithdrawals";
 
@@ -15,45 +19,70 @@ const tabs: { key: WithdrawalStatus; label: string }[] = [
   { key: "rejected", label: "Recusados" },
 ];
 
+const sum = (list: Withdrawal[]) => list.reduce((s, w) => s + w.amount, 0n);
+
 export function StaffWithdrawals() {
   const { allWithdrawals } = useStore();
   const [tab, setTab] = useState<WithdrawalStatus>("pending");
-  const list = allWithdrawals.filter((w) => w.status === tab);
+  const by = (s: WithdrawalStatus) => allWithdrawals.filter((w) => w.status === s);
+  const list = by(tab);
+  const pending = by("pending");
+  const approved = by("approved");
+  const settled = by("settled");
 
   return (
     <>
       <PageHeader title="Fila de saques" description="Aprovar debita o saldo do membro. Marque como entregue depois de transferir in-game." />
 
-      <div role="tablist" className="mb-6 flex gap-1 overflow-x-auto border-b border-rule [scrollbar-width:none]">
-        {tabs.map((t) => {
-          const count = allWithdrawals.filter((w) => w.status === t.key).length;
-          return (
-            <button
-              key={t.key}
-              role="tab"
-              aria-selected={tab === t.key}
-              onClick={() => setTab(t.key)}
-              className={cn(
-                "-mb-px flex items-center gap-2 border-b-2 px-3 py-2.5 text-sm whitespace-nowrap transition-colors duration-150",
-                tab === t.key ? "border-brass text-parchment" : "border-transparent text-muted hover:text-parchment",
-              )}
-            >
-              {t.label}
-              <span className="num text-xs text-faint">{count}</span>
-            </button>
-          );
-        })}
+      <div className="mb-4 grid grid-cols-2 gap-3 lg:grid-cols-3">
+        <StatCard
+          emphasis
+          label="Em análise"
+          icon={<Hourglass />}
+          value={<Silver value={sum(pending)} />}
+          hint={`${pending.length} ${pending.length === 1 ? "pedido esperando decisão" : "pedidos esperando decisão"}`}
+          className="col-span-2 lg:col-span-1"
+        />
+        <StatCard label="A entregar" icon={<Truck />} value={<Silver value={sum(approved)} />} hint={`${approved.length} ${approved.length === 1 ? "aprovado" : "aprovados"}, prata a transferir`} />
+        <StatCard label="Entregue" icon={<PackageCheck />} value={<Silver value={sum(settled)} />} hint={`${settled.length} ${settled.length === 1 ? "saque concluído" : "saques concluídos"}`} />
       </div>
 
-      {list.length === 0 ? (
-        <p className="text-muted">Nada aqui agora.</p>
-      ) : (
-        <ul className="space-y-3">
-          {list.map((w) => (
-            <StaffRow key={w.id} w={w} />
-          ))}
-        </ul>
-      )}
+      <section className="overflow-hidden rounded-xl border bg-card">
+        <Tabs value={tab} onValueChange={(v) => setTab(v as WithdrawalStatus)} className="gap-0">
+          <div className="overflow-x-auto border-b px-2 pt-2 [scrollbar-width:none]">
+            <TabsList variant="line" className="h-10">
+              {tabs.map((t) => {
+                const count = by(t.key).length;
+                return (
+                  <TabsTrigger key={t.key} value={t.key} className="px-3">
+                    {t.label}
+                    <span
+                      className={cn(
+                        "num grid h-5 min-w-5 place-items-center rounded-full px-1.5 text-xs font-semibold",
+                        t.key === "pending" && count > 0 ? "bg-primary text-primary-foreground" : "bg-muted text-muted-foreground",
+                      )}
+                    >
+                      {count}
+                    </span>
+                  </TabsTrigger>
+                );
+              })}
+            </TabsList>
+          </div>
+        </Tabs>
+
+        {list.length === 0 ? (
+          <div className="p-4">
+            <EmptyState icon={<Inbox />} title="Nada aqui agora." description="Pedidos novos dos membros entram em análise e aparecem nesta aba." />
+          </div>
+        ) : (
+          <ul className="divide-y">
+            {list.map((w) => (
+              <StaffRow key={w.id} w={w} />
+            ))}
+          </ul>
+        )}
+      </section>
     </>
   );
 }
@@ -62,69 +91,87 @@ function StaffRow({ w }: { w: Withdrawal }) {
   const { decideWithdrawal, settleWithdrawal, balanceFor } = useStore();
   const [note, setNote] = useState("");
   const [rejecting, setRejecting] = useState(false);
+  const { leaving, finish } = useDecisionFeedback();
   const balance = balanceFor(w.userId);
   const nick = nickOf(w.userId);
 
   return (
-    <li className="rounded-lg border border-rule bg-stone p-4 md:p-5">
-      <div className="flex flex-wrap items-start justify-between gap-3">
-        <div>
-          <p className="font-medium">{nick}</p>
-          <Silver value={w.amount} className="text-3xl text-silver" />
-        </div>
-        <StatusBadge status={w.status} />
-      </div>
-      <div className="mt-2">
-        <WithdrawalTimeline w={w} />
-      </div>
-      {w.status === "pending" && (
-        <p className="mt-1 text-sm text-faint">
-          Saldo total de {nick}: <Silver value={balance.total} className="text-muted" />
-        </p>
+    <li
+      className={cn(
+        "grid gap-x-6 gap-y-3 px-4 py-3 lg:grid-cols-[minmax(0,15rem)_minmax(0,10rem)_minmax(0,1fr)_auto] lg:items-center lg:py-(--row-py)",
+        leaving && "row-leave",
       )}
-      {w.note && <p className="mt-3 border-l-2 border-rule pl-3 text-sm">{w.note}</p>}
+    >
+      <div className="flex min-w-0 items-center gap-3">
+        <span className="grid size-8 shrink-0 place-items-center rounded-full bg-secondary text-xs font-semibold text-secondary-foreground" aria-hidden>
+          {nick.slice(0, 2).toUpperCase()}
+        </span>
+        <div className="min-w-0">
+          <p className="truncate font-medium">{nick}</p>
+          {w.status === "pending" && (
+            <p className="truncate text-xs text-muted-foreground">
+              Saldo total: <Silver value={balance.total} />
+            </p>
+          )}
+        </div>
+      </div>
+
+      <div className="flex flex-wrap items-center justify-between gap-2 lg:block">
+        <Silver value={w.amount} className={cn("text-2xl font-semibold", w.status === "pending" && "text-brand")} />
+        <span className="lg:mt-1 lg:block">
+          <StatusBadge status={w.status} />
+        </span>
+      </div>
+
+      <div className="min-w-0 space-y-1">
+        <WithdrawalTimeline w={w} />
+        {w.note && <p className="border-l-2 pl-3 text-sm">{w.note}</p>}
+      </div>
 
       {w.status === "pending" && (
-        <div className="mt-4 space-y-3">
+        <div className="space-y-2 lg:w-72">
           {rejecting && (
-            <textarea
+            <Textarea
               autoFocus
               value={note}
               onChange={(e) => setNote(e.target.value)}
               placeholder="Motivo da recusa (o membro vê essa mensagem)"
               rows={2}
-              className="w-full rounded-md border border-rule bg-ink p-3 text-sm outline-none focus:border-brass"
+              className="min-h-16 text-sm"
             />
           )}
-          <div className="flex flex-wrap gap-2">
+          <div className="flex flex-wrap gap-2 lg:justify-end">
             {!rejecting ? (
               <>
-                <Button
-                  onClick={() => {
-                    decideWithdrawal(w.id, "approved");
-                    toast.success("Saque aprovado", { description: `${formatSilver(w.amount)} debitados de ${nick}.` });
-                  }}
-                >
-                  Aprovar saque
-                </Button>
-                <Button variant="destructive" onClick={() => setRejecting(true)}>
+                <Button variant="outline" onClick={() => setRejecting(true)}>
                   Recusar
+                </Button>
+                <Button
+                  onClick={() =>
+                    finish({ kind: "success", title: "Saque aprovado", description: `${formatSilver(w.amount)} debitados de ${nick}.` }, () =>
+                      decideWithdrawal(w.id, "approved"),
+                    )
+                  }
+                >
+                  <Check />
+                  Aprovar saque
                 </Button>
               </>
             ) : (
               <>
+                <Button variant="ghost" onClick={() => setRejecting(false)}>
+                  Voltar
+                </Button>
                 <Button
                   variant="destructive"
                   disabled={!note.trim()}
-                  onClick={() => {
-                    decideWithdrawal(w.id, "rejected", note.trim());
-                    toast("Saque recusado", { description: `Reserva de ${nick} liberada.` });
-                  }}
+                  onClick={() =>
+                    finish({ kind: "neutral", title: "Saque recusado", description: `Reserva de ${nick} liberada.` }, () =>
+                      decideWithdrawal(w.id, "rejected", note.trim()),
+                    )
+                  }
                 >
                   Confirmar recusa
-                </Button>
-                <Button variant="ghost" onClick={() => setRejecting(false)}>
-                  Voltar
                 </Button>
               </>
             )}
@@ -133,19 +180,15 @@ function StaffRow({ w }: { w: Withdrawal }) {
       )}
 
       {w.status === "approved" && (
-        <div className="mt-4 flex flex-col gap-2 sm:flex-row">
-          <input
-            value={note}
-            onChange={(e) => setNote(e.target.value)}
-            placeholder="Nota da entrega, ex: banco de Martlock"
-            className="h-10 w-full rounded-md border sm:flex-1 border-rule bg-ink px-3 text-sm outline-none focus:border-brass"
-          />
+        <div className="flex flex-col gap-2 sm:flex-row lg:w-96">
+          <Input value={note} onChange={(e) => setNote(e.target.value)} placeholder="Nota da entrega, ex: banco de Martlock" className="sm:flex-1" />
           <Button
-            variant="secondary"
-            onClick={() => {
-              settleWithdrawal(w.id, note.trim() || undefined);
-              toast.success("Marcado como entregue");
-            }}
+            variant="outline"
+            onClick={() =>
+              finish({ kind: "success", title: "Marcado como entregue", description: `${formatSilver(w.amount)} entregues a ${nick}.` }, () =>
+                settleWithdrawal(w.id, note.trim() || undefined),
+              )
+            }
           >
             Marcar como entregue
           </Button>
