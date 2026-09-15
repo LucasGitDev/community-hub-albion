@@ -31,6 +31,9 @@ const matrix: Case[] = [
   ["read", "EventTemplate", "type", { member: false, caller: true, staff: true, admin: true }],
   ["update", "LootSplit", "type", { member: false, caller: false, staff: true, admin: true }],
   // entrada e papéis
+  ["create", "MemberRequest", "type", yes],
+  ["read", "MemberRequest", "own", yes],
+  ["read", "MemberRequest", "other", { member: false, caller: false, staff: true, admin: true }],
   ["approve", "MemberRequest", "type", { member: false, caller: false, staff: true, admin: true }],
   ["update", "UserRole", "type", { member: false, caller: false, staff: false, admin: true }],
   ["read", "UserRole", "type", { member: false, caller: false, staff: false, admin: true }],
@@ -40,7 +43,7 @@ function target(subjectType: SubjectType, who: "own" | "other" | "type") {
   if (who === "type" || subjectType === "all") return subjectType;
   const id = who === "own" ? ME : OTHER;
   if (subjectType === "Event") return asSubject("Event", { ownerId: id });
-  if (subjectType === "Wallet" || subjectType === "Withdrawal") return asSubject(subjectType, { userId: id });
+  if (subjectType === "Wallet" || subjectType === "Withdrawal" || subjectType === "MemberRequest") return asSubject(subjectType, { userId: id });
   return subjectType;
 }
 
