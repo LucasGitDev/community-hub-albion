@@ -54,3 +54,8 @@ export async function listPendingNickRequests(db: Database) {
     .where(eq(nickRequests.status, "pending"))
     .orderBy(asc(nickRequests.createdAt));
 }
+
+/** Grava o nick vigente sem passar pela fila (seed de dev/e2e). Aprovação real é da TASK-013. */
+export async function setGameNick(db: Database, userId: string, gameNick: string | null): Promise<void> {
+  await db.update(users).set({ gameNick, updatedAt: sql`now()` }).where(eq(users.id, userId));
+}

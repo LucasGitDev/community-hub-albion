@@ -8,6 +8,7 @@ import {
   getNickStatus,
   listPendingNickRequests,
   requestNick,
+  setGameNick,
   findValidSession,
   grantRole,
   hashSessionToken,
@@ -335,7 +336,7 @@ describe.skipIf(!url)("@albion-hub/db (Postgres real)", () => {
     it("membro aprovado que pede troca mantém nick vigente e papel (AC#3)", async () => {
       const u = await upsertUserByDiscordId(handle.db, { discordId: "500000000000000003", discordUsername: "veterano" });
       await grantRole(handle.db, u.id, "member");
-      await handle.db.update(schema.users).set({ gameNick: "Veterano" }).where(eq(schema.users.id, u.id));
+      await setGameNick(handle.db, u.id, "Veterano");
       await requestNick(handle.db, u.id, "VeteranoNovo");
       const status = await getNickStatus(handle.db, u.id);
       expect(status.gameNick).toBe("Veterano");
