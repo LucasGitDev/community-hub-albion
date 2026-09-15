@@ -76,7 +76,8 @@ describe.skipIf(!baseUrl)("auth Discord OAuth HTTP (TASK-008, Postgres real + Di
       .useValue(discord)
       .compile();
     app = configureApp(moduleRef.createNestApplication({ logger: false }));
-    await app.init();
+    // Servidor escutando uma vez: supertest não sobe/derruba um listener por request (evita "socket hang up" intermitente).
+    await app.listen(0, "127.0.0.1");
   }, 60_000);
 
   afterAll(async () => {
