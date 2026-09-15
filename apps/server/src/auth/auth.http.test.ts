@@ -238,4 +238,26 @@ describe.skipIf(!baseUrl)("auth Discord OAuth HTTP (TASK-008, Postgres real + Di
     expect(noHeaders.status).toBe(403);
     expect((await http().get("/api/auth/me").set("Cookie", `ah_session=${token}`)).status).toBe(200);
   });
+
+  describe("RBAC na API (TASK-009)", () => {
+    it("rota protegida responde 401 sem sessão e com sessão inválida (AC#2)", async () => {
+      expect((await http().get("/api/roles")).status).toBe(401);
+      expect((await http().get("/api/roles").set("Cookie", "ah_session=token-inventado")).status).toBe(401);
+    });
+
+    it("member sem permissão recebe 403 (AC#2)", async () => {
+      const { callback } = await login(MEMBER.id);
+      const response = await http().get("/api/roles").set("Cookie", `ah_session=${cookieValue(callback, "ah_session")}`);
+      expect(response.status).toBe(403);
+      expect(response.body.message).toBe("Você não tem permissão para esta ação.");
+    });
+
+    it("admin com permissão recebe 200 com o catálogo de papéis", async () => {
+      const { callback } = await login(ADMIN.id);
+      const response = await http().get("/api/roles").set("Cookie", `ah_session=${cookieValue(callback, "ah_session")}`);
+      expect(response.status).toBe(200);
+      expect(response.body.roles.map((r: { id: string }) => r.id)).toEqual(["member", "caller", "staff", "admin"]);
+    });
+  });
 });
+
