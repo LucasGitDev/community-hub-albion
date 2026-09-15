@@ -1,4 +1,4 @@
-import { PageHeader } from "@/components/ui";
+import { PageHeader } from "@/components/display";
 
 export function Placeholder({ title, description, task }: { title: string; description: string; task: string }) {
   return (

@@ -1,7 +1,8 @@
 import { useState } from "react";
 import { toast } from "sonner";
-import { Button, PageHeader, Silver, StatusBadge } from "@/components/ui";
-import { cn } from "@/lib/format";
+import { Button } from "@/components/ui/button";
+import { PageHeader, Silver, StatusBadge } from "@/components/display";
+import { cn } from "@/lib/utils";
 import { formatSilver } from "@albion-hub/shared";
 import { nickOf, useStore } from "@/mock/store";
 import type { Withdrawal, WithdrawalStatus } from "@/mock/types";
@@ -106,14 +107,14 @@ function StaffRow({ w }: { w: Withdrawal }) {
                 >
                   Aprovar saque
                 </Button>
-                <Button variant="danger" onClick={() => setRejecting(true)}>
+                <Button variant="destructive" onClick={() => setRejecting(true)}>
                   Recusar
                 </Button>
               </>
             ) : (
               <>
                 <Button
-                  variant="danger"
+                  variant="destructive"
                   disabled={!note.trim()}
                   onClick={() => {
                     decideWithdrawal(w.id, "rejected", note.trim());
@@ -140,7 +141,7 @@ function StaffRow({ w }: { w: Withdrawal }) {
             className="h-10 w-full rounded-md border sm:flex-1 border-rule bg-ink px-3 text-sm outline-none focus:border-brass"
           />
           <Button
-            variant="quiet"
+            variant="secondary"
             onClick={() => {
               settleWithdrawal(w.id, note.trim() || undefined);
               toast.success("Marcado como entregue");

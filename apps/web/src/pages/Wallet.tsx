@@ -1,7 +1,9 @@
 import { Link } from "react-router";
-import { Button, Silver, StatusBadge } from "@/components/ui";
+import { Button } from "@/components/ui/button";
+import { Silver, StatusBadge } from "@/components/display";
 import { WithdrawDialog } from "@/components/WithdrawDialog";
-import { cn, formatDateTime, formatDayHeading } from "@/lib/format";
+import { cn } from "@/lib/utils";
+import { formatDateTime, formatDayHeading } from "@/lib/format";
 import { formatSilverShort } from "@albion-hub/shared";
 import { MIN_WITHDRAWAL, useStore, useUser } from "@/mock/store";
 import type { LedgerEntry } from "@/mock/types";

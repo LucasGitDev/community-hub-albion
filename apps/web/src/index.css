@@ -16,8 +16,29 @@
   --color-silver: #d6dae0;
   --color-brass: #c9a45c;
   --color-brass-deep: #a8853f;
+  --color-brass-hover: #d6b36d;
   --color-verdigris: #72b394;
   --color-oxblood: #c9625b;
+
+  /* Ponte pros tokens semânticos do shadcn/ui (componentes em src/components/ui).
+     `muted` fica com o significado local (texto secundário); use text-muted, não bg-muted. */
+  --color-background: var(--color-ink);
+  --color-foreground: var(--color-parchment);
+  --color-primary: var(--color-brass);
+  --color-primary-foreground: var(--color-ink);
+  --color-secondary: var(--color-stone-raised);
+  --color-secondary-foreground: var(--color-parchment);
+  --color-accent: var(--color-stone-raised);
+  --color-accent-foreground: var(--color-parchment);
+  --color-popover: var(--color-stone);
+  --color-popover-foreground: var(--color-parchment);
+  --color-card: var(--color-stone);
+  --color-card-foreground: var(--color-parchment);
+  --color-muted-foreground: var(--color-muted);
+  --color-destructive: var(--color-oxblood);
+  --color-border: var(--color-rule);
+  --color-input: var(--color-rule);
+  --color-ring: var(--color-brass);
 
   --font-display: "Spectral", Georgia, serif;
   --font-sans: "Hanken Grotesk Variable", system-ui, sans-serif;
