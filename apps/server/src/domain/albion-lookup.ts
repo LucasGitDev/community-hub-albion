@@ -16,6 +16,8 @@ export interface FetchAlbionPlayerLookupOptions {
   /** TTL de unavailable: curto, mas evita tempestade de chamadas com a API fora. */
   unavailableTtlMs?: number;
   maxEntries?: number;
+  /** Motivo da indisponibilidade (log operacional; sem corpo da resposta). */
+  onUnavailable?: (reason: string) => void;
 }
 
 /**
@@ -35,7 +37,7 @@ export class FetchAlbionPlayerLookup implements AlbionPlayerLookup {
   constructor(private readonly options: FetchAlbionPlayerLookupOptions) {
     this.fetchFn = options.fetch ?? fetch;
     this.now = options.now ?? Date.now;
-    this.timeoutMs = options.timeoutMs ?? 3_000;
+    this.timeoutMs = options.timeoutMs ?? 5_000;
     this.ttlMs = options.ttlMs ?? 10 * 60_000;
     this.unavailableTtlMs = options.unavailableTtlMs ?? 60_000;
     this.maxEntries = options.maxEntries ?? 1_000;
@@ -65,6 +67,10 @@ export class FetchAlbionPlayerLookup implements AlbionPlayerLookup {
   }
 
   private async request(region: AlbionRegion, nick: string): Promise<AlbionLookupResult> {
+    const unavailable = (reason: string): AlbionLookupResult => {
+      this.options.onUnavailable?.(reason);
+      return { status: "unavailable", region, checkedAt: new Date(this.now()).toISOString() };
+    };
     const checkedAt = () => new Date(this.now()).toISOString();
     try {
       const res = await this.fetchFn(albionSearchUrl(region, nick), {
@@ -72,13 +78,13 @@ export class FetchAlbionPlayerLookup implements AlbionPlayerLookup {
         redirect: "error",
         signal: AbortSignal.timeout(this.timeoutMs),
       });
-      if (!res.ok) return { status: "unavailable", region, checkedAt: checkedAt() };
+      if (!res.ok) return unavailable(`HTTP ${res.status}`);
       const match = matchAlbionPlayer(await res.json(), nick);
-      if (match === "invalid") return { status: "unavailable", region, checkedAt: checkedAt() };
+      if (match === "invalid") return unavailable("resposta fora do formato");
       if (!match) return { status: "not_found", region, checkedAt: checkedAt() };
       return { status: "found", region, ...match, checkedAt: checkedAt() };
-    } catch {
-      return { status: "unavailable", region, checkedAt: checkedAt() };
+    } catch (error) {
+      return unavailable(error instanceof Error ? error.name : "erro de rede");
     }
   }
 }

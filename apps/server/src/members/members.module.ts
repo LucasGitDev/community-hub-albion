@@ -1,4 +1,4 @@
-import { type DynamicModule, Module } from "@nestjs/common";
+import { type DynamicModule, Logger, Module } from "@nestjs/common";
 import type { Env } from "../config/env.js";
 import { AUTH_ENV } from "../auth/auth.controller.js";
 import { AuthorizeGuard } from "../auth/authorize.js";
@@ -19,7 +19,10 @@ export class MembersModule {
       controllers: [StaffNickRequestsController],
       providers: [{ provide: AUTH_ENV, useValue: env }, SessionService, AuthorizeGuard, SameOriginGuard,
         NickDecisionService,
-        { provide: ALBION_PLAYER_LOOKUP, useFactory: () => new FetchAlbionPlayerLookup({ region: env.ALBION_REGION }) },
+        { provide: ALBION_PLAYER_LOOKUP, useFactory: () => new FetchAlbionPlayerLookup({
+            region: env.ALBION_REGION,
+            onUnavailable: (reason) => new Logger("AlbionPlayerLookup").warn(`API do Albion indisponível: ${reason}`),
+          }) },
       ],
       exports: [NickDecisionService, ALBION_PLAYER_LOOKUP],
     };
