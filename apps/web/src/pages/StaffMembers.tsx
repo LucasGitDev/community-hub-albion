@@ -1,5 +1,5 @@
-import { REJECTION_NOTE_MAX_LENGTH, validateRejectionNote } from "@albion-hub/shared";
-import { ArrowRight } from "lucide-react";
+import { REJECTION_NOTE_MAX_LENGTH, describeAlbionLookup, validateRejectionNote, type AlbionLookupResult } from "@albion-hub/shared";
+import { ArrowRight, CircleCheck, CircleHelp, CircleSlash } from "lucide-react";
 import { useCallback, useEffect, useId, useState } from "react";
 import { toast } from "sonner";
 import { PageHeader } from "@/components/display";
@@ -12,6 +12,7 @@ interface StaffNickRequest {
   createdAt: string;
   updatedAt: string;
   user: { id: string; displayName: string | null; discordUsername: string; gameNick: string | null };
+  albion: AlbionLookupResult;
 }
 
 async function api<T>(path: string, init?: RequestInit): Promise<T> {
@@ -119,6 +120,7 @@ function RequestRow({ r, onDecided, onStale }: { r: StaffNickRequest; onDecided:
         )}
         <span className="break-all text-parchment">{r.nick}</span>
       </p>
+      <AlbionStatus result={r.albion} />
 
       <div className="mt-4 space-y-3">
         {rejecting && (
@@ -161,5 +163,24 @@ function RequestRow({ r, onDecided, onStale }: { r: StaffNickRequest; onDecided:
         </div>
       </div>
     </li>
+  );
+}
+
+const ALBION_STATUS_STYLE = {
+  found: { Icon: CircleCheck, className: "border-verdigris/40 text-verdigris" },
+  not_found: { Icon: CircleSlash, className: "border-oxblood/40 text-oxblood" },
+  unavailable: { Icon: CircleHelp, className: "border-rule text-muted" },
+} as const;
+
+/** Conferência na API Albion (TASK-016, Q14): só ajuda a staff, não bloqueia os botões. Desligada → nada. */
+function AlbionStatus({ result }: { result: AlbionLookupResult }) {
+  const text = describeAlbionLookup(result);
+  if (!text || result.status === "disabled") return null;
+  const { Icon, className } = ALBION_STATUS_STYLE[result.status];
+  return (
+    <p className={`mt-2 inline-flex max-w-full items-center gap-1.5 rounded-md border px-2 py-1 text-sm break-words ${className}`}>
+      <Icon className="size-4 shrink-0" aria-hidden />
+      <span className="min-w-0">{text}</span>
+    </p>
   );
 }

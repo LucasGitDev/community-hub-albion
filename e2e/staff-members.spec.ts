@@ -41,6 +41,8 @@ test("staff aprova nick e membro vê o nick aprovado (AC#1, AC#2)", async ({ pag
   await expect(page.getByRole("heading", { name: "Aprovação de nick" })).toBeVisible();
   const row = page.getByRole("listitem").filter({ hasText: `@${member}` });
   await expect(row.getByText(nick, { exact: true })).toBeVisible();
+  // ALBION_REGION ausente (default do e2e): consulta desligada não mostra status nem impede aprovar (TASK-016 AC#2).
+  await expect(row.getByText(/no Albion|API do Albion/)).toHaveCount(0);
   await snap(page, "staff-membros-fila");
   await row.getByRole("button", { name: "Aprovar nick" }).click();
   await expect(page.getByText("Nick aprovado")).toBeVisible();
