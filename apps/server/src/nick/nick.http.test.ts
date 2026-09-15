@@ -145,7 +145,7 @@ describe.skipIf(!baseUrl)("nick do usuário HTTP (TASK-012, Q14/Q31)", () => {
     const offBroken = service.onRequested(() => {
       throw new Error("Discord fora");
     });
-    const { cookie } = await member("600000000000000077");
+    const { cookie } = await member("600000000000015015");
     expect((await post(cookie, { nick: "Gancho" })).status).toBe(201);
     expect((await post(cookie, { nick: "GanchoDois" })).status).toBe(200);
     off();
