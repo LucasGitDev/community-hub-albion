@@ -20,6 +20,12 @@ describe("describeDiscordError", () => {
     expect(describeDiscordError(Object.assign(new Error("Dono"), { code: "GUILD_OWNER_NICKNAME" }))).toContain("manualmente");
   });
 
+  it("10003/canal inválido orienta DISCORD_STAFF_CHANNEL_ID; 10008 mensagem apagada (TASK-015)", () => {
+    expect(describeDiscordError(discordError(10003, "Unknown Channel"))).toContain("DISCORD_STAFF_CHANNEL_ID");
+    expect(describeDiscordError(Object.assign(new Error("voz"), { code: "STAFF_CHANNEL_NOT_TEXT" }))).toContain("DISCORD_STAFF_CHANNEL_ID");
+    expect(describeDiscordError(discordError(10008, "Unknown Message"))).toContain("não existe mais");
+  });
+
   it("outros erros e valores não-Error", () => {
     expect(describeDiscordError(new Error("boom"))).toBe("Erro do cliente Discord: boom");
     expect(describeDiscordError("x")).toBe("Erro do cliente Discord: x");
