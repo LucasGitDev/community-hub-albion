@@ -4,3 +4,4 @@ export * from "./silver.js";
 export * from "./permissions.js";
 export * from "./nick.js";
 export * from "./albion.js";
+export * from "./event-templates.js";
