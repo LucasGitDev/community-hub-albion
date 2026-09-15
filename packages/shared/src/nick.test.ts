@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { sameNick, validateNick } from "./nick.js";
+import { REJECTION_NOTE_MAX_LENGTH, sameNick, validateNick, validateRejectionNote } from "./nick.js";
 
 describe("validateNick (Q14, regra de nick do Albion)", () => {
   it.each(["Ravenmoor", "abc", "A1b2C3d4E5f6G7h8", "  Thalya  "])("aceita %j", (input) => {
@@ -27,5 +27,15 @@ describe("validateNick (Q14, regra de nick do Albion)", () => {
     expect(sameNick("Raven", "raven")).toBe(true);
     expect(sameNick("Raven", "Ravena")).toBe(false);
     expect(sameNick(null, "raven")).toBe(false);
+  });
+});
+
+describe("validateRejectionNote (TASK-013)", () => {
+  it("exige motivo, faz trim e limita tamanho", () => {
+    expect(validateRejectionNote(undefined).ok).toBe(false);
+    expect(validateRejectionNote("   ").ok).toBe(false);
+    expect(validateRejectionNote("  Nick não existe. ")).toEqual({ ok: true, note: "Nick não existe." });
+    expect(validateRejectionNote("x".repeat(REJECTION_NOTE_MAX_LENGTH)).ok).toBe(true);
+    expect(validateRejectionNote("x".repeat(REJECTION_NOTE_MAX_LENGTH + 1))).toMatchObject({ ok: false });
   });
 });
