@@ -5,6 +5,7 @@ import { useAuth } from "@/auth/AuthProvider";
 import { FullPageStatus } from "@/auth/guards";
 import { Button } from "@/components/ui/button";
 import { Swords } from "lucide-react";
+import { ThemeToggle } from "@/theme/theme";
 
 function DiscordMark() {
   return (
@@ -23,10 +24,11 @@ export function Login() {
   if (state.status === "loading") return <FullPageStatus>Carregando…</FullPageStatus>;
 
   return (
-    <div className="grid min-h-dvh place-items-center px-4 py-12">
+    <div className="relative grid min-h-dvh place-items-center px-4 py-12">
+      <ThemeToggle className="absolute top-4 right-4" />
       <div className="w-full max-w-sm">
         <div className="flex items-center gap-3">
-          <span className="grid size-10 place-items-center rounded-lg bg-primary text-primary-foreground">
+          <span className="grid size-10 place-items-center rounded-lg bg-foreground text-background">
             <Swords className="size-5" aria-hidden />
           </span>
           <h1 className="text-3xl font-semibold">albion-hub</h1>

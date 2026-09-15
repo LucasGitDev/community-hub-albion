@@ -4,7 +4,6 @@ import { BrowserRouter, Navigate, Route, Routes } from "react-router";
 import { Toaster } from "sonner";
 import "@fontsource-variable/geist";
 import "./index.css";
-import "./theme/picker.css";
 import { AuthProvider } from "./auth/AuthProvider";
 import { RequireAuth, RequirePermission } from "./auth/guards";
 import { AppShell } from "./components/AppShell";
@@ -17,11 +16,11 @@ import { Placeholder } from "./pages/Placeholder";
 import { StaffMembers } from "./pages/StaffMembers";
 import { StaffWithdrawals } from "./pages/StaffWithdrawals";
 import { Wallet } from "./pages/Wallet";
-import { useVariant, VariantPicker, VariantProvider } from "./theme/variant";
+import { ThemeProvider, useTheme } from "./theme/theme";
 
 createRoot(document.getElementById("root")!).render(
   <StrictMode>
-    <VariantProvider>
+    <ThemeProvider>
     <AuthProvider>
       <BrowserRouter>
         <Routes>
@@ -84,19 +83,17 @@ createRoot(document.getElementById("root")!).render(
         </Routes>
       </BrowserRouter>
       <ThemedToaster />
-      <VariantPicker />
     </AuthProvider>
-    </VariantProvider>
+    </ThemeProvider>
   </StrictMode>,
 );
 
-/** Toaster segue a variação: tema claro/escuro; na C, cores de estado (richColors) pra reforçar o feedback. */
+/** Toaster segue o tema do painel. */
 function ThemedToaster() {
-  const { variant } = useVariant();
+  const { theme } = useTheme();
   return (
     <Toaster
-      theme={variant === "a" ? "light" : "dark"}
-      richColors={variant === "c"}
+      theme={theme}
       position="bottom-right"
       mobileOffset={{ bottom: "calc(4.5rem + env(safe-area-inset-bottom))" }}
       toastOptions={{ className: "font-sans" }}

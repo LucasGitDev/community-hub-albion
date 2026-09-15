@@ -1,11 +1,17 @@
 <!doctype html>
-<html lang="pt-BR">
+<html lang="pt-BR" class="dark">
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <meta name="theme-color" content="#13171c" />
-    <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' rx='7' fill='%2313171c'/><path d='M7 20h18l-3-8H10z' fill='%23d6dae0'/></svg>" />
+    <meta name="theme-color" content="#000000" />
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' rx='7' fill='%23000'/><path d='M7 20h18l-3-8H10z' fill='%23e8b64a'/></svg>" />
     <title>albion-hub</title>
+    <!-- TASK-036: tema antes do primeiro paint (padrão escuro). Chave igual a src/lib/theme.ts. -->
+    <script>
+      try {
+        if (localStorage.getItem("albion-hub:theme") === "light") document.documentElement.classList.remove("dark");
+      } catch (e) {}
+    </script>
   </head>
   <body>
     <div id="root"></div>

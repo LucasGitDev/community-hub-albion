@@ -5,7 +5,7 @@ import { formatSilverShort } from "@albion-hub/shared";
 import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { CountUpSilver, PageHeader, Panel, Pill, Silver, StatCard, StatusBadge } from "@/components/display";
+import { PageHeader, Panel, Pill, Silver, StatCard, StatusBadge } from "@/components/display";
 import { WithdrawDialog } from "@/components/WithdrawDialog";
 import { cn } from "@/lib/utils";
 import { formatDateTime } from "@/lib/format";
@@ -70,7 +70,7 @@ export function Wallet() {
           label="Disponível pra saque"
           icon={<Coins />}
           className="col-span-2 xl:col-span-1"
-          value={<CountUpSilver value={available} className={negative ? "text-destructive" : undefined} />}
+          value={<Silver value={available} className={negative ? "text-destructive" : undefined} />}
           hint={
             canWithdraw ? (
               <>Saldo total <Silver value={total} className="text-foreground" /></>
@@ -178,7 +178,7 @@ function ReservedBar({ total, reserved }: { total: bigint; reserved: bigint }) {
     <div className="mt-3 flex items-center gap-3 rounded-xl border bg-card px-4 py-3 text-xs text-muted-foreground" aria-hidden>
       <span className="shrink-0">Disponível</span>
       <div className="flex h-2 flex-1 overflow-hidden rounded-full bg-muted">
-        <div className="bg-brand" style={{ width: `${100 - reservedPermille / 10}%` }} />
+        <div className="bg-foreground/80" style={{ width: `${100 - reservedPermille / 10}%` }} />
         <div className="bg-warning" style={{ width: `${reservedPermille / 10}%` }} />
       </div>
       <span className="shrink-0">Reservado {Math.round(reservedPermille / 10)}%</span>
