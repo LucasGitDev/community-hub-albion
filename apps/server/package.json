@@ -1,0 +1,13 @@
+{
+  "name": "@albion-hub/server",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "start": "node dist/main.js",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  },
+  "dependencies": {
+    "@albion-hub/shared": "workspace:*"
+  }
+}
