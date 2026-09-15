@@ -74,7 +74,7 @@ function PendingRequest({ data, onSaved }: { data: MyNick; onSaved: (d: MyNick) 
       <p className="mt-1 font-display text-3xl font-medium break-all text-parchment">{pending.nick}</p>
       <p className="mt-2 text-sm text-faint">
         Enviado em {formatDateTime(pending.updatedAt)}.{" "}
-        {data.gameNick ? `Até lá, você continua como ${data.gameNick}, com o mesmo acesso.` : "Você recebe o aviso no Discord quando a staff decidir."}
+        {data.gameNick ? `Até lá, você continua como ${data.gameNick}, com o mesmo acesso.` : "Quando a staff aprovar, seu apelido no Discord passa a ser esse nick."}
       </p>
       {editing ? (
         <div className="mt-6 border-t border-rule pt-6">
