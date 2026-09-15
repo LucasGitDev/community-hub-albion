@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { formatSilver, formatSilverShort, parseSilver } from "./format";
+import { formatSilver, formatSilverShort, parseSilver } from "./silver.js";
 
 describe("parseSilver", () => {
   it.each([
