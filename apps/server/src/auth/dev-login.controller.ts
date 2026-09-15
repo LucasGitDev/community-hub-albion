@@ -1,6 +1,5 @@
 import { BadRequestException, Body, Controller, ForbiddenException, HttpCode, Inject, Post, Req, Res } from "@nestjs/common";
-import { createSession, grantRole, schema, upsertUserByDiscordId, type DbHandle } from "@albion-hub/db";
-import { eq } from "drizzle-orm";
+import { createSession, grantRole, setGameNick, upsertUserByDiscordId, type DbHandle } from "@albion-hub/db";
 import { ROLES, validateNick } from "@albion-hub/shared";
 import type { Request, Response } from "express";
 import { z } from "zod";
@@ -38,7 +37,7 @@ export class DevLoginController {
     const { discordId, username, roles, gameNick } = parsed.data;
     const db = this.handle.db;
     const user = await upsertUserByDiscordId(db, { discordId, discordUsername: username, displayName: username });
-    if (gameNick) await db.update(schema.users).set({ gameNick }).where(eq(schema.users.id, user.id));
+    if (gameNick) await setGameNick(db, user.id, gameNick);
     for (const role of new Set(["member" as const, ...roles])) await grantRole(db, user.id, role);
     const { token } = await createSession(db, user.id, sessionExpiresAt(new Date(), this.env.SESSION_TTL_DAYS));
     res.cookie(SESSION_COOKIE, token, sessionCookieOptions(this.env.NODE_ENV, this.env.SESSION_TTL_DAYS));
