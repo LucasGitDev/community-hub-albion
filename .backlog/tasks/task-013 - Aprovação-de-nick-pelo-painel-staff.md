@@ -1,11 +1,11 @@
 ---
 id: TASK-013
 title: Aprovação de nick pelo painel staff
-status: In Progress
+status: Done
 assignee:
   - '@claude'
 created_date: '2026-09-15 03:24'
-updated_date: '2026-09-15 13:06'
+updated_date: '2026-09-15 13:37'
 labels:
   - backend
   - frontend
@@ -39,7 +39,7 @@ Staff aprova ou rejeita solicitações de nick (Q14, Q31). Skills (doc-003): emi
 - [x] #5 Comportamento confere com decisões do doc-005 (Qs citadas) e nada fora do escopo da task
 - [x] #6 Toca auth, ledger, prata ou saque: security-review sem achado crítico
 - [x] #7 Notas e final summary com evidências; commits Conventional atômicos sem co-autor
-- [ ] #8 PR merged na main com quality gate verde; branch e worktree removidos
+- [x] #8 PR merged na main com quality gate verde; branch e worktree removidos
 <!-- DOD:END -->
 
 ## Implementation Plan

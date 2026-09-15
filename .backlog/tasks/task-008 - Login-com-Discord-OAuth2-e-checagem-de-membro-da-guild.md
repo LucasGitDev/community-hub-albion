@@ -1,11 +1,11 @@
 ---
 id: TASK-008
 title: Login com Discord OAuth2 e checagem de membro da guild
-status: In Progress
+status: Done
 assignee:
   - '@claude'
 created_date: '2026-09-15 03:24'
-updated_date: '2026-09-15 05:40'
+updated_date: '2026-09-15 13:37'
 labels:
   - auth
   - backend
@@ -41,7 +41,7 @@ Painel para todos (Q3) exige login Discord OAuth2 e só aceita quem é membro do
 - [x] #5 Comportamento confere com decisões do doc-005 (Qs citadas) e nada fora do escopo da task
 - [x] #6 Toca auth, ledger, prata ou saque: security-review sem achado crítico
 - [x] #7 Notas e final summary com evidências; commits Conventional atômicos sem co-autor
-- [ ] #8 PR merged na main com quality gate verde; branch e worktree removidos
+- [x] #8 PR merged na main com quality gate verde; branch e worktree removidos
 <!-- DOD:END -->
 
 ## Implementation Plan
@@ -81,6 +81,8 @@ Lint 0 ✅ | Race 0 ✅ | Typecheck ok ✅ | Coverage branch 98.19% (≥79) ✅ 
 Skills: task-done-check, security-review. Sem UI (DoD#4 N/A).
 
 Lead (rebase sobre TASK-005/006): teste HTTP de auth agora usa app.listen(0) (5 execuções seguidas sem 'socket hang up'); smoke da imagem recebe env OAuth com PUBLIC_URL https (produção exige). Gate completo local ✅ incluindo imagem.
+
+Verificação real pelo usuário (2026-09-15): login Discord OAuth em localhost:5173 criou usuário tucaleli com member+admin (bootstrap) e sessão.
 <!-- SECTION:NOTES:END -->
 
 ## Final Summary
