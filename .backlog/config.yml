@@ -2,7 +2,15 @@ project_name: "albion-hub"
 default_status: "To Do"
 statuses: ["To Do", "In Progress", "Done"]
 labels: []
-definition_of_done: []
+definition_of_done:
+  - "pnpm quality sem falha bloqueante; resumo do gate colado nas notas"
+  - "Cada AC verificado com evidência objetiva (teste, e2e, screenshot ou saída de comando), nunca só leitura de código"
+  - "Skills aplicáveis do doc-003 invocadas e listadas nas notas"
+  - "UI alterada: fluxo coberto por e2e e screenshots desktop 1280 e mobile 400 revisados pelo agent"
+  - "Comportamento confere com decisões do doc-005 (Qs citadas) e nada fora do escopo da task"
+  - "Toca auth, ledger, prata ou saque: security-review sem achado crítico"
+  - "Notas e final summary com evidências; commits Conventional atômicos sem co-autor"
+  - "PR merged na main com quality gate verde; branch e worktree removidos"
 date_format: yyyy-mm-dd
 max_column_width: 20
 default_editor: "nano"
