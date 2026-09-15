@@ -81,3 +81,18 @@ test("staff aprova, recusa com motivo e marca entrega", async ({ page }) => {
   await page.getByRole("tab", { name: /Recusados/ }).click();
   await expect(page.getByText("Sem prata no banco hoje.")).toBeVisible();
 });
+
+test("refresh em rota client-side e /api servidos pelo Nest (TASK-004)", async ({ page, request }) => {
+  await loginAs(page, "ravenmoor");
+  await page.goto("/saques");
+  await page.reload();
+  await expect(page.getByRole("heading", { name: "Meus saques" })).toBeVisible();
+  await snap(page, "refresh-saques");
+
+  const health = await request.get("/api/health");
+  expect(health.headers()["content-type"]).toContain("application/json");
+  const missing = await request.get("/api/nao-existe");
+  expect(missing.status()).toBe(404);
+  expect(missing.headers()["content-type"]).toContain("application/json");
+});
+
