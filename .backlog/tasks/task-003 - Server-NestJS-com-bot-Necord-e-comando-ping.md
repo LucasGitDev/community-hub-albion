@@ -5,7 +5,7 @@ status: In Progress
 assignee:
   - '@claude'
 created_date: '2026-09-15 03:24'
-updated_date: '2026-09-15 05:09'
+updated_date: '2026-09-15 12:55'
 labels:
   - backend
   - bot
@@ -24,7 +24,7 @@ Processo único (doc-002) começa com Nest + Necord conectando ao Discord single
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 Bot fica online na guild configurada por GUILD_ID
+- [x] #1 Bot fica online na guild configurada por GUILD_ID
 - [ ] #2 /ping responde em PT-BR
 - [x] #3 API expõe endpoint de health que responde 200
 - [x] #4 Config inválida ou ausente (token, GUILD_ID) impede boot com erro claro
@@ -66,4 +66,6 @@ Evidências:
 Decisões: prefixo global /api; health 200/503 depende do banco, bot só informativo; token inválido derruba o boot (fail fast); DISCORD_BOT_ENABLED=false sobe só API; SWC só no projeto vitest do server; lógica pura testável em src/config e src/domain (coverage include).
 Também entrega TASK-002 AC#2 (DbModule + health com ping real).
 Skills: task-done-check.
+
+Verificação real (2026-09-15, .env do usuário): 'Bot online como Javali da Turma#3896' e /api/health {status:ok, db:up, bot:online} → AC#1 ok. Registro dos slash commands falhou com DiscordAPIError 50001 Missing Access (bot sem escopo applications.commands/sem acesso à guild) e o erro não tratado derrubava o processo: corrigido com listener de 'error' + mensagem acionável. AC#2 (/ping) pendente de reconvite do bot com applications.commands e teste do usuário.
 <!-- SECTION:NOTES:END -->

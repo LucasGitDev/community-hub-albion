@@ -1,11 +1,11 @@
 ---
 id: TASK-012
 title: Registro de nick e fila de solicitações
-status: In Progress
+status: Done
 assignee:
   - '@claude'
 created_date: '2026-09-15 03:24'
-updated_date: '2026-09-15 06:19'
+updated_date: '2026-09-15 12:55'
 labels:
   - backend
   - db
@@ -40,7 +40,7 @@ Entrada de membros = nick + aprovação staff (Q14). Membro registra nick no pai
 - [x] #5 Comportamento confere com decisões do doc-005 (Qs citadas) e nada fora do escopo da task
 - [x] #6 Toca auth, ledger, prata ou saque: security-review sem achado crítico
 - [x] #7 Notas e final summary com evidências; commits Conventional atômicos sem co-autor
-- [ ] #8 PR merged na main com quality gate verde; branch e worktree removidos
+- [x] #8 PR merged na main com quality gate verde; branch e worktree removidos
 <!-- DOD:END -->
 
 ## Implementation Plan
