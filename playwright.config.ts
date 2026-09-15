@@ -20,7 +20,7 @@ export default defineConfig({
     { name: "mobile", use: { ...devices["Pixel 7"], viewport: { width: 400, height: 860 } } },
   ],
   webServer: {
-    command: `pnpm --filter @albion-hub/web build && pnpm --filter @albion-hub/web exec vite preview --port ${PORT} --strictPort`,
+    command: `pnpm exec turbo run build --filter=@albion-hub/web... && pnpm --filter @albion-hub/web exec vite preview --port ${PORT} --strictPort`,
     port: PORT,
     reuseExistingServer: !process.env.CI,
     timeout: 120_000,

@@ -1,11 +1,26 @@
 {
-  "$comment": "Fonte única dos thresholds do quality gate. Lido por scripts/quality-gate.mjs (local e CI) e vitest.config.ts.",
+  "$comment": "Fonte \u00fanica dos thresholds do quality gate. Lido por scripts/quality-gate.mjs (local e CI) e vitest.config.ts.",
   "coverage": {
     "branches": 79,
-    "include": ["apps/*/src/lib/**/*.ts", "apps/*/src/mock/rules.ts", "apps/*/src/domain/**/*.ts", "packages/*/src/**/*.ts"]
+    "include": [
+      "apps/*/src/lib/**/*.ts",
+      "apps/*/src/mock/rules.ts",
+      "apps/*/src/domain/**/*.ts",
+      "packages/*/src/**/*.ts"
+    ]
   },
-  "duplication": { "maxPct": 15 },
-  "lint": { "maxIssues": 0, "maxAsyncIssues": 0 },
-  "audit": { "level": "high", "maxVulns": 0 },
-  "deadCode": { "advisory": true }
+  "duplication": {
+    "maxPct": 15
+  },
+  "lint": {
+    "maxIssues": 0,
+    "maxAsyncIssues": 0
+  },
+  "audit": {
+    "level": "high",
+    "maxVulns": 0
+  },
+  "deadCode": {
+    "advisory": true
+  }
 }
