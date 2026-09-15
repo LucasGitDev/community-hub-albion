@@ -1,11 +1,11 @@
 ---
 id: TASK-011
 title: Gestão de papéis por admin
-status: In Progress
+status: Done
 assignee:
   - '@claude'
 created_date: '2026-09-15 03:24'
-updated_date: '2026-09-15 06:05'
+updated_date: '2026-09-15 06:14'
 labels:
   - backend
   - frontend
@@ -40,7 +40,7 @@ Admin precisa atribuir papéis (caller, staff, admin) a usuários na v1 (Q13). S
 - [x] #5 Comportamento confere com decisões do doc-005 (Qs citadas) e nada fora do escopo da task
 - [x] #6 Toca auth, ledger, prata ou saque: security-review sem achado crítico
 - [x] #7 Notas e final summary com evidências; commits Conventional atômicos sem co-autor
-- [ ] #8 PR merged na main com quality gate verde; branch e worktree removidos
+- [x] #8 PR merged na main com quality gate verde; branch e worktree removidos
 <!-- DOD:END -->
 
 ## Implementation Plan
