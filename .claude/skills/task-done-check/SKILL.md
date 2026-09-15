@@ -67,7 +67,7 @@ gh pr create --title "<conventional>" --body "TASK-XXX ... resumo do gate + tabe
 gh pr checks <pr> --watch                  # esperar summary verde; falhou → corrigir e push
 gh pr merge <pr> --rebase --delete-branch
 git switch main && git pull --ff-only && git branch -d <branch> && git fetch --prune
-git worktree remove <path> && git worktree prune   # se usou worktree
+git worktree remove .claude/worktrees/task-XXX && git worktree prune   # se usou worktree
 backlog task edit <TASK> -s Done --append-notes "Merged: <url do PR>"
 ```
 Status Done só depois do merge. Commit do backlog (notas/status) vai no próprio PR antes do merge; o `-s Done` pós-merge entra no próximo PR ou em `chore(backlog)` direto via PR curto.
