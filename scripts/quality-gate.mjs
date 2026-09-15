@@ -75,7 +75,7 @@ const checks = {
     const name = `albion-hub-smoke-${process.pid}`;
     const build = sh(`docker build -t ${tag} .`);
     if (build.code !== 0) return { id: "image", label: "Imagem Docker (build + smoke)", status: "fail", value: "build falhou", threshold: "build + smoke ok", blocking: true };
-    const env = "-e DISCORD_TOKEN=smoke.fake.token -e GUILD_ID=123456789012345678 -e DISCORD_BOT_ENABLED=false -e RUN_MIGRATIONS=false -e DATABASE_URL=postgres://smoke:smoke@127.0.0.1:1/smoke";
+    const env = "-e DISCORD_TOKEN=smoke.fake.token -e GUILD_ID=123456789012345678 -e DISCORD_BOT_ENABLED=false -e RUN_MIGRATIONS=false -e DISCORD_CLIENT_ID=223456789012345678 -e DISCORD_CLIENT_SECRET=smoke -e PUBLIC_URL=https://albion-hub.example -e DATABASE_URL=postgres://smoke:smoke@127.0.0.1:1/smoke";
     const run = sh(`docker run -d --name ${name} -p 127.0.0.1::3000 ${env} ${tag}`);
     let value = "container não subiu";
     let ok = false;
