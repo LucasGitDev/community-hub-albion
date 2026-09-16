@@ -1,4 +1,4 @@
-import { EVENT_SIGNUP_STATUSES, EVENT_STATUSES, LEDGER_ENTRY_KINDS, LEDGER_REFERENCE_TYPES, NICK_REQUEST_STATUSES, ROLES, USER_NOTE_KINDS, WITHDRAWAL_STATUSES } from "@albion-hub/shared";
+import { EVENT_FEE_TYPES, EVENT_SIGNUP_STATUSES, EVENT_STATUSES, LEDGER_ENTRY_KINDS, LEDGER_REFERENCE_TYPES, LOOT_SPLIT_STATUSES, NICK_REQUEST_STATUSES, ROLES, USER_NOTE_KINDS, WITHDRAWAL_STATUSES } from "@albion-hub/shared";
 import { sql } from "drizzle-orm";
 import { bigint, boolean, check, index, integer, pgEnum, pgTable, primaryKey, text, timestamp, uniqueIndex, uuid, type AnyPgColumn } from "drizzle-orm/pg-core";
 
@@ -153,6 +153,13 @@ export const eventRoles = pgTable(
 );
 
 /**
+ * Taxa do evento (TASK-027, decisão do usuário no doc-005): percentual ou valor fixo, sem teto.
+ * O par (`type`, `value`) se repete no template (default), no evento (herdado e editável) e no split
+ * (congelado no momento do rascunho) — três lugares, uma regra só.
+ */
+export const eventFeeTypeEnum = pgEnum("event_fee_type", EVENT_FEE_TYPES);
+
+/**
  * Template de evento (TASK-020, Q8): DB é fonte de verdade (doc-002). `max_party_size` null = sem teto (PvP Roaming 2-∞).
  * Sem faixa de moeda por role nem taxa de entrada: economia temática fica para quando o ledger existir (migration aditiva).
  */
@@ -165,11 +172,19 @@ export const eventTemplates = pgTable(
     minPartySize: integer("min_party_size").notNull(),
     maxPartySize: integer("max_party_size"),
     active: boolean("active").notNull().default(true),
+    /**
+     * Taxa default herdada pelo evento criado a partir deste template (TASK-027). `percent` guarda
+     * basis points (1250 = 12,5%), `fixed` guarda prata inteira (Q20). Zero = sem taxa.
+     */
+    defaultFeeType: eventFeeTypeEnum("default_fee_type").notNull().default("percent"),
+    defaultFeeValue: bigint("default_fee_value", { mode: "bigint" }).notNull().default(sql`0`),
     createdAt: createdAt(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => [
     uniqueIndex("event_templates_name_lower_idx").on(sql`lower(${t.name})`),
+    // Sem teto por decisão do usuário; só não pode ser negativa.
+    check("event_templates_default_fee_not_negative", sql`${t.defaultFeeValue} >= 0`),
     check("event_templates_party_size", sql`${t.minPartySize} >= 1 and (${t.maxPartySize} is null or ${t.maxPartySize} >= ${t.minPartySize})`),
   ],
 );
@@ -217,6 +232,20 @@ export const events = pgTable(
     /** Fechamento automático da inscrição (AC#5); null = só fecha na mão ou no start. */
     signupsCloseAt: timestamp("signups_close_at", { withTimezone: true }),
     voiceChannelId: text("voice_channel_id"),
+    /**
+     * Canal onde a presença do evento foi medida (TASK-027, Q6). Existe separado de `voice_channel_id`
+     * porque este último volta a ser null quando o bot apaga o canal no finish (TASK-024, Q28) — e o
+     * split nasce **depois** do finish. Sem este carimbo, a janela de presença do evento sumiria junto
+     * com o canal. Gravado uma vez, no start, e nunca mais limpo.
+     */
+    presenceChannelId: text("presence_channel_id"),
+    /**
+     * Taxa deste evento (TASK-027): copiada do template na criação e editável até o arquivamento
+     * (Q26). O split congela a taxa vigente no momento em que o rascunho é criado; aplicar a taxa e
+     * creditar o dono é da TASK-028.
+     */
+    feeType: eventFeeTypeEnum("fee_type").notNull().default("percent"),
+    feeValue: bigint("fee_value", { mode: "bigint" }).notNull().default(sql`0`),
     /** Mensagem do embed de inscrição no canal de eventos (TASK-022); null até o evento abrir. */
     discordMessageId: text("discord_message_id"),
     openedAt: timestamp("opened_at", { withTimezone: true }),
@@ -238,6 +267,7 @@ export const events = pgTable(
     // Fechamento automático varre só os abertos com prazo (AC#5).
     index("events_signups_close_idx").on(t.signupsCloseAt).where(sql`${t.status} = 'open'`),
     check("events_name_not_blank", sql`length(trim(${t.name})) > 0`),
+    check("events_fee_not_negative", sql`${t.feeValue} >= 0`),
     // Estado e carimbo andam juntos: running só existe com started_at, finished/archived com finished_at,
     // cancelled com cancelled_at e archived com archived_at.
     // `archived` vem por `::text` de propósito: comparar com o literal do enum recém-criado quebraria a
@@ -480,5 +510,92 @@ export const withdrawals = pgTable(
       "withdrawals_settlement_consistent",
       sql`(${t.status} = 'settled') = (${t.settledBy} is not null and ${t.settledAt} is not null and ${t.settlementNote} is not null and length(btrim(${t.settlementNote})) > 0)`,
     ),
+  ],
+);
+
+export const lootSplitStatusEnum = pgEnum("loot_split_status", LOOT_SPLIT_STATUSES);
+
+/**
+ * Loot split de um evento (TASK-027, Q5/Q6/Q7/Q23). Um evento aceita **N** splits (AC#3) — o loot de
+ * uma noite chega em levas —, e cada um fecha 100% por conta própria, com o seu próprio total.
+ *
+ * Esta task só grava `draft`. Confirmar, aplicar a taxa e lançar no ledger é da TASK-028: por isso
+ * nada aqui toca em `ledger_entries`. O que o rascunho guarda é o que a TASK-028 vai precisar sem ter
+ * que recalcular presença de novo, e o que a TASK-029 precisa para explicar o número na tela.
+ *
+ * `fee_type`/`fee_value` são a taxa **congelada** no instante do rascunho, copiada do evento. Mexer na
+ * taxa do evento depois não muda um split já rascunhado — senão a conta que o caller conferiu mudaria
+ * sozinha debaixo dele.
+ */
+export const lootSplits = pgTable(
+  "loot_splits",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    eventId: uuid("event_id")
+      .notNull()
+      .references(() => events.id, { onDelete: "cascade" }),
+    status: lootSplitStatusEnum("status").notNull().default("draft"),
+    /** Prata bruta arrecadada nesta leva (Q20). Zero é permitido: split de evento que não deu loot. */
+    totalSilver: bigint("total_silver", { mode: "bigint" }).notNull(),
+    feeType: eventFeeTypeEnum("fee_type").notNull(),
+    feeValue: bigint("fee_value", { mode: "bigint" }).notNull(),
+    /**
+     * Sobra do arredondamento do rateio (Q23): `total - soma(linhas)`, sempre menor que o número de
+     * linhas. Fica com o caller/dono do evento — a TASK-028 é quem lança. Explícito aqui para a
+     * conferência ser possível sem refazer a divisão.
+     */
+    residualSilver: bigint("residual_silver", { mode: "bigint" }).notNull().default(sql`0`),
+    createdBy: uuid("created_by").references(() => users.id, { onDelete: "set null" }),
+    createdAt: createdAt(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    index("loot_splits_event_idx").on(t.eventId, t.createdAt),
+    check("loot_splits_total_not_negative", sql`${t.totalSilver} >= 0`),
+    check("loot_splits_fee_not_negative", sql`${t.feeValue} >= 0`),
+    check("loot_splits_residual_not_negative", sql`${t.residualSilver} >= 0`),
+  ],
+);
+
+/**
+ * Uma linha por pessoa que esteve no canal do evento na janela start→finish (Q6).
+ *
+ * A chave é `discord_user_id`, não `user_id`: `voice_sessions` mede presença por snowflake e quem
+ * nunca entrou no painel não tem conta (doc-002). `user_id` é resolvido quando existe e é o que a
+ * TASK-028 vai exigir para creditar — linha sem conta não recebe prata, aparece para a staff resolver.
+ *
+ * `presence_ms` é guardado junto com o percentual de propósito: é o número que originou a
+ * participação, e a tela da TASK-029 precisa dele para explicar "por que eu fiquei com 8%".
+ * Presente não inscrito fica com `signed_up = false` e `share_bp = 0` (Q7).
+ */
+export const lootSplitLines = pgTable(
+  "loot_split_lines",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    splitId: uuid("split_id")
+      .notNull()
+      .references(() => lootSplits.id, { onDelete: "cascade" }),
+    discordUserId: text("discord_user_id").notNull(),
+    /** `restrict` como no ledger: conta que já entrou num split é histórico do evento (Q10). */
+    userId: uuid("user_id").references(() => users.id, { onDelete: "restrict" }),
+    /** Tinha inscrição ativa (confirmada ou em espera) no evento. */
+    signedUp: boolean("signed_up").notNull(),
+    /** Role da inscrição, copiada como em `event_signups`: a role pode sumir do catálogo depois. */
+    roleName: text("role_name"),
+    presenceMs: bigint("presence_ms", { mode: "number" }).notNull(),
+    /** Participação em basis points: 10000 = 100%. A soma das linhas fecha 10000 exato. */
+    shareBp: integer("share_bp").notNull(),
+    /** Prévia da prata desta linha sobre o total **bruto**; a TASK-028 recalcula sobre o líquido. */
+    amountSilver: bigint("amount_silver", { mode: "bigint" }).notNull(),
+  },
+  (t) => [
+    // Uma linha por pessoa por split: a mesma presença nunca é contada duas vezes.
+    uniqueIndex("loot_split_lines_split_user_idx").on(t.splitId, t.discordUserId),
+    index("loot_split_lines_user_idx").on(t.userId),
+    check("loot_split_lines_presence_not_negative", sql`${t.presenceMs} >= 0`),
+    check("loot_split_lines_share_range", sql`${t.shareBp} between 0 and 10000`),
+    check("loot_split_lines_amount_not_negative", sql`${t.amountSilver} >= 0`),
+    // Q7: não inscrito entra na lista para ser visto, mas sem participação.
+    check("loot_split_lines_not_signed_up_has_no_share", sql`${t.signedUp} or (${t.shareBp} = 0 and ${t.amountSilver} = 0)`),
   ],
 );

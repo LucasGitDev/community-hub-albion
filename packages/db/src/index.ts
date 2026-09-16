@@ -87,6 +87,7 @@ export {
   listEventOwnerHistory,
   listEvents,
   setEventDiscordMessageId,
+  setEventFee,
   setEventVoiceChannelId,
   transferEventOwner,
   type ApplyEventTransitionOptions,
@@ -140,3 +141,12 @@ export {
   type WithdrawalBalance,
   type WithdrawalDecisionResult,
 } from "./withdrawals-repo.js";
+export {
+  createLootSplit,
+  getLootSplit,
+  hasDraftLootSplit,
+  listEventLootSplits,
+  listEventPresence,
+  type CreateLootSplitInput,
+  type CreateLootSplitResult,
+} from "./loot-split-repo.js";
