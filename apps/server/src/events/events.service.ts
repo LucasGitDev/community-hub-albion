@@ -1,0 +1,85 @@
+import { Inject, Injectable, Logger } from "@nestjs/common";
+import {
+  applyEventTransition,
+  closeDueEvents,
+  createEvent,
+  getEvent,
+  listEventOwnerHistory,
+  listEvents,
+  transferEventOwner,
+  type CreateEventResult,
+  type DbHandle,
+  type EventTransitionResult,
+  type TransferEventOwnerResult,
+} from "@albion-hub/db";
+import { EVENT_TRANSITIONS, type EventCreateInput, type EventDto, type EventListQuery, type EventOwnerChangeDto, type EventStatus, type EventTransition } from "@albion-hub/shared";
+import { DB_HANDLE } from "../db/db.module.js";
+import { ListenerSet } from "../members/listener-set.js";
+
+/** Evento emitido depois que a transição foi gravada. TASK-022 (embed) e TASK-024 (canal de voz) assinam aqui. */
+export interface EventTransitionEvent {
+  event: EventDto;
+  from: EventStatus;
+  to: EventStatus;
+  /** Ação chamada (`start`, `cancel`...) ou `auto-close` quando foi o fechamento automático (AC#5). */
+  transition: EventTransition | "auto-close";
+  /** Quem pediu; null quando foi o job. */
+  actorUserId: string | null;
+}
+
+export type EventTransitionListener = (event: EventTransitionEvent) => void | Promise<void>;
+
+/**
+ * Único ponto de mudança de estado de evento (doc-002): comando do bot, botão do embed e painel
+ * chamam este serviço, nunca o repo direto. A validação da transição é da máquina compartilhada
+ * (@albion-hub/shared), aplicada dentro da transação do repo.
+ * Listeners rodam depois do commit; falha de listener é logada e não desfaz a transição.
+ */
+@Injectable()
+export class EventsService {
+  private readonly logger = new Logger(EventsService.name);
+  private readonly listeners = new ListenerSet<EventTransitionEvent>(this.logger, "Listener de transição de evento");
+
+  constructor(@Inject(DB_HANDLE) private readonly handle: DbHandle) {}
+
+  /** Registra um listener (ex.: módulo do bot no onModuleInit). Retorna função pra remover. */
+  onEventTransition(listener: EventTransitionListener): () => void {
+    return this.listeners.add(listener);
+  }
+
+  /** Cria o evento; quem cria vira owner (Q21, AC#1). */
+  create(input: EventCreateInput, actorUserId: string): Promise<CreateEventResult> {
+    const { templateId, name, description, startsAt, signupsCloseAt } = input;
+    return createEvent(this.handle.db, { templateId, name, description, startsAt, signupsCloseAt, ownerUserId: actorUserId, createdBy: actorUserId });
+  }
+
+  get(id: string): Promise<EventDto | null> {
+    return getEvent(this.handle.db, id);
+  }
+
+  list(filters: EventListQuery): Promise<EventDto[]> {
+    return listEvents(this.handle.db, filters);
+  }
+
+  ownerHistory(id: string): Promise<EventOwnerChangeDto[]> {
+    return listEventOwnerHistory(this.handle.db, id);
+  }
+
+  async transition(id: string, transition: EventTransition, actorUserId: string): Promise<EventTransitionResult> {
+    const to = EVENT_TRANSITIONS[transition];
+    const result = await applyEventTransition(this.handle.db, id, to);
+    if (result.ok) await this.listeners.emit({ event: result.event, from: result.from, to, transition, actorUserId }, `evento ${id}`);
+    return result;
+  }
+
+  async transferOwner(id: string, toUserId: string, actorUserId: string): Promise<TransferEventOwnerResult> {
+    return transferEventOwner(this.handle.db, id, toUserId, actorUserId);
+  }
+
+  /** Fechamento automático da inscrição (AC#5). Emite a mesma transição para quem escuta. */
+  async closeDue(now: Date): Promise<EventDto[]> {
+    const closed = await closeDueEvents(this.handle.db, now);
+    for (const event of closed) await this.listeners.emit({ event, from: "open", to: "closed", transition: "auto-close", actorUserId: null }, `evento ${event.id}`);
+    return closed;
+  }
+}

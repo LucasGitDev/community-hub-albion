@@ -1,0 +1,125 @@
+import { BadRequestException, Body, ConflictException, Controller, ForbiddenException, Get, HttpCode, Inject, NotFoundException, Param, Post, Query, Res, UseGuards } from "@nestjs/common";
+import {
+  asSubject,
+  eventCreateSchema,
+  eventTransferOwnerSchema,
+  firstIssue,
+  isEventTransition,
+  parseEventListQuery,
+  transitionError,
+  EVENT_TRANSITIONS,
+  type Action,
+  type EventDto,
+  type EventOwnerChangeDto,
+  type EventTransition,
+} from "@albion-hub/shared";
+import type { Response } from "express";
+import type { z } from "zod";
+import { Authorize, CurrentAuth, type AuthorizedRequest } from "../auth/authorize.js";
+import { SameOriginGuard } from "../auth/same-origin.guard.js";
+import { EventsService } from "./events.service.js";
+
+type Auth = AuthorizedRequest["auth"];
+
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+function parseId(id: string): string {
+  if (!UUID.test(id)) throw new BadRequestException("Id do evento inválido.");
+  return id;
+}
+
+function parseBody<S extends z.ZodType>(schema: S, body: unknown): z.output<S> {
+  const parsed = schema.safeParse(body);
+  if (!parsed.success) throw new BadRequestException(firstIssue(parsed.error));
+  return parsed.data;
+}
+
+/** Ação CASL de cada transição: abrir/fechar inscrição é edição; start/finish/cancel têm ação própria (Q13). */
+const TRANSITION_ACTION: Record<EventTransition, Action> = { open: "update", close: "update", start: "start", finish: "finish", cancel: "cancel" };
+
+/**
+ * Eventos e máquina de estados (TASK-021, Q9/Q21/Q26).
+ * Criar: caller e staff. Transições: owner do evento ou staff (regra CASL com condição `ownerId`).
+ * Transferir owner: só staff (`manage`). Ler: qualquer membro.
+ */
+@Controller("events")
+export class EventsController {
+  constructor(@Inject(EventsService) private readonly events: EventsService) {}
+
+  /** 404 em vez de 403 quando o evento não existe: não vaza a existência de ids. */
+  private async load(id: string): Promise<EventDto> {
+    const event = await this.events.get(parseId(id));
+    if (!event) throw new NotFoundException("Evento não encontrado.");
+    return event;
+  }
+
+  private assertCan(auth: Auth, action: Action, event: EventDto): void {
+    if (!auth.ability.can(action, asSubject("Event", { ownerId: event.ownerUserId })))
+      throw new ForbiddenException("Só o owner do evento ou a staff pode fazer isso.");
+  }
+
+  @Get()
+  @Authorize("read", "Event")
+  async list(@Query() query: Record<string, unknown>, @Res({ passthrough: true }) res: Response): Promise<{ events: EventDto[] }> {
+    const parsed = parseEventListQuery(query);
+    if (!parsed.ok) throw new BadRequestException(parsed.error);
+    res.setHeader("Cache-Control", "no-store");
+    return { events: await this.events.list(parsed.filters) };
+  }
+
+  @Get(":id")
+  @Authorize("read", "Event")
+  async detail(@Param("id") id: string, @Res({ passthrough: true }) res: Response): Promise<EventDto> {
+    res.setHeader("Cache-Control", "no-store");
+    return this.load(id);
+  }
+
+  @Get(":id/owner-history")
+  @Authorize("read", "Event")
+  async ownerHistory(@Param("id") id: string): Promise<{ history: EventOwnerChangeDto[] }> {
+    const event = await this.load(id);
+    return { history: await this.events.ownerHistory(event.id) };
+  }
+
+  /** Só caller e staff criam (Q9); quem cria vira owner (Q21, AC#1/AC#2). */
+  @Post()
+  @UseGuards(SameOriginGuard)
+  @Authorize("create", "Event")
+  async create(@Body() body: unknown, @CurrentAuth() auth: Auth): Promise<EventDto> {
+    const result = await this.events.create(parseBody(eventCreateSchema, body), auth.user.id);
+    if (result.ok) return result.event;
+    if (result.reason === "unknown_template") throw new BadRequestException("Esse template não existe mais. Atualize a página e escolha de novo.");
+    throw new ConflictException("Esse template está inativo. Reative ou escolha outro para criar o evento.");
+  }
+
+  /** `open`, `close`, `start`, `finish`, `cancel`. Transição fora da máquina → 409 PT-BR (AC#3). */
+  @Post(":id/transitions/:transition")
+  @HttpCode(200)
+  @UseGuards(SameOriginGuard)
+  @Authorize()
+  async transition(@Param("id") id: string, @Param("transition") transition: string, @CurrentAuth() auth: Auth): Promise<EventDto> {
+    if (!isEventTransition(transition)) throw new BadRequestException("Ação de evento desconhecida.");
+    const event = await this.load(id);
+    this.assertCan(auth, TRANSITION_ACTION[transition], event);
+    const result = await this.events.transition(event.id, transition, auth.user.id);
+    if (result.ok) return result.event;
+    if (result.reason === "not_found") throw new NotFoundException("Evento não encontrado.");
+    throw new ConflictException(transitionError(result.from, EVENT_TRANSITIONS[transition]));
+  }
+
+  /** Transferência de owner: só staff (`manage`), com histórico (Q21, AC#4). */
+  @Post(":id/owner")
+  @HttpCode(200)
+  @UseGuards(SameOriginGuard)
+  @Authorize("manage", "Event")
+  async transferOwner(@Param("id") id: string, @Body() body: unknown, @CurrentAuth() auth: Auth): Promise<EventDto> {
+    const { ownerUserId } = parseBody(eventTransferOwnerSchema, body);
+    const event = await this.load(id);
+    const result = await this.events.transferOwner(event.id, ownerUserId, auth.user.id);
+    if (result.ok) return result.event;
+    if (result.reason === "not_found") throw new NotFoundException("Evento não encontrado.");
+    if (result.reason === "unknown_user") throw new BadRequestException("Esse usuário não existe.");
+    if (result.reason === "same_owner") throw new ConflictException("Essa pessoa já é o owner do evento.");
+    throw new ConflictException("O evento já terminou ou foi cancelado: não dá para trocar o owner.");
+  }
+}
