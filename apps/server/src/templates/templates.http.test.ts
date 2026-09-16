@@ -41,6 +41,7 @@ describe.skipIf(!baseUrl)("catálogo de roles e templates HTTP (TASK-020, Q8)", 
       DISCORD_CLIENT_SECRET: "secret",
       DISCORD_MEMBER_ROLE_ID: "323456789012345678",
       DISCORD_STAFF_CHANNEL_ID: "423456789012345678",
+      DISCORD_EVENTS_CHANNEL_ID: "523456789012345678",
       PUBLIC_URL,
     });
     if (!parsed.ok) throw new Error(parsed.message);

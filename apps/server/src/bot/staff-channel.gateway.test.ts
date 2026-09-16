@@ -70,7 +70,7 @@ describe("DiscordJsStaffChannelGateway (TASK-015, client falso)", () => {
   });
 
   it("BotModule exige DISCORD_STAFF_CHANNEL_ID", () => {
-    expect(() => BotModule.register({ DISCORD_TOKEN: "a.b.c", GUILD_ID: "123456789012345678", DISCORD_MEMBER_ROLE_ID: "323456789012345678", DISCORD_STAFF_CHANNEL_ID: undefined })).toThrow(
+    expect(() => BotModule.register({ DISCORD_TOKEN: "a.b.c", GUILD_ID: "123456789012345678", DISCORD_MEMBER_ROLE_ID: "323456789012345678", DISCORD_STAFF_CHANNEL_ID: undefined, DISCORD_EVENTS_CHANNEL_ID: "523456789012345678" })).toThrow(
       "DISCORD_STAFF_CHANNEL_ID",
     );
   });

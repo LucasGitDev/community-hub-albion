@@ -17,6 +17,9 @@ export function describeDiscordError(error: unknown): string {
   if (code === 10003 || code === "STAFF_CHANNEL_NOT_TEXT") {
     return `Canal da staff não encontrado ou não aceita mensagens (${message}). Confira DISCORD_STAFF_CHANNEL_ID e se o bot vê o canal (Ver canal, Enviar mensagens, Inserir links).`;
   }
+  if (code === "EVENTS_CHANNEL_NOT_TEXT") {
+    return `Canal de eventos não encontrado ou não aceita mensagens (${message}). Confira DISCORD_EVENTS_CHANNEL_ID e se o bot vê o canal (Ver canal, Enviar mensagens, Inserir links).`;
+  }
   if (code === 10008) {
     return `Mensagem do embed não existe mais (${message}).`;
   }
