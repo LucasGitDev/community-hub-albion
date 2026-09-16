@@ -58,12 +58,14 @@ export {
   deleteEventRole,
   deleteEventTemplate,
   getEventTemplate,
+  importEventTemplate,
   listEventRoles,
   listEventTemplates,
   saveEventTemplate,
   updateEventRole,
   type EventRoleDeleteResult,
   type EventRoleWriteResult,
+  type EventTemplateImportDbResult,
   type EventTemplateWriteResult,
 } from "./event-templates-repo.js";
 export {
