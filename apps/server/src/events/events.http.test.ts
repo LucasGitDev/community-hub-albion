@@ -97,7 +97,7 @@ describe.skipIf(!baseUrl)("eventos e máquina de estados HTTP (TASK-021, Q9/Q21/
     return req.send(body);
   };
   const create = (cookie: string, body: object = {}) => send("post", "/api/events", cookie, { templateId, name: "Roads das 21h", ...body });
-  const go = (cookie: string, id: string, transition: string) => send("post", `/api/events/${id}/transitions/${transition}`, cookie);
+  const go = (cookie: string, id: string, transition: string, body: object = {}) => send("post", `/api/events/${id}/transitions/${transition}`, cookie, body);
   const createdBy = async (cookie: string, body: object = {}) => {
     const res = await create(cookie, body);
     expect(res.status).toBe(201);
@@ -163,6 +163,72 @@ describe.skipIf(!baseUrl)("eventos e máquina de estados HTTP (TASK-021, Q9/Q21/
     const final = (await http().get(`/api/events/${event.id}`).set("Cookie", caller)).body as EventDto;
     for (const stamp of ["openedAt", "closedAt", "startedAt", "finishedAt"] as const) expect(final[stamp], stamp).not.toBeNull();
     expect(final.cancelledAt).toBeNull();
+  });
+
+  describe("cancelamento (TASK-025, Q26)", () => {
+    /** Leva o evento até o estado pedido pelo caminho da máquina e devolve o evento. */
+    const at = async (status: "draft" | "open" | "closed" | "running") => {
+      const event = await createdBy(caller);
+      const path = { draft: [], open: ["open"], closed: ["open", "close"], running: ["open", "start"] }[status];
+      for (const step of path) expect((await go(caller, event.id, step)).status, step).toBe(200);
+      return event;
+    };
+    const signups = async (id: string) => (await http().get(`/api/events/${id}/signups`).set("Cookie", caller)).body.signups as { userId: string; status: string }[];
+
+    it("cancela de qualquer estado antes de finished e guarda o motivo (AC#3)", async () => {
+      for (const status of ["draft", "open", "closed", "running"] as const) {
+        const event = await at(status);
+        const res = await go(caller, event.id, "cancel", { reason: `caiu em ${status}` });
+        expect(res.status, status).toBe(200);
+        expect(res.body as EventDto).toMatchObject({ status: "cancelled", cancelReason: `caiu em ${status}` });
+        expect((res.body as EventDto).cancelledAt).not.toBeNull();
+      }
+    });
+
+    it("cancelar marca todas as inscrições ativas como canceladas (AC#1)", async () => {
+      const event = await at("open");
+      const tank = event.roles.find((r) => r.name === "Tank")!;
+      const healer = event.roles.find((r) => r.name === "Healer")!;
+      expect((await send("post", `/api/events/${event.id}/signups`, member, { slotId: tank.id })).status).toBe(200);
+      expect((await send("post", `/api/events/${event.id}/signups`, caller2, { slotId: healer.id })).status).toBe(200);
+      expect((await signups(event.id)).filter((s) => s.status !== "cancelled")).toHaveLength(2);
+
+      expect((await go(caller, event.id, "cancel")).status).toBe(200);
+      expect((await signups(event.id)).every((s) => s.status === "cancelled")).toBe(true);
+      // O membro deixa de ter inscrição ativa na carga do painel (AC#4).
+      const board = await http().get("/api/events").set("Cookie", member);
+      expect((board.body.mySignups as { eventId: string }[]).some((s) => s.eventId === event.id)).toBe(false);
+      // E ninguém entra mais: o evento não está aberto.
+      expect((await send("post", `/api/events/${event.id}/signups`, member, { slotId: tank.id })).status).toBe(409);
+    });
+
+    it("evento finalizado não pode ser cancelado: 409 PT-BR e nada muda (AC#3)", async () => {
+      const event = await at("running");
+      expect((await go(caller, event.id, "finish")).status).toBe(200);
+      const res = await go(caller, event.id, "cancel", { reason: "mudei de ideia" });
+      expect(res.status).toBe(409);
+      expect(res.body.message).toBe("O evento está finalizado e não pode ir para cancelado. Esse é um estado final.");
+      const after = (await http().get(`/api/events/${event.id}`).set("Cookie", caller)).body as EventDto;
+      expect(after).toMatchObject({ status: "finished", cancelReason: null, cancelledAt: null });
+    });
+
+    it("quem cancela é o owner ou a staff; membro e caller de outro evento tomam 403", async () => {
+      const event = await at("open");
+      expect((await go(member, event.id, "cancel")).status).toBe(403);
+      expect((await go(caller2, event.id, "cancel")).status).toBe(403);
+      expect((await go(staff, event.id, "cancel")).status).toBe(200);
+      expect((await send("post", `/api/events/${event.id}/transitions/cancel`, caller, {}, "http://evil.example")).status).toBe(403);
+    });
+
+    it("motivo com mais de 300 caracteres é 400 e o evento continua de pé", async () => {
+      const event = await at("open");
+      const res = await go(caller, event.id, "cancel", { reason: "x".repeat(301) });
+      expect(res.status).toBe(400);
+      expect(res.body.message).toBe("O motivo tem no máximo 300 caracteres.");
+      expect((await http().get(`/api/events/${event.id}`).set("Cookie", caller)).body.status).toBe("open");
+      // Sem motivo continua valendo, e o campo fica nulo.
+      expect((await go(caller, event.id, "cancel")).body).toMatchObject({ status: "cancelled", cancelReason: null });
+    });
   });
 
   it("transição fora da máquina responde 409 PT-BR sem mudar o estado (AC#3)", async () => {

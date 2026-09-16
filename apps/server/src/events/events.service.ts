@@ -25,6 +25,8 @@ export interface EventTransitionEvent {
   transition: EventTransition | "auto-close";
   /** Quem pediu; null quando foi o job. */
   actorUserId: string | null;
+  /** Motivo escrito no cancelamento (TASK-025); null nas outras transições. */
+  reason?: string | null;
 }
 
 export type EventTransitionListener = (event: EventTransitionEvent) => void | Promise<void>;
@@ -65,10 +67,14 @@ export class EventsService {
     return listEventOwnerHistory(this.handle.db, id);
   }
 
-  async transition(id: string, transition: EventTransition, actorUserId: string): Promise<EventTransitionResult> {
+  /**
+   * Muda o estado do evento. `reason` só é gravado no cancelamento (TASK-025) e as inscrições ativas
+   * são canceladas junto, dentro da transação do repo — quem escuta já recebe o evento com tudo feito.
+   */
+  async transition(id: string, transition: EventTransition, actorUserId: string, reason: string | null = null): Promise<EventTransitionResult> {
     const to = EVENT_TRANSITIONS[transition];
-    const result = await applyEventTransition(this.handle.db, id, to);
-    if (result.ok) await this.listeners.emit({ event: result.event, from: result.from, to, transition, actorUserId }, `evento ${id}`);
+    const result = await applyEventTransition(this.handle.db, id, to, { reason });
+    if (result.ok) await this.listeners.emit({ event: result.event, from: result.from, to, transition, actorUserId, reason: result.event.cancelReason }, `evento ${id}`);
     return result;
   }
 

@@ -65,7 +65,8 @@ describe("embed de inscrição do evento (TASK-022, AC#1)", () => {
   });
 
   it("fora de open os botões ficam desabilitados e o embed diz o estado (AC#5)", () => {
-    for (const status of ["draft", "closed", "running", "finished", "cancelled"] as EventStatus[]) {
+    // Cancelado fica de fora: ele não tem botão nenhum, nem lista (TASK-025, AC#4).
+    for (const status of ["draft", "closed", "running", "finished"] as EventStatus[]) {
       const view = buildEventEmbed(input({ status }));
       expect(view.color).toBe(EVENT_EMBED_COLORS[status]);
       expect(view.buttons.every((b) => b.disabled)).toBe(true);
@@ -95,6 +96,31 @@ describe("embed de inscrição do evento (TASK-022, AC#1)", () => {
     const rows = buttonRows(view.buttons);
     expect(rows).toHaveLength(5);
     expect(rows.flat()).toHaveLength(25);
+  });
+});
+
+describe("embed do evento cancelado (TASK-025, AC#4)", () => {
+  it("mostra o motivo, avisa que as inscrições caíram e não deixa nenhum botão na mensagem", () => {
+    const view = buildEventEmbed(
+      input({
+        status: "cancelled",
+        cancelReason: "não fechou grupo",
+        roles: [{ slotId: TANK, name: "Tank", slots: 1, confirmed: [person(1, "Mago")], waitlist: [person(2)] }],
+      }),
+    );
+    expect(view.color).toBe(EVENT_EMBED_COLORS.cancelled);
+    expect(field(view, "Situação")).toBe("Evento cancelado: não fechou grupo. Todas as inscrições foram canceladas.");
+    // Sem botão nenhum: nem "Sair" desabilitado, que faria a mensagem parecer um evento ainda de pé.
+    expect(view.buttons).toEqual([]);
+    // A lista sai da mensagem junto: ninguém está mais inscrito.
+    expect(field(view, "Tank (1/1)")).toBeUndefined();
+    expect(field(view, "Lista de espera")).toBeUndefined();
+  });
+
+  it("sem motivo escrito, o aviso ainda diz que foi cancelado", () => {
+    const view = buildEventEmbed(input({ status: "cancelled", cancelReason: null }));
+    expect(field(view, "Situação")).toContain("Evento cancelado pelo caller.");
+    expect(view.buttons).toEqual([]);
   });
 });
 

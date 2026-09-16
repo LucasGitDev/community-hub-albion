@@ -189,6 +189,29 @@ describe.skipIf(!baseUrl)("embed de inscrição no Discord (TASK-022, Postgres r
     expect(await signups.list(event.id)).toHaveLength(0);
   });
 
+  it("cancelar edita a mesma mensagem: vira aviso com motivo e sem botão nenhum (TASK-025, AC#4)", async () => {
+    const { event, tank } = await openEvent("Cancelado no canal");
+    const membro = await newMember("TankMain");
+    await interactions.onJoin([fakeInteraction(membro.discordId)], tank);
+    const messageId = (await events.get(event.id))!.discordMessageId;
+    gateway.editEvent.mockClear();
+    gateway.postEvent.mockClear();
+
+    await events.transition(event.id, "cancel", owner, "não fechou grupo");
+
+    // Mesma mensagem, editada (não é publicada uma segunda).
+    expect(gateway.postEvent).not.toHaveBeenCalled();
+    expect(gateway.editEvent.mock.calls.at(-1)?.[0]).toBe(messageId);
+    const view = lastView(gateway.editEvent);
+    expect(fieldValue(view, "Situação")).toBe("Evento cancelado: não fechou grupo. Todas as inscrições foram canceladas.");
+    expect(view?.buttons).toEqual([]);
+    // A inscrição dele caiu junto, então o clique no botão antigo também não entra mais.
+    expect((await signups.list(event.id)).every((s) => s.status === "cancelled")).toBe(true);
+    const tardio = fakeInteraction(membro.discordId);
+    await interactions.onJoin([tardio], tank);
+    expect(answer(tardio)).toBe(EVENT_BUTTON_REPLIES.notOpen("cancelled"));
+  });
+
   it("quem não está no painel ou não é membro é orientado, sem escrever nada", async () => {
     const { event, tank } = await openEvent("Sem cadastro");
     const desconhecido = fakeInteraction("759999999999999999");
