@@ -3,13 +3,16 @@ import {
   joinEventRole,
   leaveEvent,
   listEventSignups,
+  listEventsOccupancy,
+  listMemberNicks,
+  listUserEventSignups,
   moveEventSignup,
   type DbHandle,
   type JoinEventRoleResult,
   type LeaveEventResult,
   type MoveEventSignupResult,
 } from "@albion-hub/db";
-import type { EventSignupDto } from "@albion-hub/shared";
+import type { EventMemberDto, EventOccupancyDto, EventSignupDto } from "@albion-hub/shared";
 import { DB_HANDLE } from "../db/db.module.js";
 import { ListenerSet } from "../members/listener-set.js";
 
@@ -43,6 +46,21 @@ export class EventSignupsService {
 
   list(eventId: string): Promise<EventSignupDto[]> {
     return listEventSignups(this.handle.db, eventId);
+  }
+
+  /** Ocupação por vaga dos eventos listados: o painel desenha "2/5" sem uma consulta por evento (TASK-023). */
+  occupancy(eventIds: readonly string[]): Promise<EventOccupancyDto[]> {
+    return listEventsOccupancy(this.handle.db, eventIds);
+  }
+
+  /** Inscrições ativas de quem está olhando o painel (AC#1). */
+  mine(userId: string, eventIds: readonly string[]): Promise<EventSignupDto[]> {
+    return listUserEventSignups(this.handle.db, userId, eventIds);
+  }
+
+  /** Nome de exibição de cada pessoa citada na tela (inscritos e owner). */
+  members(userIds: readonly string[]): Promise<EventMemberDto[]> {
+    return listMemberNicks(this.handle.db, userIds);
   }
 
   /** Entra numa role ou troca de role (AC#2/AC#3). Fora de `open` é recusado (AC#5). */

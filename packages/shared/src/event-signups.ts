@@ -36,6 +36,23 @@ export interface EventSignupDto {
   updatedAt: string;
 }
 
+/**
+ * Ocupação de uma vaga já contada pelo banco (TASK-023). A listagem do painel traz isso junto dos
+ * eventos para a tela desenhar "3/5 vagas" sem baixar a lista de inscritos de cada evento.
+ */
+export interface EventOccupancyDto {
+  eventId: string;
+  slotId: string;
+  confirmed: number;
+  waitlist: number;
+}
+
+/** Nome de exibição de um inscrito (nick do Albion, com o do Discord como reserva). */
+export interface EventMemberDto {
+  userId: string;
+  nick: string;
+}
+
 /** Contagem de uma role do evento para montar botão e embed. */
 export interface RoleOccupancy {
   slotId: string;

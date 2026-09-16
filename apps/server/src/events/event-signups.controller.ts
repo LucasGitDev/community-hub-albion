@@ -1,5 +1,5 @@
 import { BadRequestException, Body, ConflictException, Controller, Delete, ForbiddenException, Get, HttpCode, Inject, NotFoundException, Param, Patch, Post, Res, UseGuards } from "@nestjs/common";
-import { asSubject, eventJoinSchema, eventSignupMoveSchema, eventStatusLabel, firstIssue, isUuid, type EventSignupDto } from "@albion-hub/shared";
+import { asSubject, eventJoinSchema, eventSignupMoveSchema, eventStatusLabel, firstIssue, isUuid, type EventMemberDto, type EventSignupDto } from "@albion-hub/shared";
 import type { Response } from "express";
 import { Authorize, CurrentAuth, type AuthorizedRequest } from "../auth/authorize.js";
 import { SameOriginGuard } from "../auth/same-origin.guard.js";
@@ -39,12 +39,15 @@ export class EventSignupsController {
     return event;
   }
 
+  /** Lista + nome de exibição de cada pessoa citada (inscritos e owner), para o painel não mostrar uuid (TASK-023). */
   @Get(":id/signups")
   @Authorize("read", "Event")
-  async list(@Param("id") id: string, @Res({ passthrough: true }) res: Response): Promise<{ signups: EventSignupDto[] }> {
+  async list(@Param("id") id: string, @Res({ passthrough: true }) res: Response): Promise<{ signups: EventSignupDto[]; members: EventMemberDto[] }> {
     const event = await this.load(id);
     res.setHeader("Cache-Control", "no-store");
-    return { signups: await this.signups.list(event.id) };
+    const signups = await this.signups.list(event.id);
+    const members = await this.signups.members([event.ownerUserId, ...signups.map((s) => s.userId)]);
+    return { signups, members };
   }
 
   /** Entra na role (ou troca). Quem entra é sempre a sessão, nunca um id vindo do corpo (AC#3). */
