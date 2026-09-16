@@ -1,12 +1,10 @@
 import { Inject, Injectable } from "@nestjs/common";
-import { getNickStatus, grantRole, upsertUserByDiscordId, type DbHandle, type DiscordProfile, type NickRequest, type NickStatus } from "@albion-hub/db";
+import { getNickStatus, type DbHandle, type DiscordProfile, type NickRequest, type NickStatus } from "@albion-hub/db";
 import { sameNick, validateNick } from "@albion-hub/shared";
-import { AUTH_ENV } from "../auth/auth.controller.js";
-import type { Env } from "../config/env.js";
 import { DB_HANDLE } from "../db/db.module.js";
 import type { AlbionPlayerLookup } from "../domain/albion-lookup.js";
-import { rolesForLogin } from "../domain/auth.js";
 import type { RegisterNickOutcome } from "../domain/register-nick.js";
+import { AccountService } from "./account.service.js";
 import { ALBION_PLAYER_LOOKUP } from "./albion-lookup.token.js";
 import { NickRequestService } from "./nick-request.service.js";
 
@@ -29,9 +27,9 @@ export function toRegisterOutcome(result: NickRegistrationResult): RegisterNickO
 export class NickRegistrationService {
   constructor(
     @Inject(DB_HANDLE) private readonly handle: DbHandle,
-    @Inject(AUTH_ENV) private readonly env: Env,
     @Inject(ALBION_PLAYER_LOOKUP) private readonly albion: AlbionPlayerLookup,
     @Inject(NickRequestService) private readonly requests: NickRequestService,
+    @Inject(AccountService) private readonly accounts: AccountService,
   ) {}
 
   async register(userId: string, input: unknown): Promise<NickRegistrationResult> {
@@ -47,8 +45,7 @@ export class NickRegistrationService {
   async registerFromDiscord(profile: DiscordProfile, input: unknown): Promise<NickRegistrationResult> {
     const parsed = validateNick(input);
     if (!parsed.ok) return { kind: "invalid", error: parsed.error };
-    const user = await upsertUserByDiscordId(this.handle.db, profile);
-    for (const role of rolesForLogin(profile.discordId, this.env.BOOTSTRAP_ADMIN_DISCORD_IDS)) await grantRole(this.handle.db, user.id, role);
+    const { user } = await this.accounts.ensureFromDiscord(profile);
     return this.registerValid(user.id, parsed.nick);
   }
 
