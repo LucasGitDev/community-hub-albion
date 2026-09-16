@@ -124,6 +124,29 @@ export const eventCreateSchema = z
   });
 export type EventCreateInput = z.output<typeof eventCreateSchema>;
 
+/** Motivo do cancelamento (TASK-025): opcional, mas é o que o inscrito lê no embed e no painel. */
+export const EVENT_CANCEL_REASON_MAX = 300;
+
+export const eventCancelSchema = z.object({
+  reason: z
+    .string()
+    .trim()
+    .max(EVENT_CANCEL_REASON_MAX, `O motivo tem no máximo ${EVENT_CANCEL_REASON_MAX} caracteres.`)
+    .nullish()
+    .transform((v) => (v ? v : null)),
+});
+export type EventCancelInput = z.output<typeof eventCancelSchema>;
+
+/**
+ * Frase do cancelamento com o motivo, quando houver. Um lugar só: o embed do Discord e as duas telas
+ * do painel dizem a mesma coisa, então ninguém descobre o cancelamento com duas versões da história.
+ */
+export function eventCancelledText(reason: string | null | undefined): string {
+  if (!reason) return "Evento cancelado pelo caller.";
+  // Fecha a frase quando quem escreveu não fechou: o texto seguinte ("Todas as inscrições...") emenda nele.
+  return `Evento cancelado: ${/[.!?…]$/.test(reason) ? reason : `${reason}.`}`;
+}
+
 export const eventTransferOwnerSchema = z.object({ ownerUserId: uuid("Novo owner") });
 export type EventTransferOwnerInput = z.output<typeof eventTransferOwnerSchema>;
 
@@ -172,6 +195,8 @@ export interface EventDto {
   startedAt: string | null;
   finishedAt: string | null;
   cancelledAt: string | null;
+  /** Motivo do cancelamento (TASK-025); null quando não foi cancelado ou ninguém escreveu nada. */
+  cancelReason: string | null;
   roles: EventRoleSlotDto[];
   totalSlots: number;
   createdAt: string;
