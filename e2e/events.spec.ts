@@ -135,6 +135,65 @@ test("caller cria evento, abre inscrições, membro entra, role lotada vira espe
   expect(caller).toContain("callerE");
 });
 
+test("caller cancela evento com motivo; inscrito vê o cancelamento e não entra mais (TASK-025, AC#1/AC#3/AC#4)", async ({ page }) => {
+  test.setTimeout(150_000);
+  const run = `${tag()}c${Date.now().toString(36)}`;
+  const templateName = `Caçada ${run}`;
+  const eventName = `Evento ${run}`;
+
+  await login(page, "73000000000000006", "staffC", ["staff"]);
+  await createTemplate(page, templateName);
+
+  await login(page, "73000000000000007", "callerC", ["caller"]);
+  await page.goto("/staff/eventos");
+  await page.getByRole("button", { name: "Criar evento", exact: true }).first().click();
+  const dialog = page.getByRole("dialog");
+  await dialog.getByRole("button", { name: new RegExp(templateName) }).click();
+  await dialog.getByLabel("Nome do evento").fill(eventName);
+  await dialog.getByRole("button", { name: "Criar evento" }).click();
+  await expect(page.getByText("Evento criado")).toBeVisible();
+  await selectEvent(page, eventName);
+  await page.getByRole("region", { name: eventName }).getByRole("button", { name: "Abrir inscrições" }).click();
+  await expect(page.getByText("Inscrições abertas").first()).toBeVisible();
+
+  // Um membro garante a vaga antes do cancelamento (AC#1 precisa de inscrição ativa para cancelar).
+  await login(page, "73000000000000008", "inscritoC");
+  await page.goto("/eventos");
+  const card = page.getByRole("listitem").filter({ hasText: eventName }).first();
+  await card.getByRole("button", { name: /^Tank, 0 de 1/ }).click();
+  await expect(page.getByText("Vaga garantida em Tank")).toBeVisible();
+  await expect(card.getByText("Tank, confirmado")).toBeVisible();
+
+  // O caller cancela pelo diálogo, escrevendo o motivo que os inscritos vão ler.
+  await login(page, "73000000000000007", "callerC", ["caller"]);
+  await page.goto("/staff/eventos");
+  await selectEvent(page, eventName);
+  await page.getByRole("region", { name: eventName }).getByRole("button", { name: "Cancelar evento" }).click();
+  const confirm = page.getByRole("dialog");
+  await expect(confirm.getByText("todas as inscrições são canceladas", { exact: false })).toBeVisible();
+  await confirm.getByLabel("Motivo (opcional)").fill("não fechou grupo");
+  await snap(page, `eventos-staff-cancelar-${tag()}`);
+  await confirm.getByRole("button", { name: "Cancelar evento" }).click();
+
+  const detail = page.getByRole("region", { name: eventName });
+  await expect(detail.getByText("Cancelado", { exact: true })).toBeVisible();
+  await expect(detail.getByText("Evento cancelado: não fechou grupo.")).toBeVisible();
+  // AC#3: estado final — nenhuma ação sobra, nem cancelar de novo.
+  await expect(detail.getByRole("button", { name: "Cancelar evento" })).toHaveCount(0);
+  await expect(detail.getByText("Evento encerrado: não há mais ação a tomar.")).toBeVisible();
+  await snap(page, `eventos-staff-cancelado-${tag()}`);
+
+  // AC#4: quem estava inscrito vê o evento cancelado com o motivo, e não há mais botão de role.
+  await login(page, "73000000000000008", "inscritoC");
+  await page.goto("/eventos");
+  const done = page.getByRole("listitem").filter({ hasText: eventName }).first();
+  await expect(done.getByText("Cancelado", { exact: true })).toBeVisible();
+  await expect(done.getByText("Evento cancelado: não fechou grupo.")).toBeVisible();
+  await expect(done.getByRole("button", { name: /^Tank/ })).toHaveCount(0);
+  await expect(done.getByRole("button", { name: "Sair do evento" })).toHaveCount(0);
+  await snap(page, `eventos-membro-cancelado-${tag()}`);
+});
+
 test("membro sem permissão não usa a API de caller (AC#3)", async ({ page }) => {
   await login(page, "73000000000000005", "curiosoE");
   expect((await page.request.get("/api/event-templates")).status()).toBe(403);
