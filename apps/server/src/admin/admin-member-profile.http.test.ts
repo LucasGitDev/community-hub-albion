@@ -83,9 +83,9 @@ describe.skipIf(!baseUrl)("gestão de membro do admin (TASK-045)", () => {
     handle.db.update(schema.users).set({ gameNick, guildTag }).where(eq(schema.users.id, id));
 
   const check = (cookie: string, id: string) => http().post(`/api/admin/members/${id}/albion-check`).set("Cookie", cookie).set("Origin", PUBLIC_URL);
-  const patch = (cookie: string, id: string, body: unknown) => http().patch(`/api/admin/members/${id}`).set("Cookie", cookie).set("Origin", PUBLIC_URL).send(body);
+  const patch = (cookie: string, id: string, body: object) => http().patch(`/api/admin/members/${id}`).set("Cookie", cookie).set("Origin", PUBLIC_URL).send(body);
   const notes = (cookie: string, id: string) => http().get(`/api/admin/members/${id}/notes`).set("Cookie", cookie);
-  const addNote = (cookie: string, id: string, body: unknown) => http().post(`/api/admin/members/${id}/notes`).set("Cookie", cookie).set("Origin", PUBLIC_URL).send(body);
+  const addNote = (cookie: string, id: string, body: object) => http().post(`/api/admin/members/${id}/notes`).set("Cookie", cookie).set("Origin", PUBLIC_URL).send(body);
 
   it("sem sessão 401; member, caller e staff 403 nas três ações (AC#4)", async () => {
     const alvo = await session("450000000000000001", "alvo-perm");
