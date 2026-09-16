@@ -1,4 +1,4 @@
-import { EVENT_SIGNUP_STATUSES, EVENT_STATUSES, LEDGER_ENTRY_KINDS, LEDGER_REFERENCE_TYPES, NICK_REQUEST_STATUSES, ROLES } from "@albion-hub/shared";
+import { EVENT_SIGNUP_STATUSES, EVENT_STATUSES, LEDGER_ENTRY_KINDS, LEDGER_REFERENCE_TYPES, NICK_REQUEST_STATUSES, ROLES, USER_NOTE_KINDS } from "@albion-hub/shared";
 import { sql } from "drizzle-orm";
 import { bigint, boolean, check, index, integer, pgEnum, pgTable, primaryKey, text, timestamp, uniqueIndex, uuid, type AnyPgColumn } from "drizzle-orm/pg-core";
 
@@ -394,5 +394,35 @@ export const ledgerEntries = pgTable(
     check("ledger_entries_reversal_consistent", sql`(${t.reversalOf} is not null) = (${t.kind} = 'reversal')`),
     // Origem é par completo ou ausente.
     check("ledger_entries_reference_consistent", sql`(${t.referenceType} is null) = (${t.referenceId} is null)`),
+  ],
+);
+
+/** Origem da nota interna (TASK-045). Fonte única: `USER_NOTE_KINDS` de @albion-hub/shared. */
+export const userNoteKindEnum = pgEnum("user_note_kind", USER_NOTE_KINDS);
+
+/**
+ * Notas internas por membro (TASK-045, AC#3). **Append-only**: o repositório só faz insert e select, e
+ * não existe coluna de edição nem de remoção — uma nota errada é corrigida escrevendo outra nota, do mesmo
+ * jeito que o ledger se corrige por estorno. `kind = 'system'` é o registro automático de uma edição (AC#2).
+ *
+ * `author_id` é `set null` (não `cascade`): apagar a conta de quem escreveu não pode apagar o histórico
+ * do membro sobre quem se escreveu. Quem some vira "autor removido" na tela, e a nota continua lá.
+ */
+export const userNotes = pgTable(
+  "user_notes",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    authorId: uuid("author_id").references(() => users.id, { onDelete: "set null" }),
+    kind: userNoteKindEnum("kind").notNull().default("staff"),
+    body: text("body").notNull(),
+    createdAt: createdAt(),
+  },
+  (t) => [
+    // A tela lê sempre "as notas deste membro em ordem"; o índice cobre exatamente essa consulta.
+    index("user_notes_user_idx").on(t.userId, t.createdAt),
+    check("user_notes_body_not_blank", sql`length(btrim(${t.body})) > 0`),
   ],
 );

@@ -106,3 +106,61 @@ export async function listAdminMembers(db: Database, query: AdminMembersQuery): 
 
   return { members, total, counts: page };
 }
+
+/** Dados do membro que a edição precisa ver antes de gravar (TASK-045). null = usuário não existe. */
+export interface AdminMemberProfile {
+  id: string;
+  gameNick: string | null;
+  guildTag: string | null;
+}
+
+export async function getAdminMemberProfile(db: Database, userId: string): Promise<AdminMemberProfile | null> {
+  const [row] = await db.select({ id: users.id, gameNick: users.gameNick, guildTag: users.guildTag }).from(users).where(eq(users.id, userId));
+  return row ?? null;
+}
+
+export interface UpdateMemberProfileInput {
+  /** Nick já validado (`validateNick`); nunca vazio: apagar o nick de alguém não é uma edição, é outra coisa. */
+  nick: string;
+  /** Tag já validada (`validateGuildTag`); null = sem guilda. */
+  guildTag: string | null;
+}
+
+export type UpdateMemberProfileResult = { ok: true; before: AdminMemberProfile } | { ok: false; reason: "not_found" | "nick_taken" };
+
+/**
+ * Edição do nick e da tag pela staff/admin (TASK-045, AC#2).
+ *
+ * Uma transação com a linha travada (`for update`): o valor "antes" que volta daqui é o que vira a nota de
+ * auditoria, então ele precisa ser o estado real no momento da escrita — duas edições simultâneas não podem
+ * gravar a mesma origem. O nick é conferido sem caixa contra os outros usuários (Q14: unicidade é por nick,
+ * e `Erijj` e `erijj` são a mesma pessoa no jogo), com a própria linha fora da comparação.
+ *
+ * O status do Albion é zerado quando o nick muda: a conferência antiga era de outro personagem, e deixar
+ * "Encontrado" ali mentiria para quem lê a lista. A revalidação é uma ação explícita (AC#1).
+ */
+export async function updateMemberProfile(db: Database, userId: string, input: UpdateMemberProfileInput): Promise<UpdateMemberProfileResult> {
+  return db.transaction(async (tx) => {
+    const [before] = await tx.select({ id: users.id, gameNick: users.gameNick, guildTag: users.guildTag }).from(users).where(eq(users.id, userId)).for("update");
+    if (!before) return { ok: false, reason: "not_found" };
+
+    const [clash] = await tx
+      .select({ id: users.id })
+      .from(users)
+      .where(and(sql`lower(${users.gameNick}) = ${input.nick.toLowerCase()}`, sql`${users.id} <> ${userId}`))
+      .limit(1);
+    if (clash) return { ok: false, reason: "nick_taken" };
+
+    const nickChanged = (before.gameNick ?? "").toLowerCase() !== input.nick.toLowerCase();
+    await tx
+      .update(users)
+      .set({
+        gameNick: input.nick,
+        guildTag: input.guildTag,
+        updatedAt: sql`now()`,
+        ...(nickChanged ? { albionStatus: null, albionPlayerId: null, albionGuildName: null, albionCheckedAt: null } : {}),
+      })
+      .where(eq(users.id, userId));
+    return { ok: true, before };
+  });
+}
