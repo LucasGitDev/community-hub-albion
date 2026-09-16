@@ -3,12 +3,15 @@ import { IntentsBitField } from "discord.js";
 import { NecordModule } from "necord";
 import type { Env } from "../config/env.js";
 import { DISCORD_GUILD_GATEWAY, DISCORD_GUILD_ID, DiscordJsGuildGateway } from "./discord-guild.gateway.js";
+import { DISCORD_GUILD_MEMBERS_GATEWAY, DiscordJsGuildMembersGateway } from "./discord-guild-members.gateway.js";
 import { DISCORD_MEMBER_ROLE_ID, DiscordMemberSync } from "./discord-member-sync.service.js";
+import { DiscordMemberImportService } from "../members/discord-member-import.service.js";
 import { EventEmbedService } from "./event-embed.service.js";
 import { EventSignupInteractions } from "./event-signup.interactions.js";
 import { DISCORD_EVENT_CATEGORY_ID, DISCORD_WAITING_VOICE_CHANNEL_ID, DiscordJsEventVoiceGateway, EVENT_VOICE_GATEWAY } from "./event-voice.gateway.js";
 import { EventVoiceService } from "./event-voice.service.js";
 import { EventCommand } from "./event.command.js";
+import { ImportMembersCommand } from "./import-members.command.js";
 import { DISCORD_EVENTS_CHANNEL_ID, DiscordJsEventsChannelGateway, EVENTS_CHANNEL_GATEWAY } from "./events-channel.gateway.js";
 import { NickEmbedInteractions } from "./nick-embed.interactions.js";
 import { NickStaffEmbedService } from "./nick-staff-embed.service.js";
@@ -62,6 +65,10 @@ export class BotModule {
         NickEmbedInteractions,
         // TASK-035: /registrar nick pelo Discord (mesmo serviço do painel).
         RegisterNickCommand,
+        // TASK-042: import dos membros já regularizados no Discord (leitura da guild por REST + /importar-membros).
+        { provide: DISCORD_GUILD_MEMBERS_GATEWAY, useClass: DiscordJsGuildMembersGateway },
+        DiscordMemberImportService,
+        ImportMembersCommand,
         // TASK-022: embed de inscrição do evento com botão por role e lista de espera.
         { provide: DISCORD_EVENTS_CHANNEL_ID, useValue: env.DISCORD_EVENTS_CHANNEL_ID },
         { provide: EVENTS_CHANNEL_GATEWAY, useClass: DiscordJsEventsChannelGateway },
@@ -74,6 +81,7 @@ export class BotModule {
         EventVoiceService,
         EventCommand,
       ],
+      exports: [DiscordMemberImportService],
     };
   }
 }
