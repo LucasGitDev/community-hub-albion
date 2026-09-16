@@ -552,6 +552,9 @@ function RoleRoster({
           {role.confirmed}/{role.slots}
         </span>
       </div>
+      {/* A descrição (TASK-039) fica sob o nome no roster: é por ela que o caller julga se a pessoa
+          certa está na role certa antes de mover alguém. */}
+      {role.description && <p className="mt-0.5 text-xs leading-snug text-muted-foreground">{role.description}</p>}
 
       <ul className="mt-2 space-y-1.5">
         {confirmed.map((signup) => (
