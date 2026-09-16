@@ -1,7 +1,11 @@
 import type { LedgerEntryKind, LedgerReferenceType } from "@albion-hub/shared";
 import { and, asc, desc, eq, lt, or, sql } from "drizzle-orm";
 import type { Database } from "./client.js";
+import type { EventTx } from "./events-repo.js";
 import { ledgerEntries } from "./schema.js";
+
+/** Handle de escrita: a conexão do pool ou a transação de quem chama (split, saque). */
+type LedgerWriter = Database | EventTx;
 
 /**
  * Ledger de prata (TASK-026). Regras que este módulo faz valer, junto com o banco:
@@ -59,7 +63,7 @@ export interface LedgerEntryInput {
 }
 
 /** Grava um lançamento. `tx` permite lançar dentro da transação de quem chama (split, saque). */
-export async function insertLedgerEntry(db: Database, input: LedgerEntryInput): Promise<LedgerEntry> {
+export async function insertLedgerEntry(db: LedgerWriter, input: LedgerEntryInput): Promise<LedgerEntry> {
   const [row] = await db
     .insert(ledgerEntries)
     .values({
@@ -86,12 +90,12 @@ export interface ReverseLedgerEntryOptions {
 
 /**
  * Estorna um lançamento criando o inverso (`kind: reversal`, `reversal_of` = original). Nunca toca no
- * original (AC#2). O índice único parcial em `reversal_of` é quem resolve a corrida: dois estornos
+ * original (AC#2). Aceita uma transação: estornar um loot split inteiro (TASK-028) é tudo ou nada. O índice único parcial em `reversal_of` é quem resolve a corrida: dois estornos
  * simultâneos viram um `already_reversed`, mesmo em transações concorrentes.
  *
  * Estorno de estorno é recusado (`is_reversal`): re-creditar é um lançamento novo, não uma correção.
  */
-export async function reverseLedgerEntry(db: Database, entryId: string, options: ReverseLedgerEntryOptions): Promise<ReverseLedgerEntryResult> {
+export async function reverseLedgerEntry(db: LedgerWriter, entryId: string, options: ReverseLedgerEntryOptions): Promise<ReverseLedgerEntryResult> {
   const [original] = await db.select(columns).from(ledgerEntries).where(eq(ledgerEntries.id, entryId));
   if (!original) return { ok: false, reason: "not_found" };
   if (original.kind === "reversal") return { ok: false, reason: "is_reversal" };
@@ -160,7 +164,7 @@ export async function listLedgerEntries(db: Database, userId: string, query: Led
 }
 
 /** Lançamentos de uma origem (evento, split, saque), do mais antigo para o mais novo. */
-export async function listLedgerEntriesByReference(db: Database, type: LedgerReferenceType, id: string): Promise<LedgerEntry[]> {
+export async function listLedgerEntriesByReference(db: LedgerWriter, type: LedgerReferenceType, id: string): Promise<LedgerEntry[]> {
   return db
     .select(columns)
     .from(ledgerEntries)

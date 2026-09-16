@@ -519,9 +519,10 @@ export const lootSplitStatusEnum = pgEnum("loot_split_status", LOOT_SPLIT_STATUS
  * Loot split de um evento (TASK-027, Q5/Q6/Q7/Q23). Um evento aceita **N** splits (AC#3) — o loot de
  * uma noite chega em levas —, e cada um fecha 100% por conta própria, com o seu próprio total.
  *
- * Esta task só grava `draft`. Confirmar, aplicar a taxa e lançar no ledger é da TASK-028: por isso
- * nada aqui toca em `ledger_entries`. O que o rascunho guarda é o que a TASK-028 vai precisar sem ter
- * que recalcular presença de novo, e o que a TASK-029 precisa para explicar o número na tela.
+ * Enquanto é `draft` o split é editável (total e percentuais). `confirmed` é o fim: a TASK-028 lança
+ * um `split_payout` por participante e um `split_fee` com taxa + resíduo para o dono, tudo numa
+ * transação, e daí em diante **triggers recusam UPDATE/DELETE** neste split e nas linhas dele — a
+ * correção de um split confirmado é estornar os lançamentos, nunca reescrever a história (Q24).
  *
  * `fee_type`/`fee_value` são a taxa **congelada** no instante do rascunho, copiada do evento. Mexer na
  * taxa do evento depois não muda um split já rascunhado — senão a conta que o caller conferiu mudaria
@@ -540,12 +541,21 @@ export const lootSplits = pgTable(
     feeType: eventFeeTypeEnum("fee_type").notNull(),
     feeValue: bigint("fee_value", { mode: "bigint" }).notNull(),
     /**
-     * Sobra do arredondamento do rateio (Q23): `total - soma(linhas)`, sempre menor que o número de
-     * linhas. Fica com o caller/dono do evento — a TASK-028 é quem lança. Explícito aqui para a
-     * conferência ser possível sem refazer a divisão.
+     * Prata de fato retida pela taxa (TASK-028): `percent` já resolvido em prata, ou o valor fixo.
+     * Guardada separada de `fee_value` porque é ela que foi creditada ao dono — reconstruir a conta a
+     * partir do percentual depois de um estorno dependeria de refazer a divisão inteira.
+     */
+    feeSilver: bigint("fee_silver", { mode: "bigint" }).notNull().default(sql`0`),
+    /**
+     * Sobra do arredondamento do rateio (Q23): `distribuível - soma(linhas)`, sempre menor que o
+     * número de linhas. Vai para o caller/dono do evento junto com a taxa, num lançamento só
+     * (`split_fee`). Explícito aqui para a conferência ser possível sem refazer a divisão.
      */
     residualSilver: bigint("residual_silver", { mode: "bigint" }).notNull().default(sql`0`),
     createdBy: uuid("created_by").references(() => users.id, { onDelete: "set null" }),
+    /** Quem confirmou e quando (TASK-028). Null enquanto o split é rascunho. */
+    confirmedBy: uuid("confirmed_by").references(() => users.id, { onDelete: "set null" }),
+    confirmedAt: timestamp("confirmed_at", { withTimezone: true }),
     createdAt: createdAt(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
   },
@@ -553,7 +563,10 @@ export const lootSplits = pgTable(
     index("loot_splits_event_idx").on(t.eventId, t.createdAt),
     check("loot_splits_total_not_negative", sql`${t.totalSilver} >= 0`),
     check("loot_splits_fee_not_negative", sql`${t.feeValue} >= 0`),
+    check("loot_splits_fee_silver_not_negative", sql`${t.feeSilver} >= 0`),
     check("loot_splits_residual_not_negative", sql`${t.residualSilver} >= 0`),
+    // Confirmado tem carimbo, rascunho não tem: não existe split "confirmado por ninguém".
+    check("loot_splits_confirmed_consistent", sql`(${t.status} = 'confirmed') = (${t.confirmedAt} is not null)`),
   ],
 );
 
@@ -585,7 +598,7 @@ export const lootSplitLines = pgTable(
     presenceMs: bigint("presence_ms", { mode: "number" }).notNull(),
     /** Participação em basis points: 10000 = 100%. A soma das linhas fecha 10000 exato. */
     shareBp: integer("share_bp").notNull(),
-    /** Prévia da prata desta linha sobre o total **bruto**; a TASK-028 recalcula sobre o líquido. */
+    /** Prata desta linha sobre o **distribuível** (total menos a taxa). É o valor creditado no ledger. */
     amountSilver: bigint("amount_silver", { mode: "bigint" }).notNull(),
   },
   (t) => [

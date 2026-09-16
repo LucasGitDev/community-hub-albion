@@ -142,11 +142,20 @@ export {
   type WithdrawalDecisionResult,
 } from "./withdrawals-repo.js";
 export {
+  confirmLootSplit,
   createLootSplit,
   getLootSplit,
+  hasConfirmedLootSplit,
   hasDraftLootSplit,
   listEventLootSplits,
   listEventPresence,
+  reverseLootSplit,
+  updateLootSplitDraft,
+  type ConfirmLootSplitInput,
+  type ConfirmLootSplitResult,
   type CreateLootSplitInput,
   type CreateLootSplitResult,
+  type ReverseLootSplitResult,
+  type UpdateLootSplitInput,
+  type UpdateLootSplitResult,
 } from "./loot-split-repo.js";
