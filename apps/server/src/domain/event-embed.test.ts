@@ -126,7 +126,7 @@ describe("embed do evento cancelado (TASK-025, AC#4)", () => {
 
 describe("respostas efêmeras dos botões", () => {
   it("dizem o que fazer em cada recusa (PT-BR)", () => {
-    expect(EVENT_BUTTON_REPLIES.notRegistered).toContain("/registrar");
+    expect(EVENT_BUTTON_REPLIES.accountCreated).toContain("/registrar");
     expect(EVENT_BUTTON_REPLIES.notMember).toContain("/registrar");
     expect(EVENT_BUTTON_REPLIES.notOpen("closed")).toContain("com inscrições fechadas");
     expect(EVENT_BUTTON_REPLIES.waitlisted("Tank", 2)).toContain("posição 2");

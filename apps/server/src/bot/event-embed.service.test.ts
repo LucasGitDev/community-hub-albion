@@ -1,12 +1,14 @@
 import "reflect-metadata";
 import { Test } from "@nestjs/testing";
-import { createDb, createEvent, grantRole, listEventRoles, runMigrations, saveEventTemplate, setGameNick, upsertUserByDiscordId, type DbHandle } from "@albion-hub/db";
+import { createDb, createEvent, grantRole, listEventRoles, listRoles, runMigrations, saveEventTemplate, setGameNick, upsertUserByDiscordId, type DbHandle } from "@albion-hub/db";
 import { eventJoinButtonId, eventLeaveButtonId, EVENT_JOIN_BUTTON, EVENT_LEAVE_BUTTON, type EventDto, type Role } from "@albion-hub/shared";
 import { ComponentType, MessageFlags } from "discord.js";
 import { sql } from "drizzle-orm";
 import { MessageComponentDiscovery } from "necord";
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
+import { AUTH_ENV } from "../auth/auth.controller.js";
 import { DB_HANDLE } from "../db/db.module.js";
+import { AccountService } from "../members/account.service.js";
 import type { EmbedView } from "../domain/embed-view.js";
 import { EVENT_BUTTON_REPLIES } from "../domain/event-embed.js";
 import { EventSignupsService } from "../events/event-signups.service.js";
@@ -22,7 +24,7 @@ const MISSING = "00000000-0000-4000-8000-000000000000";
 
 function fakeInteraction(discordId: string) {
   return {
-    user: { id: discordId },
+    user: { id: discordId, username: `user-${discordId.slice(-4)}`, globalName: null, avatar: null },
     reply: vi.fn().mockResolvedValue(undefined),
     deferReply: vi.fn().mockResolvedValue(undefined),
     editReply: vi.fn().mockResolvedValue(undefined),
@@ -61,7 +63,16 @@ describe.skipIf(!baseUrl)("embed de inscrição no Discord (TASK-022, Postgres r
     await runMigrations(target.toString());
     handle = createDb(target.toString());
     const moduleRef = await Test.createTestingModule({
-      providers: [EventsService, EventSignupsService, EventEmbedService, EventSignupInteractions, { provide: DB_HANDLE, useValue: handle }, { provide: EVENTS_CHANNEL_GATEWAY, useValue: gateway }],
+      providers: [
+        EventsService,
+        EventSignupsService,
+        EventEmbedService,
+        EventSignupInteractions,
+        AccountService,
+        { provide: DB_HANDLE, useValue: handle },
+        { provide: AUTH_ENV, useValue: { BOOTSTRAP_ADMIN_DISCORD_IDS: [] } },
+        { provide: EVENTS_CHANNEL_GATEWAY, useValue: gateway },
+      ],
     }).compile();
     moduleRef.useLogger(false);
     const app = await moduleRef.init();
@@ -212,13 +223,29 @@ describe.skipIf(!baseUrl)("embed de inscrição no Discord (TASK-022, Postgres r
     expect(answer(tardio)).toBe(EVENT_BUTTON_REPLIES.notOpen("cancelled"));
   });
 
-  it("quem não está no painel ou não é membro é orientado, sem escrever nada", async () => {
+  it("quem não tem conta ganha conta na hora e a inscrição vai até o fim (TASK-037)", async () => {
     const { event, tank } = await openEvent("Sem cadastro");
-    const desconhecido = fakeInteraction("759999999999999999");
-    await interactions.onJoin([desconhecido], tank);
-    expect(desconhecido.reply).toHaveBeenCalledWith({ content: EVENT_BUTTON_REPLIES.notRegistered, flags: MessageFlags.Ephemeral });
-    expect(desconhecido.deferReply).not.toHaveBeenCalled();
+    const novato = fakeInteraction("759999999999999999");
+    await interactions.onJoin([novato], tank);
+    const resposta = answer(novato) ?? "";
+    expect(resposta).toContain(EVENT_BUTTON_REPLIES.accountCreated);
+    expect(resposta).toContain("Inscrição confirmada");
+    const inscritos = await signups.list(event.id);
+    expect(inscritos).toHaveLength(1);
+    expect(inscritos[0]!.status).toBe("confirmed");
+    // Conta criada com os mesmos papéis do login (member) e sem nick aprovado.
+    const criado = await handle.db.query.users.findFirst({ where: (u, { eq }) => eq(u.discordId, "759999999999999999") });
+    expect(criado?.gameNick ?? null).toBeNull();
+    expect(await listRoles(handle.db, criado!.id)).toEqual(["member"]);
 
+    // Segundo clique não repete o aviso de conta criada.
+    const devolta = fakeInteraction("759999999999999999");
+    await interactions.onLeave([devolta], event.id);
+    expect(answer(devolta)).toBe(EVENT_BUTTON_REPLIES.left);
+  });
+
+  it("quem tem conta sem acesso de membro é recusado sem escrever nada", async () => {
+    const { event, tank } = await openEvent("Sem papel");
     const semPapel = await member("750000000000009999", []);
     expect(semPapel).toBeTruthy();
     const semAcesso = fakeInteraction("750000000000009999");

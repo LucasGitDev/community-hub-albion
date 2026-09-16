@@ -114,7 +114,7 @@ export function buildEventEmbed(input: EventEmbedInput): EmbedView {
 
 /** Respostas efêmeras dos botões (PT-BR). Nunca dizem nada sobre quem clicou além do que ele já sabe. */
 export const EVENT_BUTTON_REPLIES = {
-  notRegistered: "Sua conta Discord ainda não está no painel. Use /registrar para pedir seu nick e entrar na comunidade.",
+  accountCreated: "Criamos sua conta no painel a partir do seu Discord. Use /registrar quando quiser cadastrar seu nick do Albion (ele só é necessário quando entrar a prata dos eventos).",
   notMember: "Você ainda não tem acesso de membro. Peça seu nick com /registrar e espere a staff aprovar.",
   invalid: "Botão inválido. Atualize a mensagem do evento e tente de novo.",
   notFound: "Esse evento não existe mais.",

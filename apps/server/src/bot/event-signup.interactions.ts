@@ -6,13 +6,14 @@ import { Button, ComponentParam, Context } from "necord";
 import { DB_HANDLE } from "../db/db.module.js";
 import { EVENT_BUTTON_REPLIES } from "../domain/event-embed.js";
 import { EventSignupsService } from "../events/event-signups.service.js";
+import { AccountService } from "../members/account.service.js";
 import { EventEmbedService } from "./event-embed.service.js";
 
 type ReplyOptions = { content: string; flags: MessageFlags.Ephemeral };
 
 /** Subconjunto de ButtonInteraction usado aqui (os testes simulam). */
 export interface EventButtonInteraction {
-  user: { id: string };
+  user: { id: string; username: string; globalName?: string | null; avatar?: string | null };
   reply(options: ReplyOptions): Promise<unknown>;
   deferReply(options: { flags: MessageFlags.Ephemeral }): Promise<unknown>;
   editReply(options: { content: string }): Promise<unknown>;
@@ -36,6 +37,7 @@ export class EventSignupInteractions {
     private readonly signups: EventSignupsService,
     private readonly embeds: EventEmbedService,
     @Inject(DB_HANDLE) private readonly handle: DbHandle,
+    private readonly accounts: AccountService,
   ) {}
 
   @Button(EVENT_JOIN_BUTTON)
@@ -67,13 +69,28 @@ export class EventSignupInteractions {
     });
   }
 
-  /** Discord id → usuário do painel → papéis → CASL (mesma regra da API: `join Event`). */
-  async authorize(discordId: string): Promise<{ ok: true; userId: string } | { ok: false; message: string }> {
-    const userId = await findUserIdByDiscordId(this.handle.db, discordId);
-    if (!userId) return { ok: false, message: EVENT_BUTTON_REPLIES.notRegistered };
+  /**
+   * Discord id → usuário do painel → papéis → CASL (mesma regra da API: `join Event`).
+   * Sem conta, cria na hora com a mesma lógica do /registrar (TASK-037): inscrever-se não exige nick
+   * aprovado; o nick só passa a valer quando entra a prata (F5).
+   */
+  async authorize(user: EventButtonInteraction["user"]): Promise<{ ok: true; userId: string; accountCreated: boolean } | { ok: false; message: string }> {
+    const existingId = await findUserIdByDiscordId(this.handle.db, user.id);
+    let userId = existingId;
+    let accountCreated = false;
+    if (!userId) {
+      const ensured = await this.accounts.ensureFromDiscord({
+        discordId: user.id,
+        discordUsername: user.username,
+        displayName: user.globalName ?? null,
+        avatar: user.avatar ?? null,
+      });
+      userId = ensured.user.id;
+      accountCreated = ensured.created;
+    }
     const roles = await listRoles(this.handle.db, userId);
     if (!defineAbilityFor({ id: userId, roles }).can("join", "Event")) return { ok: false, message: EVENT_BUTTON_REPLIES.notMember };
-    return { ok: true, userId };
+    return { ok: true, userId, accountCreated };
   }
 
   /** Valida o id do botão e a permissão antes de qualquer escrita, e responde sempre de forma efêmera. */
@@ -85,15 +102,16 @@ export class EventSignupInteractions {
     let deferred = false;
     try {
       if (!isUuid(id)) return void (await interaction.reply(ephemeral(EVENT_BUTTON_REPLIES.invalid)));
-      const auth = await this.authorize(interaction.user.id);
+      const auth = await this.authorize(interaction.user);
       if (!auth.ok) return void (await interaction.reply(ephemeral(auth.message)));
       // A inscrição espera o banco e a edição do embed: adia a resposta para não estourar os 3 s do Discord.
       await interaction.deferReply({ flags: MessageFlags.Ephemeral });
       deferred = true;
       const { message, refresh } = await act(auth.userId);
+      const text = auth.accountCreated ? `${EVENT_BUTTON_REPLIES.accountCreated}\n${message}` : message;
       // Recusa por estado defasado: a mensagem do canal está velha, então atualiza junto com a resposta.
       if (refresh) await this.embeds.sync(refresh);
-      await interaction.editReply({ content: message });
+      await interaction.editReply({ content: text });
     } catch (error) {
       this.logger.error(`Botão de inscrição ${id} falhou: ${String(error)}`);
       await this.safeRespond(interaction, EVENT_BUTTON_REPLIES.failed, deferred);
