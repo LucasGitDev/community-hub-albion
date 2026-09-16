@@ -11,7 +11,7 @@ import { AdminMembers } from "./pages/AdminMembers";
 import { AdminRoles } from "./pages/AdminRoles";
 import { Events } from "./pages/Events";
 import { WalletProvider } from "./api/WalletProvider";
-import { StoreProvider } from "./mock/store";
+import { QueueProvider } from "./api/QueueProvider";
 import { Login } from "./pages/Login";
 import { MyWithdrawals } from "./pages/MyWithdrawals";
 import { Nick } from "./pages/Nick";
@@ -35,10 +35,10 @@ createRoot(document.getElementById("root")!).render(
             element={
               <RequireAuth>
                 <WalletProvider>
-                  {/* StoreProvider: dados de demonstração que ainda restam na fila da staff (TASK-032). */}
-                  <StoreProvider>
+                  {/* QueueProvider: fila de saques da staff (TASK-032); não busca nada sem a permissão. */}
+                  <QueueProvider>
                     <AppShell />
-                  </StoreProvider>
+                  </QueueProvider>
                 </WalletProvider>
               </RequireAuth>
             }
