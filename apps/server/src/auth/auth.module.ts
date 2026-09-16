@@ -1,5 +1,6 @@
 import { type DynamicModule, Module } from "@nestjs/common";
 import type { Env } from "../config/env.js";
+import { AdminMemberProfileController } from "../admin/admin-member-profile.controller.js";
 import { AdminMembersController } from "../admin/admin-members.controller.js";
 import { AdminUsersController } from "../admin/admin-users.controller.js";
 import { MEMBER_IMPORTER, type MemberImporter } from "../members/member-importer.token.js";
@@ -21,7 +22,7 @@ export class AuthModule {
     return {
       module: AuthModule,
       // Dev login só existe quando habilitado (env proíbe em produção).
-      controllers: [AuthController, RolesController, AdminUsersController, AdminMembersController, ...(env.AUTH_DEV_LOGIN ? [DevLoginController] : [])],
+      controllers: [AuthController, RolesController, AdminUsersController, AdminMembersController, AdminMemberProfileController, ...(env.AUTH_DEV_LOGIN ? [DevLoginController] : [])],
       providers: [
         { provide: AUTH_ENV, useValue: env },
         SessionService,
