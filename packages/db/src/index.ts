@@ -44,6 +44,15 @@ export {
   type NickStatus,
 } from "./nick-repo.js";
 export {
+  getImportedMember,
+  importDiscordMember,
+  setAlbionCheck,
+  type AlbionCheck,
+  type ImportDiscordMemberInput,
+  type ImportDiscordMemberResult,
+  type ImportedMemberSnapshot,
+} from "./member-import-repo.js";
+export {
   createEventRole,
   deleteEventRole,
   deleteEventTemplate,
