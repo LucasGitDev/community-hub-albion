@@ -28,7 +28,18 @@ export {
   type VoiceSession,
 } from "./voice-repo.js";
 export { listUsersWithRoles, revokeRoleGuarded, userExists, type RevokeRoleResult, type UserWithRoles } from "./admin-roles-repo.js";
-export { listAdminMembers, type AdminMember, type AdminMembersPage, type AdminMembersQuery } from "./admin-members-repo.js";
+export {
+  getAdminMemberProfile,
+  listAdminMembers,
+  updateMemberProfile,
+  type AdminMember,
+  type AdminMemberProfile,
+  type AdminMembersPage,
+  type AdminMembersQuery,
+  type UpdateMemberProfileInput,
+  type UpdateMemberProfileResult,
+} from "./admin-members-repo.js";
+export { addUserNote, listUserNotes, type AddUserNoteInput, type UserNote } from "./user-notes-repo.js";
 export {
   decideNickRequest,
   getNickRequestEmbedData,
