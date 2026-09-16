@@ -240,4 +240,54 @@ describe.skipIf(!baseUrl)("saque HTTP (TASK-030, Q11/Q12/Q24/Q25)", () => {
       expect((await get("/api/withdrawals?status=nope", staff.cookie)).status).toBe(400);
     });
   });
+
+  /** A fila da staff (TASK-032): o painel precisa do contexto de quem pediu para decidir. */
+  describe("contexto da fila da staff (TASK-032)", () => {
+    it("manda o saldo de cada dono que está na lista, e só desses", async () => {
+      const staff = await actor(["member", "staff"]);
+      const { member, id } = await pendingOf(1_000_000n, "400000");
+      // Um membro que não tem saque nenhum não pode aparecer no bloco de saldos.
+      const forasteiro = await actor(["member"], 5_000_000n);
+
+      // Dois donos na mesma resposta: cada um com o seu saldo, sem um atropelar o outro.
+      const { member: segundo } = await pendingOf(250_000n, "50000");
+
+      const res = await get("/api/withdrawals?status=pending", staff.cookie);
+      expect(res.status).toBe(200);
+      expect(res.body.balances[member.id]).toEqual({ balance: "1000000", reserved: "400000", available: "600000" });
+      expect(res.body.balances[segundo.id]).toEqual({ balance: "250000", reserved: "50000", available: "200000" });
+      expect(res.body.balances[forasteiro.id]).toBeUndefined();
+      expect(res.body.withdrawals.map((w: { id: string }) => w.id)).toContain(id);
+
+      // Depois de aprovar, o débito já está no ledger e a reserva zera (Q25).
+      expect((await post(`/api/withdrawals/${id}/approve`, staff.cookie)).status).toBe(200);
+      const depois = await get("/api/withdrawals?status=approved", staff.cookie);
+      expect(depois.body.balances[member.id]).toEqual({ balance: "600000", reserved: "0", available: "600000" });
+    });
+
+    it("membro comum recebe só o próprio saldo no bloco, nunca o de outro", async () => {
+      const { member } = await pendingOf(700_000n, "200000");
+      const outro = await pendingOf(900_000n, "300000");
+      const res = await get("/api/withdrawals", member.cookie);
+      expect(res.status).toBe(200);
+      expect(Object.keys(res.body.balances)).toEqual([member.id]);
+      expect(res.body.balances[outro.member.id]).toBeUndefined();
+    });
+
+    it("dois staff no mesmo saque: o segundo leva 409 e a decisão do primeiro fica de pé", async () => {
+      const a = await actor(["member", "staff"]);
+      const b = await actor(["member", "staff"]);
+      const { id } = await pendingOf(500_000n, "500000");
+
+      expect((await post(`/api/withdrawals/${id}/approve`, a.cookie)).status).toBe(200);
+      const segundo = await post(`/api/withdrawals/${id}/reject`, b.cookie, { note: "cheguei depois" });
+      expect(segundo.status).toBe(409);
+      expect(segundo.body.message).toContain("aprovado");
+
+      const atual = await get(`/api/withdrawals/${id}`, b.cookie);
+      expect(atual.body.status).toBe("approved");
+      expect(atual.body.decidedByUserId).toBe(a.id);
+      expect(atual.body.decisionNote).toBeNull();
+    });
+  });
 });

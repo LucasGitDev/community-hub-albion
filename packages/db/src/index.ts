@@ -131,6 +131,7 @@ export {
   approveWithdrawal,
   getWithdrawal,
   getWithdrawalBalance,
+  getWithdrawalBalances,
   listWithdrawals,
   rejectWithdrawal,
   requestWithdrawal,

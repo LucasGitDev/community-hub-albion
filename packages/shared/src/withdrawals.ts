@@ -186,6 +186,17 @@ export interface WithdrawalBalanceDto {
   available: string;
 }
 
+/**
+ * Fila da staff (TASK-032). Junto dos pedidos vem o saldo de **cada dono que já está na lista**: quem
+ * aprova precisa do contexto (quanto o membro tem, quanto já está reservado) para decidir, e sem isso a
+ * decisão é no escuro. Não entra ninguém novo aqui — só quem já aparece em `withdrawals`.
+ */
+export interface WithdrawalQueueResponse {
+  withdrawals: WithdrawalDto[];
+  /** Saldo por `userId`. Ausente = membro sem lançamento e sem reserva. */
+  balances: Record<string, WithdrawalBalanceDto>;
+}
+
 export const withdrawalListQuerySchema = z.object({
   status: z.array(z.enum(WITHDRAWAL_STATUSES)).nonempty().optional(),
   userId: z.uuid("Usuário inválido.").optional(),
