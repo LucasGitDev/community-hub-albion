@@ -55,7 +55,15 @@ export function AdminMembers() {
   const debouncedSearch = useDebounced(search);
 
   // Trocar busca ou filtro volta pra primeira página: página 3 de um resultado com 2 páginas é uma tela vazia.
-  useEffect(() => setPage(1), [debouncedSearch, filter]);
+  // Feito no próprio handler (e não num efeito) para não disparar uma renderização em cascata.
+  const changeSearch = (value: string) => {
+    setSearch(value);
+    setPage(1);
+  };
+  const changeFilter = (value: MemberFilter) => {
+    setFilter(value);
+    setPage(1);
+  };
 
   const load = useCallback(() => fetchAdminMembers({ search: debouncedSearch, filter, page }), [debouncedSearch, filter, page]);
   const { data, error, loading, refresh } = usePoll<AdminMembersPage>(load, "Erro ao carregar os membros");
@@ -115,13 +123,13 @@ export function AdminMembers() {
             <Input
               type="search"
               value={search}
-              onChange={(e) => setSearch(e.target.value)}
+              onChange={(e) => changeSearch(e.target.value)}
               placeholder="Buscar por nick ou usuário do Discord"
               aria-label="Buscar por nick ou usuário do Discord"
               className="pl-9"
             />
           </div>
-          <div className="flex flex-wrap gap-2" role="group" aria-label="Filtrar membros">
+          <div className="flex w-full flex-wrap gap-2 sm:w-auto" role="group" aria-label="Filtrar membros">
             {MEMBER_FILTERS.map((key) => {
               const on = filter === key;
               return (
@@ -129,7 +137,7 @@ export function AdminMembers() {
                   key={key}
                   type="button"
                   aria-pressed={on}
-                  onClick={() => setFilter(key)}
+                  onClick={() => changeFilter(key)}
                   className={cn(
                     "press inline-flex h-8 items-center gap-1.5 rounded-full border px-3 text-sm font-medium",
                     on ? "border-foreground bg-foreground text-background" : "text-muted-foreground hover:bg-accent hover:text-foreground",
@@ -166,8 +174,8 @@ export function AdminMembers() {
                   <Button
                     variant="outline"
                     onClick={() => {
-                      setSearch("");
-                      setFilter("todos");
+                      changeSearch("");
+                      changeFilter("todos");
                     }}
                   >
                     Limpar filtros
@@ -189,7 +197,7 @@ export function AdminMembers() {
               <TableRow>
                 <TableHead>Membro</TableHead>
                 <TableHead className="hidden md:table-cell">Guilda</TableHead>
-                <TableHead>Papéis</TableHead>
+                <TableHead className="hidden sm:table-cell">Papéis</TableHead>
                 <TableHead className="hidden lg:table-cell">Entrou</TableHead>
                 <TableHead>Albion</TableHead>
               </TableRow>
@@ -229,20 +237,23 @@ function MemberRow({ member }: { member: AdminMember }) {
   const name = member.gameNick || member.displayName || member.discordUsername;
   const albion = describeAlbionCheck({ status: member.albion.status, guildName: member.albion.guildName, checkedAt: member.albion.checkedAt });
   const meta = albionMeta[albion.kind];
+  const roles = member.roles.map((r) => ROLE_LABELS[r]).join(", ") || "—";
 
   return (
     <TableRow>
-      <TableCell className="max-w-[14rem] min-w-0">
+      {/* No celular sobram duas colunas (Membro e Albion): guilda e papéis descem para dentro do nome. */}
+      <TableCell className="max-w-[12rem] min-w-0 sm:max-w-[14rem]">
         <p className="truncate font-medium">{name}</p>
         <p className="truncate text-xs text-muted-foreground">
           @{member.discordUsername}
           <span className="md:hidden">{member.guildTag ? ` · [${member.guildTag}]` : ""}</span>
         </p>
+        <p className="truncate text-xs text-muted-foreground sm:hidden">{roles}</p>
       </TableCell>
       <TableCell className="hidden md:table-cell">
         {member.guildTag ? <span className="num text-xs font-medium">[{member.guildTag}]</span> : <span className="text-xs text-muted-foreground">—</span>}
       </TableCell>
-      <TableCell className="text-xs">{member.roles.map((r) => ROLE_LABELS[r]).join(", ") || "—"}</TableCell>
+      <TableCell className="hidden text-xs sm:table-cell">{roles}</TableCell>
       <TableCell className="hidden text-xs text-muted-foreground lg:table-cell">{formatDateTime(member.createdAt)}</TableCell>
       <TableCell>
         <Pill tone={meta.tone} icon={meta.icon}>
