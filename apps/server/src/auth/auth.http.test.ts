@@ -218,6 +218,25 @@ describe.skipIf(!baseUrl)("auth Discord OAuth HTTP (TASK-008, Postgres real + Di
     expect(invalid.body.message).toBe("Sessão inválida ou expirada. Entre de novo.");
   });
 
+  // TASK-041: o perfil (/perfil) monta nick, conta do Discord e papéis a partir daqui. O dono sai
+  // sempre da sessão: nada que o cliente mande (query, corpo ou header) pode apontar pra outro usuário.
+  it("GET /api/auth/me ignora usuário vindo do cliente e responde sempre o dono da sessão", async () => {
+    const admin = await login(ADMIN.id);
+    const { callback } = await login(MEMBER.id);
+    const token = cookieValue(callback, "ah_session")!;
+    const [other] = await handle.db.select().from(schema.users).where(eq(schema.users.discordId, ADMIN.id));
+    expect(cookieValue(admin.callback, "ah_session")).toBeDefined();
+
+    const me = await http()
+      .get(`/api/auth/me?userId=${other!.id}&discordId=${ADMIN.id}`)
+      .set("Cookie", `ah_session=${token}`)
+      .set("x-user-id", other!.id);
+    expect(me.status).toBe(200);
+    expect(me.body.user.discordId).toBe(MEMBER.id);
+    expect(me.body.user.id).not.toBe(other!.id);
+    expect(me.body.roles).toEqual(["member"]);
+  });
+
   it("logout do mesmo site revoga a sessão e limpa o cookie; me vira 401 (AC#3)", async () => {
     const { callback } = await login(MEMBER.id);
     const token = cookieValue(callback, "ah_session")!;
