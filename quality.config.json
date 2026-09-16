@@ -4,7 +4,6 @@
     "branches": 79,
     "include": [
       "apps/*/src/lib/**/*.ts",
-      "apps/*/src/mock/rules.ts",
       "apps/*/src/domain/**/*.ts",
       "apps/server/src/config/**/*.ts",
       "apps/server/src/boot/**/*.ts",
