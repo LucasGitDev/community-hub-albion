@@ -5,7 +5,7 @@ status: In Progress
 assignee:
   - '@claude'
 created_date: '2026-09-15 03:24'
-updated_date: '2026-09-16 17:04'
+updated_date: '2026-09-16 19:14'
 labels:
   - economy
   - backend
@@ -128,6 +128,32 @@ com teste dedicado: 'segurança: ninguém age nem lê no nome de outro' em apps/
 | AC#6 security-review sem achado crítico | Relatório acima: nenhum achado com confiança >= 8 | ✅ |
 
 DoD#4 (visual/e2e + screenshots) não se aplica: a task é backend puro, sem UI. As telas são TASK-031 e TASK-032.
+
+## Rebase na main (TASK-045 entrou no meio)
+
+A main andou durante a task e a TASK-045 pegou o slot de migration 0012. Rebase feito em cima de
+origin/main (7b71013):
+- Minha migration foi **regerada** como `0013_shallow_rhino.sql` (apaguei a 0012 antiga, peguei
+  `packages/db/migrations/` inteiro da main e rodei `pnpm db:generate` de novo). Continua puramente
+  aditiva: só `CREATE TYPE withdrawal_status` + `CREATE TABLE withdrawals` + índices/FKs. Não toca em
+  nenhuma tabela existente e não tem nada de `user_notes`.
+- Conflito em `packages/db/src/schema.ts` resolvido mantendo **as três** tabelas: `ledger_entries`
+  (TASK-026), `user_notes` (TASK-045) e `withdrawals`. Reli o arquivo inteiro depois: o bloco do ledger
+  fecha certo em `ledger_entries_reference_consistent` + `],);`, e o `user_notes` tinha perdido o
+  fechamento na resolução automática — corrigido.
+- Conferido que **não sobrou nenhum valor mínimo**: não existe constante, validação nem teste de mínimo.
+  As únicas ocorrências da palavra 'mínimo' são comentários e nomes de teste dizendo que ele não existe.
+
+## CI do PR #57 (após o rebase)
+
+Todos os 9 checks verdes (lint, typecheck, coverage, e2e, image, duplication, deadcode, audit, summary).
+PR mergeable/CLEAN. **Não mergeado**, conforme combinado.
+
+Nota sobre o gate local pós-rebase: 2 a 4 e2e falharam por timeout em execuções locais (sempre specs de
+outras tasks — admin-roles, nick, staff-templates — e um conjunto diferente a cada rodada), e todas passam
+quando rodadas isoladamente. Causa: o OrbStack caiu no meio de uma rodada e depois carga local com
+`fullyParallel` em dois projects sobre o mesmo Postgres. O CI, que roda com `retries: 1` em runner limpo,
+fechou verde — é o sinal que vale.
 <!-- SECTION:NOTES:END -->
 
 ## Final Summary
