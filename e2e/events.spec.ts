@@ -180,7 +180,7 @@ test("caller cancela evento com motivo; inscrito vê o cancelamento e não entra
   await expect(detail.getByText("Evento cancelado: não fechou grupo.")).toBeVisible();
   // AC#3: estado final — nenhuma ação sobra, nem cancelar de novo.
   await expect(detail.getByRole("button", { name: "Cancelar evento" })).toHaveCount(0);
-  await expect(detail.getByText("Evento encerrado: não há mais ação a tomar.")).toBeVisible();
+  await expect(detail.getByText("Evento cancelado: não há mais ação a tomar.")).toBeVisible();
   await snap(page, `eventos-staff-cancelado-${tag()}`);
 
   // AC#4: quem estava inscrito vê o evento cancelado com o motivo, e não há mais botão de role.
@@ -192,6 +192,70 @@ test("caller cancela evento com motivo; inscrito vê o cancelamento e não entra
   await expect(done.getByRole("button", { name: /^Tank/ })).toHaveCount(0);
   await expect(done.getByRole("button", { name: "Sair do evento" })).toHaveCount(0);
   await snap(page, `eventos-membro-cancelado-${tag()}`);
+});
+
+/**
+ * Arquivamento (TASK-044, Q26 revisada). Prova o fim da linha: `finished` ainda oferece ação, o
+ * diálogo avisa o que se perde e o evento arquivado não tem mais nenhum botão de edição.
+ */
+test("staff arquiva um evento finalizado e o arquivado não oferece mais nenhuma ação (AC#1, AC#2, AC#3)", async ({ page }) => {
+  test.setTimeout(150_000);
+  const run = `${tag()}${Date.now().toString(36)}`;
+  const templateName = `Arquivo ${run}`;
+  const eventName = `Evento arquivo ${run}`;
+
+  await login(page, "73000000000000010", "staffAq", ["caller", "staff"]);
+  await createTemplate(page, templateName);
+  await page.goto("/staff/eventos");
+  await page.getByRole("button", { name: "Criar evento" }).first().click();
+  const novo = page.getByRole("dialog");
+  await novo.getByRole("button", { name: new RegExp(templateName) }).click();
+  await novo.getByLabel("Nome do evento").fill(eventName);
+  await novo.getByRole("button", { name: "Criar evento" }).click();
+  await expect(page.getByText("Evento criado")).toBeVisible();
+
+  await selectEvent(page, eventName);
+  const detail = page.getByRole("region", { name: eventName });
+  for (const action of ["Abrir inscrições", "Iniciar evento", "Finalizar evento"]) {
+    await detail.getByRole("button", { name: action }).click();
+    await expect(detail.getByRole("button", { name: action })).toHaveCount(0);
+  }
+
+  // Finalizado ainda é um estado de trabalho: o acerto da taxa e dos splits acontece aqui (AC#2).
+  await expect(detail.getByText("Finalizado", { exact: true })).toBeVisible();
+  await expect(detail.getByText("Quem conduz ainda acerta a taxa e os splits", { exact: false })).toBeVisible();
+  await snap(page, `eventos-staff-finalizado-${tag()}`);
+
+  await detail.getByRole("button", { name: "Arquivar evento" }).click();
+  const confirm = page.getByRole("dialog");
+  await expect(confirm.getByText("os dados do evento, a taxa e os loot splits não podem mais ser editados", { exact: false })).toBeVisible();
+  await snap(page, `eventos-staff-arquivar-${tag()}`);
+  await confirm.getByRole("button", { name: "Arquivar evento" }).click();
+
+  await expect(detail.getByText("Arquivado", { exact: true })).toBeVisible();
+  await expect(detail.getByText("Os dados, a taxa e os splits dele não mudam mais.")).toBeVisible();
+  // AC#1/AC#3: estado final de fato — nem arquivar de novo, nem passar o comando.
+  await expect(detail.getByRole("button", { name: "Arquivar evento" })).toHaveCount(0);
+  await expect(detail.getByRole("button", { name: "Passar o comando" })).toHaveCount(0);
+  await expect(detail.getByText("Evento arquivado: nada mais muda por aqui.")).toBeVisible();
+  await snap(page, `eventos-staff-arquivado-${tag()}`);
+
+  // A API recusa a edição com a frase do arquivamento, e não com "as inscrições não estão abertas" (AC#2).
+  const id = await page.evaluate(async () => {
+    const res = await fetch("/api/events");
+    return ((await res.json()) as { events: { id: string; name: string; status: string }[] }).events.find((e) => e.status === "archived")!.id;
+  });
+  const blocked = await page.request.post(`/api/events/${id}/transitions/archive`, { headers: { Origin: ORIGIN }, data: {} });
+  expect(blocked.status()).toBe(409);
+  expect(((await blocked.json()) as { message: string }).message).toContain("arquivado");
+
+  // AC#3: o membro vê o evento arquivado no histórico, distinto do cancelado e sem botão de role.
+  await login(page, "73000000000000011", "membroAq");
+  await page.goto("/eventos");
+  const done = page.getByRole("listitem").filter({ hasText: eventName }).first();
+  await expect(done.getByText("Arquivado", { exact: true })).toBeVisible();
+  await expect(done.getByRole("button", { name: /^Tank/ })).toHaveCount(0);
+  await snap(page, `eventos-membro-arquivado-${tag()}`);
 });
 
 test("membro sem permissão não usa a API de caller (AC#3)", async ({ page }) => {
