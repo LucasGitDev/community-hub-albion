@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { EVENT_TEMPLATE_DESCRIPTION_MAX, EVENT_TEMPLATE_NAME_MAX, firstIssue } from "./event-templates.js";
+import type { EventFeeDto } from "./loot-split.js";
 import type { Action } from "./permissions.js";
 
 /**
@@ -215,6 +216,13 @@ export interface EventDto {
   ownerNick: string | null;
   createdByUserId: string | null;
   voiceChannelId: string | null;
+  /**
+   * Canal onde a presença foi medida (TASK-027, Q6). `voiceChannelId` volta a ser null quando o bot
+   * apaga o canal no finish; este fica, porque o loot split nasce depois do finish.
+   */
+  presenceChannelId: string | null;
+  /** Taxa do evento (TASK-027): herdada do template na criação, editável até o arquivamento (Q26). */
+  fee: EventFeeDto;
   /** Mensagem do embed de inscrição no Discord (TASK-022); null enquanto o evento não foi publicado. */
   discordMessageId: string | null;
   startsAt: string | null;
