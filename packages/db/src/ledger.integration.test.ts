@@ -90,6 +90,13 @@ describe.skipIf(!baseUrl)("ledger append-only de prata (TASK-026, Postgres real)
       expect(code).toBe("23514");
     });
 
+    it("apagar a conta é bloqueado: o lançamento e sua autoria são histórico", async () => {
+      const userId = await nextUser();
+      await insertLedgerEntry(handle.db, { userId, amount: 50n, kind: "adjustment", createdBy: userId });
+      // `restrict` nos dois FKs de usuário: sem isso o `set null` seria um UPDATE no ledger, que o trigger recusa.
+      expect(await pgCode(handle.db.delete(schema.users).where(eq(schema.users.id, userId)))).toBe("23503");
+    });
+
     it("lançamento de valor zero é recusado", async () => {
       expect(await pgCode(insertLedgerEntry(handle.db, { userId: entry.userId, amount: 0n, kind: "adjustment" }))).toBe("23514");
     });

@@ -374,8 +374,12 @@ export const ledgerEntries = pgTable(
     /** Id da origem (uuid do evento/split/saque) como texto: nem toda origem é uuid no futuro. */
     referenceId: text("reference_id"),
     reversalOf: uuid("reversal_of").references((): AnyPgColumn => ledgerEntries.id, { onDelete: "restrict" }),
-    /** Quem lançou; null quando foi um job automático. */
-    createdBy: uuid("created_by").references(() => users.id, { onDelete: "set null" }),
+    /**
+     * Quem lançou; null quando foi um job automático. `restrict` como em `user_id`: apagar a conta
+     * exigiria **alterar** o lançamento (`set null`), e o trigger de imutabilidade recusa — no ledger
+     * a autoria também é histórico.
+     */
+    createdBy: uuid("created_by").references(() => users.id, { onDelete: "restrict" }),
     memo: text("memo"),
     createdAt: createdAt(),
   },
