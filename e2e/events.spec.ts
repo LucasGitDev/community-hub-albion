@@ -1,11 +1,11 @@
 import { expect, test, type Page } from "@playwright/test";
+import { ORIGIN } from "./session";
 
 /**
  * Painel de eventos (TASK-023, Q9/Q21/Q26/Q27). Discord IDs e nomes por projeto: desktop e mobile
  * rodam em paralelo no mesmo banco, então cada execução cria o seu próprio template e evento.
  */
 
-const ORIGIN = "http://localhost:4173";
 const tag = () => (test.info().project.name === "mobile" ? "M" : "D");
 
 async function login(page: Page, base: string, username: string, roles: string[] = []) {

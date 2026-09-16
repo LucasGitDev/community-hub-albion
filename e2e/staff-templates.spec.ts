@@ -1,9 +1,9 @@
 import { readFile } from "node:fs/promises";
 import { expect, test, type Download, type Page } from "@playwright/test";
+import { ORIGIN } from "./session";
 
 /** Catálogo de roles e templates (TASK-020, Q8). Discord IDs e nomes por projeto: desktop e mobile rodam em paralelo no mesmo banco. */
 
-const ORIGIN = "http://localhost:4173";
 const tag = () => (test.info().project.name === "mobile" ? "M" : "D");
 
 async function login(page: Page, base: string, username: string, roles: string[] = []) {

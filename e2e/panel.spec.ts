@@ -1,11 +1,10 @@
 import { expect, test, type Page } from "@playwright/test";
+import { ORIGIN } from "./session";
 
 /**
  * Smoke do painel (TASK-033, login real desde TASK-010). Cada teste anexa screenshot: evidência visual
  * pro agent/revisor em desktop e mobile (artifact no CI).
  */
-
-const ORIGIN = "http://localhost:4173";
 
 /** Membros de demonstração (mesmos Discord IDs do seed do painel). */
 const PEOPLE = {
@@ -124,7 +123,6 @@ test("admin concede e remove caller pelo painel (TASK-011 AC#1)", async ({ page 
   await page.getByRole("listitem").filter({ hasText: `@${who}` }).getByRole("button", { name: "Caller" }).click();
   await expect(page.getByText(`Caller removido de ${who}`)).toBeVisible();
 });
-
 
 test("tema escuro é o padrão e a troca pra claro persiste no reload (TASK-036)", async ({ page }) => {
   await loginAs(page, "ravenmoor");
