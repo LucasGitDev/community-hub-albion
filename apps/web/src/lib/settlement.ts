@@ -139,17 +139,20 @@ export function withAmounts(rows: readonly SettlementRow[], distributable: bigin
 }
 
 /**
+ * A frase da taxa que não cabe no total, uma só (AC#8). É a mesma que a API devolve ao confirmar,
+ * usada aqui antes de gastar uma requisição — quem lê na tela e quem leria no 409 ouve uma história só.
+ */
+export const FEE_EXCEEDS_TOTAL = splitConfirmRefusalMessage("fee_exceeds_total");
+
+/**
  * A frase do bloco da taxa, em tempo real (AC#3). Diz os três números que decidem a taxa — quanto
  * retém, para quem vai e quanto sobra — numa frase só, porque é assim que o caller pensa a conta.
- *
- * Quando a taxa não cabe no total, a frase é a **mesma** que a API devolveria ao confirmar: quem lê
- * aqui e quem leria lá precisa ouvir uma história só.
  */
 export function feePreviewText(total: bigint, fee: EventFee, ownerNick: string): string {
   if (!hasFee(fee)) return "Sem taxa: o total inteiro vai para a divisão.";
   if (total <= 0n) return `Taxa de ${formatEventFee(fee)} para ${ownerNick}, retirada antes da divisão. Informe o total da leva para ver quanto é.`;
   const breakdown = feeBreakdown(total, fee);
-  if (breakdown.exceedsTotal) return splitConfirmRefusalMessage("fee_exceeds_total");
+  if (breakdown.exceedsTotal) return FEE_EXCEEDS_TOTAL;
   return `De ${formatSilver(total)}, retém ${formatSilver(breakdown.feeSilver)} (${formatEventFee(fee)}) para ${ownerNick}; sobram ${formatSilver(breakdown.distributable)} para dividir.`;
 }
 
