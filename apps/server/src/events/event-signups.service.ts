@@ -1,0 +1,71 @@
+import { Inject, Injectable, Logger } from "@nestjs/common";
+import {
+  joinEventRole,
+  leaveEvent,
+  listEventSignups,
+  moveEventSignup,
+  type DbHandle,
+  type JoinEventRoleResult,
+  type LeaveEventResult,
+  type MoveEventSignupResult,
+} from "@albion-hub/db";
+import type { EventSignupDto } from "@albion-hub/shared";
+import { DB_HANDLE } from "../db/db.module.js";
+import { ListenerSet } from "../members/listener-set.js";
+
+/** Emitido depois que a lista do evento mudou. O embed do Discord assina daqui (TASK-022). */
+export interface EventSignupChangedEvent {
+  eventId: string;
+  /** `join` cobre entrar e trocar de role; `move` é o caller/owner mexendo na lista (AC#4). */
+  change: "join" | "leave" | "move";
+  signup: EventSignupDto;
+  /** Quem subiu da espera na mesma operação, se alguém subiu. */
+  promoted: EventSignupDto | null;
+}
+
+/**
+ * Inscrição em evento (TASK-022, Q27). Serviço único (doc-002): botão do embed no Discord, API do
+ * painel e qualquer comando futuro passam por aqui, então a regra de vagas, espera e promoção é a
+ * mesma em todo lugar. A trava de concorrência e a promoção automática ficam no repo, dentro da
+ * transação; aqui só ficam os hooks pós-commit.
+ */
+@Injectable()
+export class EventSignupsService {
+  private readonly logger = new Logger(EventSignupsService.name);
+  private readonly listeners = new ListenerSet<EventSignupChangedEvent>(this.logger, "Listener de inscrição de evento");
+
+  constructor(@Inject(DB_HANDLE) private readonly handle: DbHandle) {}
+
+  /** Registra um listener (o embed do bot). Retorna função pra remover. */
+  onSignupChanged(listener: (event: EventSignupChangedEvent) => void | Promise<void>): () => void {
+    return this.listeners.add(listener);
+  }
+
+  list(eventId: string): Promise<EventSignupDto[]> {
+    return listEventSignups(this.handle.db, eventId);
+  }
+
+  /** Entra numa role ou troca de role (AC#2/AC#3). Fora de `open` é recusado (AC#5). */
+  async join(eventId: string, userId: string, slotId: string): Promise<JoinEventRoleResult> {
+    const result = await joinEventRole(this.handle.db, { eventId, userId, slotId });
+    if (result.ok) await this.emit(eventId, "join", result);
+    return result;
+  }
+
+  async leave(eventId: string, userId: string): Promise<LeaveEventResult> {
+    const result = await leaveEvent(this.handle.db, { eventId, userId });
+    if (result.ok) await this.emit(eventId, "leave", result);
+    return result;
+  }
+
+  /** Caller/owner move alguém entre role e espera (AC#4). */
+  async move(eventId: string, userId: string, target: { kind: "role"; slotId: string } | { kind: "waitlist" }, actorUserId: string): Promise<MoveEventSignupResult> {
+    const result = await moveEventSignup(this.handle.db, { eventId, userId, target, actorUserId });
+    if (result.ok) await this.emit(eventId, "move", result);
+    return result;
+  }
+
+  private emit(eventId: string, change: EventSignupChangedEvent["change"], result: { signup: EventSignupDto; promoted: EventSignupDto | null }): Promise<void> {
+    return this.listeners.emit({ eventId, change, signup: result.signup, promoted: result.promoted }, `evento ${eventId}`);
+  }
+}
