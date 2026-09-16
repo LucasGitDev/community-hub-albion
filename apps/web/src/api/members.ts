@@ -38,3 +38,27 @@ export function fetchAdminMembers(query: { search: string; filter: MemberFilter;
 }
 
 export const importDiscordMembers = (): Promise<MemberImportSummary> => api<MemberImportSummary>("/api/admin/members/import", { method: "POST" });
+
+/** Gestão de um membro (TASK-045): conferir o nick no Albion, editar e escrever notas. */
+
+export type AlbionCheck = AdminMember["albion"];
+
+export interface UserNote {
+  id: string;
+  kind: "staff" | "system";
+  body: string;
+  createdAt: string;
+  author: { id: string; name: string } | null;
+}
+
+/** Confere o nick na API do Albion agora e devolve o bloco atualizado da linha. */
+export const checkMemberAlbion = (userId: string): Promise<{ albion: AlbionCheck }> =>
+  api<{ albion: AlbionCheck }>(`/api/admin/members/${userId}/albion-check`, { method: "POST" });
+
+export const updateMember = (userId: string, body: { nick: string; guildTag: string }): Promise<{ nick: string; guildTag: string | null; note: UserNote | null }> =>
+  api(`/api/admin/members/${userId}`, { method: "PATCH", body: JSON.stringify(body) });
+
+export const fetchMemberNotes = (userId: string): Promise<{ notes: UserNote[] }> => api(`/api/admin/members/${userId}/notes`);
+
+export const addMemberNote = (userId: string, body: string): Promise<{ note: UserNote }> =>
+  api(`/api/admin/members/${userId}/notes`, { method: "POST", body: JSON.stringify({ body }) });

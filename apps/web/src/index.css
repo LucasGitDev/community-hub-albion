@@ -227,3 +227,24 @@
     }
   }
 }
+
+@layer components {
+  /* Nota nova entra sozinha na lista (as antigas não remontam): 200ms, só onde o olho já está. */
+  .note-in {
+    transition:
+      opacity 200ms var(--ease-out),
+      transform 200ms var(--ease-out);
+    @starting-style {
+      opacity: 0;
+      transform: translateY(6px);
+    }
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .note-in {
+    @starting-style {
+      transform: none;
+    }
+  }
+}
