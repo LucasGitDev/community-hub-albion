@@ -20,6 +20,12 @@ export function describeDiscordError(error: unknown): string {
   if (code === "EVENTS_CHANNEL_NOT_TEXT") {
     return `Canal de eventos não encontrado ou não aceita mensagens (${message}). Confira DISCORD_EVENTS_CHANNEL_ID e se o bot vê o canal (Ver canal, Enviar mensagens, Inserir links).`;
   }
+  if (code === "EVENT_CATEGORY_INVALID") {
+    return `Categoria dos eventos não encontrada (${message}). Confira DISCORD_EVENT_CATEGORY_ID e se o bot vê a categoria (Gerenciar Canais para criar e apagar o canal do evento).`;
+  }
+  if (code === "WAITING_VOICE_CHANNEL_INVALID") {
+    return `Canal "Aguardando Evento" não encontrado ou não é de voz (${message}). Confira DISCORD_WAITING_VOICE_CHANNEL_ID e se o bot vê o canal (Ver canal, Conectar, Mover Membros).`;
+  }
   if (code === 10008) {
     return `Mensagem do embed não existe mais (${message}).`;
   }
