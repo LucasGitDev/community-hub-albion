@@ -7,6 +7,7 @@ import "./index.css";
 import { AuthProvider } from "./auth/AuthProvider";
 import { RequireAuth, RequirePermission } from "./auth/guards";
 import { AppShell } from "./components/AppShell";
+import { AdminMembers } from "./pages/AdminMembers";
 import { AdminRoles } from "./pages/AdminRoles";
 import { Events } from "./pages/Events";
 import { StoreProvider } from "./mock/store";
@@ -80,6 +81,14 @@ createRoot(document.getElementById("root")!).render(
               element={
                 <RequirePermission action="update" subject="LootSplit">
                   <Placeholder title="Loot splits" description="Rascunho, ajuste de porcentagem e confirmação." task="TASK-029" />
+                </RequirePermission>
+              }
+            />
+            <Route
+              path="/admin/membros"
+              element={
+                <RequirePermission action="read" subject="UserRole">
+                  <AdminMembers />
                 </RequirePermission>
               }
             />
