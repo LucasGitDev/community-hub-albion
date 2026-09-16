@@ -27,7 +27,7 @@ test("staff cria role, monta template com vagas e não consegue apagar role em u
 
   // AC#1: cria role no catálogo, agora em página própria (TASK-040).
   await page.goto("/staff/roles");
-  await expect(page.getByRole("heading", { name: "Roles" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Roles", exact: true })).toBeVisible();
   await page.getByLabel("Nova role").fill(roleName);
   await page.getByRole("button", { name: "Adicionar" }).click();
   await expect(page.getByText("Role criada")).toBeVisible();
