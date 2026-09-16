@@ -3,7 +3,7 @@ id: doc-005
 title: Decisões v1
 type: specification
 created_date: '2026-09-15 03:22'
-updated_date: '2026-09-16 14:29'
+updated_date: '2026-09-16 14:35'
 ---
 Resultado do grill (R1–R3, 2026-09-15). Referência pra specs e tasks.
 
@@ -25,7 +25,7 @@ Resultado do grill (R1–R3, 2026-09-15). Referência pra specs e tasks.
 | Q8 | Roles por template, a partir de catálogo global. |
 | Q9 | Só callers oficiais criam evento na v1. |
 | Q21 | `owner` único por evento, transferível por staff; recebe sobras. |
-| Q26 | Estados draft→open→closed→running→finished (+cancelled). Inscrição fecha manual ou no horário; `start` fecha. Cancelar em running devolve pessoas, apaga canal, fecha sessões; cancelado não aceita split; split confirmado impede cancelar. |
+| Q26 | Estados draft→open→closed→running→finished→**archived** (+cancelled). `finished` encerra o jogo mas ainda permite editar dados, taxa e splits; `archived` é o estado final de fato e bloqueia edição (revisado 2026-09-16). Inscrição fecha manual ou no horário; `start` fecha. Cancelar em running devolve pessoas, apaga canal, fecha sessões; cancelado não aceita split; split confirmado impede cancelar. |
 | Q27 | Inscrição por botões de role; lotou → lista de espera; caller move. |
 | Q28 | Canal por evento criado no start (categoria configurada), apagado no finish. "Aguardando Evento" = canal fixo em config. |
 | Q29 | Start arrasta só inscritos confirmados que estão em "Aguardando Evento". |
@@ -35,7 +35,7 @@ Resultado do grill (R1–R3, 2026-09-15). Referência pra specs e tasks.
 
 | # | Decisão |
 |---|---|
-| Taxa do split | Taxa configurável **por evento** (herda default do template, editável pelo caller/dono até confirmar o split). Aplicada antes da divisão entre participantes (2026-09-16). |
+| Taxa do split | Taxa configurável **por evento**, em **porcentagem ou valor fixo** (herda default do template, editável pelo caller/dono até confirmar o split, **sem teto**). Aplicada antes da divisão; o valor retido vai **para o caller/dono** por enquanto (caixa da comunidade fica para depois). Decidido 2026-09-16. |
 | # | Decisão |
 |---|---|
 | Q10 | Tesouraria da comunidade guarda a prata in-game; saldo no sistema = dívida com o membro; saque = staff transfere in-game. |
