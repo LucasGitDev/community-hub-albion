@@ -1,11 +1,11 @@
 ---
 id: TASK-043
 title: Lista de membros para admin com validação de nick no Albion
-status: In Progress
+status: Done
 assignee:
   - '@claude'
 created_date: '2026-09-16 03:56'
-updated_date: '2026-09-16 14:37'
+updated_date: '2026-09-16 15:56'
 labels:
   - frontend
   - backend
@@ -38,7 +38,7 @@ Admin precisa ver todos os membros do painel num só lugar, com nick, tag de gui
 - [x] #5 Comportamento confere com decisões do doc-005 (Qs citadas) e nada fora do escopo da task
 - [x] #6 Toca auth, ledger, prata ou saque: security-review sem achado crítico
 - [x] #7 Notas e final summary com evidências; commits Conventional atômicos sem co-autor
-- [ ] #8 PR merged na main com quality gate verde; branch e worktree removidos
+- [x] #8 PR merged na main com quality gate verde; branch e worktree removidos
 <!-- DOD:END -->
 
 ## Implementation Plan

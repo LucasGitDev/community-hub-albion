@@ -1,11 +1,11 @@
 ---
 id: TASK-044
 title: Estado arquivado depois de finalizado
-status: In Progress
+status: Done
 assignee:
   - '@claude'
 created_date: '2026-09-16 14:35'
-updated_date: '2026-09-16 15:51'
+updated_date: '2026-09-16 15:56'
 labels:
   - backend
   - frontend
@@ -39,7 +39,7 @@ Decisão do usuário (2026-09-16): 'finished' encerra o jogo mas ainda permite e
 - [x] #5 Comportamento confere com decisões do doc-005 (Qs citadas) e nada fora do escopo da task
 - [x] #6 Toca auth, ledger, prata ou saque: security-review sem achado crítico
 - [x] #7 Notas e final summary com evidências; commits Conventional atômicos sem co-autor
-- [ ] #8 PR merged na main com quality gate verde; branch e worktree removidos
+- [x] #8 PR merged na main com quality gate verde; branch e worktree removidos
 <!-- DOD:END -->
 
 ## Implementation Plan
