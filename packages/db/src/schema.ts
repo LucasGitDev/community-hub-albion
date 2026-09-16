@@ -1,6 +1,6 @@
-import { EVENT_SIGNUP_STATUSES, EVENT_STATUSES, NICK_REQUEST_STATUSES, ROLES } from "@albion-hub/shared";
+import { EVENT_SIGNUP_STATUSES, EVENT_STATUSES, LEDGER_ENTRY_KINDS, LEDGER_REFERENCE_TYPES, NICK_REQUEST_STATUSES, ROLES } from "@albion-hub/shared";
 import { sql } from "drizzle-orm";
-import { boolean, check, index, integer, pgEnum, pgTable, primaryKey, text, timestamp, uniqueIndex, uuid } from "drizzle-orm/pg-core";
+import { bigint, boolean, check, index, integer, pgEnum, pgTable, primaryKey, text, timestamp, uniqueIndex, uuid, type AnyPgColumn } from "drizzle-orm/pg-core";
 
 /**
  * Metadados da aplicação (chave/valor). Tabela mínima para provar o pipeline de migrations.
@@ -342,5 +342,53 @@ export const eventSignups = pgTable(
     check("event_signups_position_positive", sql`${t.position} >= 0`),
     // Confirmado não tem posição de espera; quem espera tem sempre uma.
     check("event_signups_waitlist_position", sql`(${t.status} = 'waitlist') = (${t.position} > 0)`),
+  ],
+);
+
+export const ledgerEntryKindEnum = pgEnum("ledger_entry_kind", LEDGER_ENTRY_KINDS);
+export const ledgerReferenceTypeEnum = pgEnum("ledger_reference_type", LEDGER_REFERENCE_TYPES);
+
+/**
+ * Ledger único de prata (doc-002, TASK-026): **append-only**. `amount` é prata inteira em bigint (Q20),
+ * positivo credita e negativo debita; saldo é `sum(amount)` no banco e pode ficar negativo (Q24).
+ *
+ * Imutabilidade não depende do código da aplicação: a migration cria triggers que rejeitam UPDATE,
+ * DELETE e TRUNCATE nesta tabela (AC#1). Correção só existe como estorno — um lançamento `reversal`
+ * com `reversal_of` apontando para o original, e o índice único parcial garante **um estorno por
+ * lançamento** mesmo com duas requisições concorrentes (AC#2).
+ *
+ * `reference_type`/`reference_id` guardam a origem (evento, loot split, saque) sem FK: o lançamento
+ * precisa sobreviver ao sumiço da origem, senão o histórico financeiro deixaria de bater.
+ */
+export const ledgerEntries = pgTable(
+  "ledger_entries",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    /** Dono do saldo. `restrict`: conta com lançamento não é apagada, o histórico é a dívida com o membro (Q10). */
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "restrict" }),
+    amount: bigint("amount", { mode: "bigint" }).notNull(),
+    kind: ledgerEntryKindEnum("kind").notNull(),
+    referenceType: ledgerReferenceTypeEnum("reference_type"),
+    /** Id da origem (uuid do evento/split/saque) como texto: nem toda origem é uuid no futuro. */
+    referenceId: text("reference_id"),
+    reversalOf: uuid("reversal_of").references((): AnyPgColumn => ledgerEntries.id, { onDelete: "restrict" }),
+    /** Quem lançou; null quando foi um job automático. */
+    createdBy: uuid("created_by").references(() => users.id, { onDelete: "set null" }),
+    memo: text("memo"),
+    createdAt: createdAt(),
+  },
+  (t) => [
+    // Um lançamento só pode ser estornado uma vez (AC#2): a corrida é resolvida pelo banco.
+    uniqueIndex("ledger_entries_reversal_of_unique").on(t.reversalOf).where(sql`${t.reversalOf} is not null`),
+    // Extrato e saldo por usuário: ordem estável por (created_at, id).
+    index("ledger_entries_user_idx").on(t.userId, t.createdAt, t.id),
+    index("ledger_entries_reference_idx").on(t.referenceType, t.referenceId),
+    check("ledger_entries_amount_not_zero", sql`${t.amount} <> 0`),
+    // Estorno e `reversal_of` andam juntos: nenhum dos dois existe sozinho.
+    check("ledger_entries_reversal_consistent", sql`(${t.reversalOf} is not null) = (${t.kind} = 'reversal')`),
+    // Origem é par completo ou ausente.
+    check("ledger_entries_reference_consistent", sql`(${t.referenceType} is null) = (${t.referenceId} is null)`),
   ],
 );
