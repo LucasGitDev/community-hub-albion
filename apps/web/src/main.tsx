@@ -10,6 +10,7 @@ import { AppShell } from "./components/AppShell";
 import { AdminMembers } from "./pages/AdminMembers";
 import { AdminRoles } from "./pages/AdminRoles";
 import { Events } from "./pages/Events";
+import { WalletProvider } from "./api/WalletProvider";
 import { StoreProvider } from "./mock/store";
 import { Login } from "./pages/Login";
 import { MyWithdrawals } from "./pages/MyWithdrawals";
@@ -33,9 +34,12 @@ createRoot(document.getElementById("root")!).render(
           <Route
             element={
               <RequireAuth>
-                <StoreProvider>
-                  <AppShell />
-                </StoreProvider>
+                <WalletProvider>
+                  {/* StoreProvider: dados de demonstração que ainda restam na fila da staff (TASK-032). */}
+                  <StoreProvider>
+                    <AppShell />
+                  </StoreProvider>
+                </WalletProvider>
               </RequireAuth>
             }
           >

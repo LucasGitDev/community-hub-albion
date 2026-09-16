@@ -1,8 +1,7 @@
 import type { ReactNode } from "react";
 import { Check, Hourglass, PackageCheck, X } from "lucide-react";
-import { formatSilver } from "@albion-hub/shared";
+import { formatSilver, type WithdrawalStatus } from "@albion-hub/shared";
 import { cn } from "@/lib/utils";
-import type { WithdrawalStatus } from "@/mock/types";
 
 /** Valor em prata. Sinal explícito quando `signed`. */
 export function Silver({ value, signed, className }: { value: bigint; signed?: boolean; className?: string }) {
