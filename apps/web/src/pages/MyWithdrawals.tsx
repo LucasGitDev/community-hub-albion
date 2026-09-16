@@ -107,7 +107,7 @@ export function ErrorState({ message, onRetry }: { message: string; onRetry: () 
 }
 
 /** Linha da história do pedido: quando foi pedido, decidido e entregue. */
-export function WithdrawalTimeline({ w }: { w: Withdrawal }) {
+function WithdrawalTimeline({ w }: { w: Withdrawal }) {
   return (
     <p className="text-sm text-muted-foreground">
       Pedido em {formatDateTime(w.createdAt)}

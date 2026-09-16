@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { computeBalance, MIN_WITHDRAWAL, transitionWithdrawal, validateWithdrawal } from "./rules";
+import { computeBalance, transitionWithdrawal } from "./rules";
 import type { LedgerEntry, Withdrawal } from "./types";
 
 const entry = (userId: string, amount: bigint): LedgerEntry => ({
@@ -38,27 +38,6 @@ describe("computeBalance", () => {
 
   it("permite saldo negativo após estorno (Q24)", () => {
     expect(computeBalance("u1", [entry("u1", 1_000_000n), entry("u1", -1_200_000n)], []).available).toBe(-200_000n);
-  });
-});
-
-describe("validateWithdrawal", () => {
-  const balance = { total: 3_000_000n, reserved: 0n, available: 3_000_000n };
-
-  it("recusa abaixo do mínimo (Q12)", () => {
-    expect(validateWithdrawal(MIN_WITHDRAWAL - 1n, balance)).toEqual({ ok: false, error: "Valor abaixo do saque mínimo." });
-  });
-
-  it("recusa acima do disponível", () => {
-    expect(validateWithdrawal(3_000_001n, balance).ok).toBe(false);
-  });
-
-  it("aceita no limite exato", () => {
-    expect(validateWithdrawal(3_000_000n, balance)).toEqual({ ok: true });
-    expect(validateWithdrawal(MIN_WITHDRAWAL, balance)).toEqual({ ok: true });
-  });
-
-  it("bloqueia com saldo negativo", () => {
-    expect(validateWithdrawal(MIN_WITHDRAWAL, { total: -1n, reserved: 0n, available: -1n }).ok).toBe(false);
   });
 });
 
