@@ -9,6 +9,7 @@ import {
   type Action,
   type EventDto,
   type LootSplitDto,
+  type SplitPresenceDto,
 } from "@albion-hub/shared";
 import type { Response } from "express";
 import type { z } from "zod";
@@ -85,6 +86,30 @@ export class LootSplitController {
     if (result.ok) return result.split;
     if (result.reason === "not_found") throw new NotFoundException("Evento não encontrado.");
     throw new ConflictException(splitStatusError(result.status));
+  }
+
+  /**
+   * Quem esteve na call e por quanto tempo, **sem** rascunho nenhum (TASK-029).
+   *
+   * A tela de acerto abre com esta lista: a presença existe desde o finish, e esconder isso até o
+   * caller digitar o total deixaria a tela em branco justo no momento em que ele precisa conferir
+   * quem estava lá. Mesma fonte do rascunho, então o que ele vê aqui é o que vai ser gravado.
+   *
+   * Autorização igual à da leitura do split, e pelo mesmo motivo: presença de evento é quem esteve
+   * com quem, então passa por `distribute` no evento — nunca por `read` em `Event`, que todo membro
+   * logado tem.
+   */
+  @Get("presence")
+  @Authorize("read", "LootSplit")
+  async presence(
+    @Param("eventId") eventId: string,
+    @CurrentAuth() auth: Auth,
+    @Res({ passthrough: true }) res: Response,
+  ): Promise<{ present: SplitPresenceDto[] }> {
+    const event = await this.load(eventId);
+    this.assertCan(auth, "distribute", event);
+    res.setHeader("Cache-Control", "no-store");
+    return { present: await this.splits.presence(event.id) };
   }
 
   /** N splits por evento (AC#3, Q23), na ordem em que as levas de loot chegaram. */

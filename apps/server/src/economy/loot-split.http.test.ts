@@ -449,4 +449,62 @@ describe.skipIf(!baseUrl)("loot split HTTP (TASK-027)", () => {
       });
     });
   });
+
+  /**
+   * Os dois endpoints que a tela de acerto (TASK-029) precisou abrir. Ambos vivem sob a mesma regra:
+   * quem acerta é quem responde pela distribuição daquele evento.
+   */
+  describe("tela de acerto (TASK-029)", () => {
+    it("presença é do dono e da staff, nunca de quem só tem read em Event (AC#12)", async () => {
+      const event = await finishedEvent();
+      const url = `/api/events/${event.id}/presence`;
+      expect((await http().get(url)).status).toBe(401);
+      // `member` lê o evento (a lista é pública para quem está logado) e mesmo assim não vê quem estava na call.
+      expect((await http().get(`/api/events/${event.id}`).set("Cookie", member)).status).toBe(200);
+      expect((await http().get(url).set("Cookie", member)).status).toBe(403);
+      // Caller de outro evento tem o papel, mas não a condição de dono.
+      expect((await http().get(url).set("Cookie", outroCaller)).status).toBe(403);
+      expect((await http().get(url).set("Cookie", staff)).status).toBe(200);
+
+      const res = await http().get(url).set("Cookie", caller);
+      expect(res.status).toBe(200);
+      expect(res.headers["cache-control"]).toBe("no-store");
+      expect(res.body.present).toEqual([
+        expect.objectContaining({ discordUserId: membroDiscordId, userId: membroId, signedUp: true, presenceMs: FINISH.getTime() - START.getTime() }),
+      ]);
+    });
+
+    it("presença de evento que não existe é 404, e id torto é 400", async () => {
+      expect((await http().get(`/api/events/${MISSING}/presence`).set("Cookie", staff)).status).toBe(404);
+      expect((await http().get("/api/events/nao-e-uuid/presence").set("Cookie", staff)).status).toBe(400);
+    });
+
+    it("dono corrige nome e observação do evento finalizado (AC#2)", async () => {
+      const event = await finishedEvent();
+      const res = await send("patch", `/api/events/${event.id}`, caller, { name: "  Roads corrigida  ", description: " ponto em Martlock " });
+      expect(res.status).toBe(200);
+      expect([res.body.name, res.body.description]).toEqual(["Roads corrigida", "ponto em Martlock"]);
+      // O status não se move junto: corrigir dados não é transição.
+      expect(res.body.status).toBe("finished");
+    });
+
+    it("editar dados exige ser o dono ou a staff, e a origem certa", async () => {
+      const event = await finishedEvent();
+      const body = { name: "Sequestrada" };
+      expect((await send("patch", `/api/events/${event.id}`, null, body)).status).toBe(401);
+      expect((await send("patch", `/api/events/${event.id}`, caller, body, "http://evil.example")).status).toBe(403);
+      expect((await send("patch", `/api/events/${event.id}`, member, body)).status).toBe(403);
+      expect((await send("patch", `/api/events/${event.id}`, outroCaller, body)).status).toBe(403);
+      expect((await send("patch", `/api/events/${event.id}`, staff, body)).status).toBe(200);
+      expect((await send("patch", `/api/events/${event.id}`, caller, { name: "   " })).status).toBe(400);
+    });
+
+    it("arquivado recusa a correção com a frase do arquivamento, não com outra história", async () => {
+      const event = await finishedEvent();
+      expect((await go(caller, event.id, "archive")).status).toBe(200);
+      const res = await send("patch", `/api/events/${event.id}`, caller, { name: "Tarde demais" });
+      expect(res.status).toBe(409);
+      expect(res.body.message).toBe("Evento arquivado não pode mais ser editado.");
+    });
+  });
 });

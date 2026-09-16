@@ -7,13 +7,14 @@ import {
   listEventOwnerHistory,
   listEvents,
   transferEventOwner,
+  updateEventDetails,
   type CreateEventResult,
   type DbHandle,
   type EventTransitionPrecondition,
   type EventTransitionResult,
   type TransferEventOwnerResult,
 } from "@albion-hub/db";
-import { EVENT_TRANSITIONS, type EventCreateInput, type EventDto, type EventListQuery, type EventOwnerChangeDto, type EventStatus, type EventTransition } from "@albion-hub/shared";
+import { EVENT_TRANSITIONS, type EventCreateInput, type EventUpdateInput, type EventDto, type EventListQuery, type EventOwnerChangeDto, type EventStatus, type EventTransition } from "@albion-hub/shared";
 import { DB_HANDLE } from "../db/db.module.js";
 import { ListenerSet } from "../members/listener-set.js";
 
@@ -76,6 +77,14 @@ export class EventsService {
 
   list(filters: EventListQuery): Promise<EventDto[]> {
     return listEvents(this.handle.db, filters);
+  }
+
+  /**
+   * Corrige nome e descrição do evento (TASK-029, AC#2). Quem barra evento arquivado é o
+   * `assertEventEditable` do controller, pelo mesmo caminho da taxa: uma frase só para todo o acerto.
+   */
+  update(id: string, fields: EventUpdateInput): Promise<EventDto | null> {
+    return updateEventDetails(this.handle.db, id, fields);
   }
 
   ownerHistory(id: string): Promise<EventOwnerChangeDto[]> {
