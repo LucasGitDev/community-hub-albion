@@ -17,8 +17,8 @@ const input = (over: Partial<EventEmbedInput> = {}): EventEmbedInput => ({
   status: "open",
   startsAt: new Date("2026-10-01T23:00:00.000Z"),
   roles: [
-    { slotId: TANK, name: "Tank", slots: 1, confirmed: [], waitlist: [] },
-    { slotId: HEALER, name: "Healer", slots: 2, confirmed: [], waitlist: [] },
+    { slotId: TANK, name: "Tank", description: null, slots: 1, confirmed: [], waitlist: [] },
+    { slotId: HEALER, name: "Healer", description: null, slots: 2, confirmed: [], waitlist: [] },
   ],
   ...over,
 });
@@ -44,8 +44,8 @@ describe("embed de inscrição do evento (TASK-022, AC#1)", () => {
     const view = buildEventEmbed(
       input({
         roles: [
-          { slotId: TANK, name: "Tank", slots: 1, confirmed: [person(1, "TankMain")], waitlist: [person(2), person(3)] },
-          { slotId: HEALER, name: "Healer", slots: 2, confirmed: [person(4)], waitlist: [] },
+          { slotId: TANK, name: "Tank", description: null, slots: 1, confirmed: [person(1, "TankMain")], waitlist: [person(2), person(3)] },
+          { slotId: HEALER, name: "Healer", description: null, slots: 2, confirmed: [person(4)], waitlist: [] },
         ],
       }),
     );
@@ -83,15 +83,41 @@ describe("embed de inscrição do evento (TASK-022, AC#1)", () => {
 
   it("lista gigante é cortada com contagem, sem partir menção no meio", () => {
     const many = Array.from({ length: 60 }, (_, i) => ({ discordId: `4000000000000000${String(i).padStart(2, "0")}`, gameNick: "NickBemLongoDeVerdade" }));
-    const view = buildEventEmbed(input({ roles: [{ slotId: TANK, name: "Tank", slots: 60, confirmed: many, waitlist: [] }] }));
+    const view = buildEventEmbed(input({ roles: [{ slotId: TANK, name: "Tank", description: null, slots: 60, confirmed: many, waitlist: [] }] }));
     const value = field(view, "Tank (60/60)")!;
     expect(value.length).toBeLessThanOrEqual(1024);
     expect(value).toContain("… e mais ");
     expect(value.split("\n").every((line) => !line.startsWith("<@4000000000000000") || line.endsWith(")"))).toBe(true);
   });
 
+  it("descrição da role vira um guia único antes da lista, sem mexer nos botões (TASK-039, AC#2)", () => {
+    const view = buildEventEmbed(
+      input({
+        roles: [
+          { slotId: TANK, name: "Tank", description: "Segura a frente e chama o engage.", slots: 1, confirmed: [], waitlist: [] },
+          { slotId: HEALER, name: "Healer", description: null, slots: 2, confirmed: [], waitlist: [] },
+        ],
+      }),
+    );
+    expect(field(view, "O que cada role faz")).toBe("**Tank** — Segura a frente e chama o engage.");
+    // O guia vem antes da lista: quem decide lê o que a role faz e só então bate o olho em quem já entrou.
+    expect(view.fields.findIndex((f) => f.name === "O que cada role faz")).toBeLessThan(view.fields.findIndex((f) => f.name.startsWith("Tank (")));
+    // Role sem descrição não gera linha vazia, e o botão continua só nome + vagas (label do Discord tem 80).
+    expect(field(view, "O que cada role faz")).not.toContain("Healer");
+    expect(view.buttons.map((b) => b.label)).toEqual(["Tank (1/1)", "Healer (2/2)", "Sair"]);
+  });
+
+  it("descrição longa é cortada no guia e AC#3: sem descrição nenhuma o campo não aparece", () => {
+    const long = "x".repeat(200);
+    const view = buildEventEmbed(input({ roles: [{ slotId: TANK, name: "Tank", description: long, slots: 1, confirmed: [], waitlist: [] }] }));
+    const guide = field(view, "O que cada role faz")!;
+    expect(guide.endsWith("…")).toBe(true);
+    expect(guide.length).toBeLessThanOrEqual("**Tank** — ".length + 120);
+    expect(field(buildEventEmbed(input()), "O que cada role faz")).toBeUndefined();
+  });
+
   it("muitas roles cabem nas 5 linhas de botões do Discord", () => {
-    const roles = Array.from({ length: 30 }, (_, i) => ({ slotId: `3333333${String(i).padStart(4, "0")}-3333-4333-8333-333333333333`, name: `R${i}`, slots: 1, confirmed: [], waitlist: [] }));
+    const roles = Array.from({ length: 30 }, (_, i) => ({ slotId: `3333333${String(i).padStart(4, "0")}-3333-4333-8333-333333333333`, name: `R${i}`, description: null, slots: 1, confirmed: [], waitlist: [] }));
     const view = buildEventEmbed(input({ roles }));
     const rows = buttonRows(view.buttons);
     expect(rows).toHaveLength(5);
@@ -105,7 +131,7 @@ describe("embed do evento cancelado (TASK-025, AC#4)", () => {
       input({
         status: "cancelled",
         cancelReason: "não fechou grupo",
-        roles: [{ slotId: TANK, name: "Tank", slots: 1, confirmed: [person(1, "Mago")], waitlist: [person(2)] }],
+        roles: [{ slotId: TANK, name: "Tank", description: null, slots: 1, confirmed: [person(1, "Mago")], waitlist: [person(2)] }],
       }),
     );
     expect(view.color).toBe(EVENT_EMBED_COLORS.cancelled);
@@ -127,7 +153,7 @@ describe("embed do evento cancelado (TASK-025, AC#4)", () => {
 describe("embed do evento arquivado (TASK-044, AC#3)", () => {
   it("diz que acabou e já foi fechado, mantém a lista e não deixa nenhum botão", () => {
     const view = buildEventEmbed(
-      input({ status: "archived", roles: [{ slotId: TANK, name: "Tank", slots: 1, confirmed: [person(1, "Mago")], waitlist: [person(2)] }] }),
+      input({ status: "archived", roles: [{ slotId: TANK, name: "Tank", description: null, slots: 1, confirmed: [person(1, "Mago")], waitlist: [person(2)] }] }),
     );
     expect(view.color).toBe(EVENT_EMBED_COLORS.archived);
     expect(field(view, "Situação")).toBe("Evento arquivado. Acabou e já foi fechado: os dados, a taxa e os splits não mudam mais.");
