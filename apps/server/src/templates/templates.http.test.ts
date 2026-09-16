@@ -91,11 +91,14 @@ describe.skipIf(!baseUrl)("catálogo de roles e templates HTTP (TASK-020, Q8)", 
     for (const cookie of [member, caller]) {
       expect((await send("post", "/api/event-roles", cookie, { name: "Hacker" })).status).toBe(403);
       expect((await send("patch", `/api/event-roles/${tank}`, cookie, { name: "Hacker" })).status).toBe(403);
+      // TASK-039: a descrição é escrita pela mesma permissão do resto do catálogo (update EventTemplate).
+      expect((await send("patch", `/api/event-roles/${tank}`, cookie, { description: "vandalizado" })).status).toBe(403);
       expect((await send("delete", `/api/event-roles/${tank}`, cookie)).status).toBe(403);
       expect((await send("post", "/api/event-templates", cookie, tpl)).status).toBe(403);
       expect((await send("patch", `/api/event-templates/${MISSING}`, cookie, { active: false })).status).toBe(403);
       expect((await send("delete", `/api/event-templates/${MISSING}`, cookie)).status).toBe(403);
     }
+    expect((await roles()).find((r) => r.name === "Tank")?.description).toBeNull();
     const read = await http().get("/api/event-roles").set("Cookie", caller);
     expect(read.status).toBe(200);
     expect(read.headers["cache-control"]).toBe("no-store");
@@ -122,6 +125,25 @@ describe.skipIf(!baseUrl)("catálogo de roles e templates HTTP (TASK-020, Q8)", 
     expect((await send("patch", `/api/event-roles/${MISSING}`, staff, { name: "X" })).status).toBe(404);
     expect((await send("post", "/api/event-roles", staff, { name: "Evil" }, "https://evil.example")).status).toBe(403);
     expect((await roles()).map((r) => r.name)).not.toContain("Evil");
+  });
+
+  it("descrição da role acompanha o template e o YAML (TASK-039, AC#2/AC#3)", async () => {
+    const yamlOf = (id: string) => http().get(`/api/event-templates/${id}/export`).set("Cookie", staff);
+    const tank = await roleId("Tank");
+    await send("patch", `/api/event-roles/${tank}`, staff, { description: "Segura a frente e chama o engage." });
+    const created = await send("post", "/api/event-templates", staff, { name: "Com descrição", minPartySize: 1, maxPartySize: null, roles: [{ roleId: tank, slots: 1 }] });
+    expect(created.status).toBe(201);
+    expect((created.body as EventTemplateDto).roles).toEqual([{ roleId: tank, name: "Tank", description: "Segura a frente e chama o engage.", slots: 1 }]);
+
+    const exported = await yamlOf(created.body.id);
+    expect(exported.status).toBe(200);
+    expect(exported.text).toContain("description: Segura a frente e chama o engage.");
+
+    // AC#3: role sem descrição continua valendo, e o YAML não inventa campo.
+    const bare = await send("post", "/api/event-templates", staff, { name: "Sem descrição", minPartySize: 1, maxPartySize: null, roles: [{ roleId: await roleId("Scout"), slots: 1 }] });
+    expect((bare.body as EventTemplateDto).roles[0]!.description).toBeNull();
+    expect((await yamlOf(bare.body.id)).text).not.toContain("description:");
+    await send("patch", `/api/event-roles/${tank}`, staff, { description: "" });
   });
 
   it("staff cria template com roles e vagas, edita parcial e valida party (AC#2)", async () => {
@@ -267,7 +289,10 @@ describe.skipIf(!baseUrl)("catálogo de roles e templates HTTP (TASK-020, Q8)", 
       const res = await send("post", "/api/event-templates/import", staff, { yaml });
       expect(res.status).toBe(201);
       expect(res.body.createdRoles).toEqual(["Battlemount"]);
-      expect(res.body.template.roles).toEqual([{ roleId: expect.any(String), name: "Battlemount", slots: 2 }, { roleId: await roleId("Tank"), name: "Tank", slots: 2 }]);
+      expect(res.body.template.roles).toEqual([
+        { roleId: expect.any(String), name: "Battlemount", description: null, slots: 2 },
+        { roleId: await roleId("Tank"), name: "Tank", description: null, slots: 2 },
+      ]);
       const catalog = await roles();
       expect(catalog.find((r) => r.name === "Battlemount")).toMatchObject({ templateCount: 1 });
       // "tank" casou com a role existente em vez de criar uma duplicata de caixa diferente.

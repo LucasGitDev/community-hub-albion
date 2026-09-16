@@ -83,6 +83,27 @@ describe.skipIf(!baseUrl)("eventos e máquina de estados HTTP (TASK-021, Q9/Q21/
     await handle?.close();
   });
 
+  describe("descrição da role no evento (TASK-039, AC#2/AC#3)", () => {
+    it("chega na vaga do evento pelo catálogo, acompanha a edição da staff e some junto com a role", async () => {
+      const tank = await tankRoleId();
+      const event = await create(staff);
+      expect(event.status).toBe(201);
+      // AC#3: role sem descrição não quebra nada — a vaga vem com null.
+      const slot = (e: { body: EventDto }) => e.body.roles.find((r) => r.name === "Tank")!;
+      expect(slot(event).description).toBeNull();
+
+      await send("patch", `/api/event-roles/${tank}`, staff, { description: "Segura a frente e chama o engage." });
+      const described = await http().get(`/api/events/${event.body.id}`).set("Cookie", staff);
+      // A descrição é lida ao vivo do catálogo: corrigir o texto alcança evento que já existe.
+      expect(slot(described).description).toBe("Segura a frente e chama o engage.");
+
+      await send("patch", `/api/event-roles/${tank}`, staff, { description: "" });
+      const cleared = await http().get(`/api/events/${event.body.id}`).set("Cookie", staff);
+      expect(slot(cleared).description).toBeNull();
+      expect(slot(cleared).name).toBe("Tank");
+    });
+  });
+
   async function login(discordId: string, roles: Role[]) {
     const user = await upsertUserByDiscordId(handle.db, { discordId, discordUsername: `u${discordId.slice(-3)}` });
     for (const role of roles) await grantRole(handle.db, user.id, role);
@@ -97,6 +118,8 @@ describe.skipIf(!baseUrl)("eventos e máquina de estados HTTP (TASK-021, Q9/Q21/
     return req.send(body);
   };
   const create = (cookie: string, body: object = {}) => send("post", "/api/events", cookie, { templateId, name: "Roads das 21h", ...body });
+
+  const tankRoleId = async () => ((await http().get("/api/event-roles").set("Cookie", staff)).body.roles as { id: string; name: string }[]).find((r) => r.name === "Tank")!.id;
   const go = (cookie: string, id: string, transition: string, body: object = {}) => send("post", `/api/events/${id}/transitions/${transition}`, cookie, body);
   const createdBy = async (cookie: string, body: object = {}) => {
     const res = await create(cookie, body);
