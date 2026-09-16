@@ -12,3 +12,4 @@ export * from "./event-template-yaml.js";
 export * from "./events.js";
 export * from "./event-signups.js";
 export * from "./ledger.js";
+export * from "./withdrawals.js";
