@@ -214,6 +214,8 @@ export const events = pgTable(
     startedAt: timestamp("started_at", { withTimezone: true }),
     finishedAt: timestamp("finished_at", { withTimezone: true }),
     cancelledAt: timestamp("cancelled_at", { withTimezone: true }),
+    /** Motivo que o caller/staff escreveu ao cancelar (TASK-025); o inscrito lê no embed e no painel. */
+    cancelReason: text("cancel_reason"),
     createdAt: createdAt(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
   },
@@ -228,6 +230,11 @@ export const events = pgTable(
     check("events_started_consistent", sql`(${t.status} in ('running', 'finished')) <= (${t.startedAt} is not null)`),
     check("events_finished_consistent", sql`(${t.status} = 'finished') = (${t.finishedAt} is not null)`),
     check("events_cancelled_consistent", sql`(${t.status} = 'cancelled') = (${t.cancelledAt} is not null)`),
+    // Motivo só existe em evento cancelado, e com tamanho: o texto vai parar no embed do Discord.
+    check(
+      "events_cancel_reason_consistent",
+      sql`${t.cancelReason} is null or (${t.status} = 'cancelled' and length(trim(${t.cancelReason})) between 1 and 300)`,
+    ),
     check("events_signups_close_before_start", sql`${t.signupsCloseAt} is null or ${t.startsAt} is null or ${t.signupsCloseAt} <= ${t.startsAt}`),
   ],
 );

@@ -17,6 +17,7 @@ export {
   type User,
 } from "./auth-repo.js";
 export {
+  closeOpenVoiceSessionsInChannel,
   closeStaleSessionsAtHeartbeat,
   closeVoiceSession,
   listOpenVoiceSessions,
@@ -65,6 +66,7 @@ export {
   setEventDiscordMessageId,
   setEventVoiceChannelId,
   transferEventOwner,
+  type ApplyEventTransitionOptions,
   type CreateEventInput,
   type CreateEventResult,
   type EventTransitionResult,

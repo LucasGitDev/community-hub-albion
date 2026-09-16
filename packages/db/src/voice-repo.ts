@@ -49,6 +49,20 @@ export async function closeVoiceSession(db: Database, discordUserId: string, at:
   return row ?? null;
 }
 
+/**
+ * Fecha em `at` toda sessão aberta num canal (TASK-025, Q26). O cancelamento apaga o canal do evento:
+ * sem isto, quem o Discord não conseguiu mover (saiu da voz, falha de permissão) ficaria com sessão
+ * aberta para sempre num canal que não existe mais, e a presença do próximo evento herdaria o lixo.
+ * Devolve as sessões fechadas, para o log dizer quantas eram.
+ */
+export async function closeOpenVoiceSessionsInChannel(db: Database, channelId: string, at: Date): Promise<VoiceSession[]> {
+  return db
+    .update(voiceSessions)
+    .set({ endedAt: sql`greatest(${voiceSessions.startedAt}, ${at.toISOString()}::timestamptz)`, updatedAt: sql`now()` })
+    .where(and(eq(voiceSessions.channelId, channelId), isNull(voiceSessions.endedAt)))
+    .returning();
+}
+
 /** Sessões abertas (todas, ou só do usuário), ordenadas por início. */
 export async function listOpenVoiceSessions(db: Database, discordUserId?: string): Promise<VoiceSession[]> {
   const open = isNull(voiceSessions.endedAt);

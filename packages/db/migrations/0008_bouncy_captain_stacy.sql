@@ -1,0 +1,2 @@
+ALTER TABLE "events" ADD COLUMN "cancel_reason" text;--> statement-breakpoint
+ALTER TABLE "events" ADD CONSTRAINT "events_cancel_reason_consistent" CHECK ("events"."cancel_reason" is null or ("events"."status" = 'cancelled' and length(trim("events"."cancel_reason")) between 1 and 300));
