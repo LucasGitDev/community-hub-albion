@@ -1,11 +1,11 @@
 ---
 id: TASK-020
 title: Catálogo global de roles e templates de evento
-status: In Progress
+status: Done
 assignee:
   - '@claude'
 created_date: '2026-09-15 03:24'
-updated_date: '2026-09-15 23:32'
+updated_date: '2026-09-16 00:06'
 labels:
   - events
   - db
@@ -41,7 +41,7 @@ Roles por template a partir de catálogo global (Q8); DB é fonte de verdade (do
 - [x] #5 Comportamento confere com decisões do doc-005 (Qs citadas) e nada fora do escopo da task
 - [x] #6 Toca auth, ledger, prata ou saque: security-review sem achado crítico
 - [x] #7 Notas e final summary com evidências; commits Conventional atômicos sem co-autor
-- [ ] #8 PR merged na main com quality gate verde; branch e worktree removidos
+- [x] #8 PR merged na main com quality gate verde; branch e worktree removidos
 <!-- DOD:END -->
 
 ## Implementation Plan
