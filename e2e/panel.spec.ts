@@ -43,31 +43,7 @@ test.beforeEach(async ({ page }) => {
   });
 });
 
-test("membro vê saldo disponível, reservado e extrato", async ({ page }) => {
-  await loginAs(page, "ravenmoor");
-  await expect(page.getByText("Disponível pra saque")).toBeVisible();
-  await expect(page.getByText("1.818.750").first()).toBeVisible();
-  await expect(page.getByText("Reservado em saques")).toBeVisible();
-  await expect(page.getByRole("heading", { name: "Extrato" })).toBeVisible();
-  await expect(page.getByText("Em análise").first()).toBeVisible();
-  await snap(page, "carteira-membro");
-});
-
-test("pedido de saque valida saldo e reserva valor", async ({ page }) => {
-  await loginAs(page, "ravenmoor");
-  await page.getByRole("button", { name: "Pedir saque" }).first().click();
-  const dialog = page.getByRole("dialog", { name: "Pedir saque" });
-  await dialog.getByLabel("Valor").fill("5M");
-  await dialog.getByRole("button", { name: "Pedir saque" }).click();
-  await expect(dialog.getByText("Valor maior que o saldo disponível.")).toBeVisible();
-  await snap(page, "saque-erro");
-
-  await dialog.getByLabel("Valor").fill("1,2M");
-  await dialog.getByRole("button", { name: "Pedir saque" }).click();
-  await expect(dialog).toBeHidden();
-  await expect(page.getByText("Saque pedido")).toBeVisible();
-  await expect(page.getByText("618.750").first()).toBeVisible();
-});
+/* Carteira, extrato e pedido de saque contra a API real: e2e/wallet.spec.ts (TASK-031). */
 
 test("deslogado vê login com Discord em PT-BR e mensagem de erro do OAuth (TASK-010 AC#1)", async ({ page }) => {
   await page.goto("/carteira");
