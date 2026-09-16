@@ -70,10 +70,15 @@ test("membro sem permissão não abre a tela nem a API (AC#5)", async ({ page })
 });
 
 test("admin confere o nick no Albion, edita o membro e escreve nota (AC#1, AC#2, AC#3)", async ({ page }) => {
+  // Console limpo é parte do resultado: erro de React ou requisição quebrada não pode passar despercebido.
+  const erros: string[] = [];
+  page.on("console", (m) => m.type() === "error" && !m.text().includes("Failed to load resource") && erros.push(m.text()));
   const admin = await login(page, "77000000000000201", "adm-gestao", ["admin"]);
   // Nick é único entre membros e os dois projetos rodam no mesmo banco: cada um edita para o seu próprio nick.
   const nick = test.info().project.name === "mobile" ? "NickEditadoM" : "NickEditadoD";
   await page.goto("/admin/membros");
+  // A lista pagina em 25 e o banco do e2e acumula usuários entre execuções: busca primeiro, age depois.
+  await page.getByLabel("Buscar por nick ou usuário do Discord").fill(admin);
 
   const row = page.getByRole("row").filter({ hasText: `@${admin}` });
   await expect(row).toBeVisible();
@@ -121,6 +126,27 @@ test("admin confere o nick no Albion, edita o membro e escreve nota (AC#1, AC#2,
   await expect(page.getByText("Conferência no Albion desligada", { exact: false })).toBeVisible();
   await expect(edited.getByRole("button", { name: /^Conferir / })).toBeEnabled();
   await snap(page, "admin-membros-conferir-desligado");
+
+  // A coluna de ações não pode empurrar a tabela para fora da tela, nem no celular de 400px.
+  const overflow = await page.evaluate(() => document.documentElement.scrollWidth > window.innerWidth);
+  expect(overflow).toBe(false);
+  expect(erros).toEqual([]);
+});
+
+test("a janela de gestão é navegável por teclado e fecha com Esc (AC#2, AC#3)", async ({ page }) => {
+  const teclado = await login(page, "77000000000000205", "adm-teclado", ["admin"]);
+  await page.goto("/admin/membros");
+  await page.getByLabel("Buscar por nick ou usuário do Discord").fill(teclado);
+  const row = page.getByRole("row").filter({ hasText: `@${teclado}` });
+  await row.getByRole("button", { name: /^Gerenciar / }).click();
+
+  const dialog = page.getByRole("dialog");
+  await expect(dialog).toBeVisible();
+  // O foco entra no diálogo, e Tab anda pelos controles dele sem escapar para a lista atrás do overlay.
+  await page.keyboard.press("Tab");
+  await expect(dialog.locator(":focus")).toBeVisible();
+  await page.keyboard.press("Escape");
+  await expect(dialog).toBeHidden();
 });
 
 test("membro sem permissão não usa edição, notas nem conferência (AC#4)", async ({ page }) => {
