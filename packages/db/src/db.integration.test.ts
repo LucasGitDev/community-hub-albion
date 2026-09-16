@@ -25,6 +25,7 @@ import {
   findValidSession,
   grantRole,
   hashSessionToken,
+  closeOpenVoiceSessionsInChannel,
   listOpenVoiceSessions,
   listRoles,
   openVoiceSession,
@@ -41,10 +42,14 @@ import {
   getEvent,
   listEventOwnerHistory,
   listEvents,
+  setEventVoiceChannelId,
   transferEventOwner,
   joinEventRole,
   leaveEvent,
+  listEventSignupMembers,
   listEventSignups,
+  listEventsOccupancy,
+  listUserEventSignups,
   moveEventSignup,
   type CreateEventInput,
   type DbHandle,
@@ -844,6 +849,65 @@ describe.skipIf(!url)("@albion-hub/db (Postgres real)", () => {
       const list = await listEventSignups(handle.db, event.id);
       expect(list.filter((s) => s.status === "confirmed")).toHaveLength(1);
       expect(list.filter((s) => s.status === "waitlist")).toHaveLength(1);
+    });
+
+    it("cancelar o evento cancela toda inscrição ativa na mesma transação, com o motivo guardado (TASK-025, AC#1)", async () => {
+      const { event, tank, healer } = await openEvent("Cancelado com gente dentro");
+      const [a, b, c] = [await user(), await user(), await user()];
+      await joinEventRole(handle.db, { eventId: event.id, userId: a, slotId: tank.id });
+      await joinEventRole(handle.db, { eventId: event.id, userId: b, slotId: tank.id }); // Tank lotada: vai pra espera
+      await joinEventRole(handle.db, { eventId: event.id, userId: c, slotId: healer.id });
+      expect((await listEventSignups(handle.db, event.id)).filter((s) => s.status !== "cancelled")).toHaveLength(3);
+
+      const cancelled = await applyEventTransition(handle.db, event.id, "cancelled", { reason: "  não fechou grupo  " });
+      expect(cancelled).toMatchObject({ ok: true, from: "open", event: { status: "cancelled", cancelReason: "não fechou grupo" } });
+
+      // Confirmado e espera caem juntos: ninguém fica "confirmado" num evento que não existe mais.
+      const after = await listEventSignups(handle.db, event.id);
+      expect(after).toHaveLength(3);
+      expect(after.every((s) => s.status === "cancelled" && s.position === 0)).toBe(true);
+      // E a lista que o embed e o painel leem fica vazia.
+      expect(await listEventSignupMembers(handle.db, event.id)).toEqual([]);
+      expect(await listUserEventSignups(handle.db, a, [event.id])).toEqual([]);
+      // Cancelar não promove ninguém da espera: o painel passa a contar zero em toda role.
+      expect(await listEventsOccupancy(handle.db, [event.id])).toEqual([
+        expect.objectContaining({ confirmed: 0, waitlist: 0 }),
+        expect.objectContaining({ confirmed: 0, waitlist: 0 }),
+      ]);
+    });
+
+    it("cancelar sem motivo deixa o campo nulo, e motivo em qualquer outra transição é ignorado (TASK-025)", async () => {
+      const { event } = await openEvent("Cancelado sem motivo");
+      const cancelled = await applyEventTransition(handle.db, event.id, "cancelled");
+      expect(cancelled).toMatchObject({ ok: true, event: { cancelReason: null } });
+
+      const outro = await openEvent("Fechado com motivo à toa");
+      const closed = await applyEventTransition(handle.db, outro.event.id, "closed", { reason: "isso aqui não vale" });
+      expect(closed).toMatchObject({ ok: true, event: { status: "closed", cancelReason: null } });
+    });
+
+    it("cancelar em running fecha as sessões de voz abertas no canal do evento, sem tocar nas dos outros (TASK-025, AC#2)", async () => {
+      const { event, tank } = await openEvent("Cancelado rodando");
+      const membro = await user();
+      await joinEventRole(handle.db, { eventId: event.id, userId: membro, slotId: tank.id });
+      await applyEventTransition(handle.db, event.id, "running");
+      await setEventVoiceChannelId(handle.db, event.id, "voz-do-evento");
+
+      const at = new Date("2026-10-01T22:00:00.000Z");
+      await openVoiceSession(handle.db, { discordUserId: "760000000000000001", channelId: "voz-do-evento", at: new Date(at.getTime() - 60_000) });
+      await openVoiceSession(handle.db, { discordUserId: "760000000000000002", channelId: "voz-do-evento", at: new Date(at.getTime() - 30_000) });
+      await openVoiceSession(handle.db, { discordUserId: "760000000000000003", channelId: "outro-canal", at: new Date(at.getTime() - 30_000) });
+
+      const closed = await closeOpenVoiceSessionsInChannel(handle.db, "voz-do-evento", at);
+      expect(closed).toHaveLength(2);
+      expect(closed.every((s) => s.endedAt?.getTime() === at.getTime())).toBe(true);
+      // Nenhuma sessão órfã sobra no canal que vai ser apagado...
+      expect(await listOpenVoiceSessions(handle.db)).toEqual([expect.objectContaining({ channelId: "outro-canal" })]);
+      // ...e repetir não reabre nem muda nada (o cancelamento pode ser reprocessado).
+      expect(await closeOpenVoiceSessionsInChannel(handle.db, "voz-do-evento", at)).toEqual([]);
+
+      expect((await applyEventTransition(handle.db, event.id, "cancelled")).ok).toBe(true);
+      expect((await listEventSignups(handle.db, event.id)).every((s) => s.status === "cancelled")).toBe(true);
     });
 
     it("apagar o evento leva as inscrições junto (cascade)", async () => {

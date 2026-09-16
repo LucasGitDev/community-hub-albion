@@ -10,7 +10,7 @@ import { and, asc, desc, eq, inArray, isNotNull, lte } from "drizzle-orm";
 import { alias } from "drizzle-orm/pg-core";
 import type { Database } from "./client.js";
 import { memberNick } from "./member-nick.js";
-import { eventOwnerHistory, eventRoleSlots, eventTemplateRoles, eventTemplates, eventRoles as eventRolesCatalog, events, users } from "./schema.js";
+import { eventOwnerHistory, eventRoleSlots, eventSignups, eventTemplateRoles, eventTemplates, eventRoles as eventRolesCatalog, events, users } from "./schema.js";
 
 /** `users` entra duas vezes na mesma consulta (owner do evento e, no futuro, quem transferiu): precisa de apelido. */
 const owner = alias(users, "event_owner");
@@ -83,6 +83,7 @@ async function loadEvents(db: Database, ids?: string[], filters: EventListQuery 
       startedAt: iso(e.startedAt),
       finishedAt: iso(e.finishedAt),
       cancelledAt: iso(e.cancelledAt),
+      cancelReason: e.cancelReason,
       roles: own,
       totalSlots: own.reduce((sum, r) => sum + r.slots, 0),
       createdAt: e.createdAt.toISOString(),
@@ -127,11 +128,23 @@ export async function createEvent(db: Database, input: CreateEventInput): Promis
   return { ok: true, event: (await getEvent(db, created.eventId))! };
 }
 
+export interface ApplyEventTransitionOptions {
+  at?: Date;
+  /** Só faz sentido em `cancelled` (TASK-025): o texto que o inscrito lê no embed e no painel. */
+  reason?: string | null;
+}
+
 /**
  * Aplica uma transição validada pela máquina compartilhada, dentro de uma transação com `for update`:
  * dois cliques simultâneos em "iniciar" não geram dois starts — o segundo lê o estado já novo e cai em `invalid`.
+ *
+ * Cancelar (TASK-025, AC#1) cancela **na mesma transação** toda inscrição ativa (confirmada e em espera):
+ * o evento nunca fica cancelado com gente ainda marcada como confirmada, nem por um instante. Fora dessa
+ * transação, um erro no meio deixaria metade da lista viva num evento que não existe mais.
  */
-export async function applyEventTransition(db: Database, id: string, to: EventStatus, at: Date = new Date()): Promise<EventTransitionResult> {
+export async function applyEventTransition(db: Database, id: string, to: EventStatus, options: ApplyEventTransitionOptions = {}): Promise<EventTransitionResult> {
+  const at = options.at ?? new Date();
+  const reason = to === "cancelled" ? (options.reason?.trim() || null) : null;
   const result = await db.transaction(async (tx) => {
     const [current] = await tx.select({ status: events.status, closedAt: events.closedAt }).from(events).where(eq(events.id, id)).for("update");
     if (!current) return { ok: false as const, reason: "not_found" as const };
@@ -146,8 +159,14 @@ export async function applyEventTransition(db: Database, id: string, to: EventSt
         ...(stamp ? { [stamp]: at } : {}),
         // Q26: o start fecha a inscrição, mesmo vindo direto de `open`.
         ...(to === "running" && !current.closedAt ? { closedAt: at } : {}),
+        ...(to === "cancelled" ? { cancelReason: reason } : {}),
       })
       .where(eq(events.id, id));
+    if (to === "cancelled")
+      await tx
+        .update(eventSignups)
+        .set({ status: "cancelled", position: 0, updatedAt: at })
+        .where(and(eq(eventSignups.eventId, id), inArray(eventSignups.status, ["confirmed", "waitlist"])));
     return { ok: true as const, from };
   });
   if (!result.ok) return result;
