@@ -9,13 +9,13 @@ import {
   type EventTemplateDto,
   type EventTransition,
 } from "@albion-hub/shared";
-import { CalendarPlus, CircleDot, Crown, DoorOpen, Flag, ListOrdered, Lock, Play, Users, X } from "lucide-react";
+import { Archive, CalendarPlus, CircleDot, Crown, DoorOpen, Flag, ListOrdered, Lock, Play, Users, X } from "lucide-react";
 import { useCallback, useEffect, useId, useState } from "react";
 import { toast } from "sonner";
 import * as api from "@/api/events";
 import { errorText } from "@/api/http";
 import { usePoll } from "@/api/use-poll";
-import { EventCancelledNote, EventMeta, EventStatusPill, FillMeter, Freshness, eventStatusText } from "@/components/events";
+import { EventArchivedNote, EventCancelledNote, EventMeta, EventStatusPill, FillMeter, Freshness, eventStatusText } from "@/components/events";
 import { EmptyState, PageHeader, Panel, Pill, StatCard } from "@/components/display";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
@@ -45,6 +45,7 @@ const TRANSITION_META: Record<EventTransition, { label: string; icon: typeof Pla
   start: { label: "Iniciar evento", icon: Play, variant: "default" },
   finish: { label: "Finalizar evento", icon: Flag, variant: "default" },
   cancel: { label: "Cancelar evento", icon: X, variant: "destructive" },
+  archive: { label: "Arquivar evento", icon: Archive, variant: "outline" },
 };
 
 /**
@@ -59,12 +60,13 @@ export function StaffEvents() {
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [creating, setCreating] = useState(false);
   const [cancelling, setCancelling] = useState<EventDto | null>(null);
+  const [archiving, setArchiving] = useState<EventDto | null>(null);
   const [busy, setBusy] = useState(false);
 
   const board = data ?? { events: [], occupancy: [], mySignups: [] };
   const groups = groupEvents(board.events);
   const live = [...groups.running, ...groups.open, ...groups.upcoming];
-  const mine = board.events.filter((e) => e.ownerUserId === user.id && e.status !== "finished" && e.status !== "cancelled");
+  const mine = board.events.filter((e) => e.ownerUserId === user.id && !["finished", "cancelled", "archived"].includes(e.status));
   // Sem escolha ainda, abre um evento seu: é nele que o caller vai mexer, não no do vizinho.
   const selected = board.events.find((e) => e.id === selectedId) ?? live.find((e) => e.ownerUserId === user.id) ?? live[0] ?? board.events[0] ?? null;
 
@@ -78,9 +80,12 @@ export function StaffEvents() {
             ? "O embed foi publicado no canal de eventos."
             : action === "cancel"
               ? "As inscrições foram canceladas e o aviso foi para o canal de eventos."
-              : undefined,
+              : action === "archive"
+                ? "Os dados, a taxa e os splits deste evento não mudam mais."
+                : undefined,
       });
       setCancelling(null);
+      setArchiving(null);
       refresh();
     } catch (e) {
       toast.error(errorText(e, "Não foi possível mudar o estado do evento."));
@@ -185,7 +190,11 @@ export function StaffEvents() {
                 event={selected}
                 board={board}
                 busy={busy}
-                onTransition={(action) => (action === "cancel" ? setCancelling(selected) : void transition(selected, action))}
+                onTransition={(action) => {
+                  if (action === "cancel") setCancelling(selected);
+                  else if (action === "archive") setArchiving(selected);
+                  else void transition(selected, action);
+                }}
                 onChanged={refresh}
               />
             ) : (
@@ -213,6 +222,8 @@ export function StaffEvents() {
       {cancelling && (
         <CancelEventDialog event={cancelling} busy={busy} onClose={() => setCancelling(null)} onConfirm={(reason) => void transition(cancelling, "cancel", reason)} />
       )}
+
+      {archiving && <ArchiveEventDialog event={archiving} busy={busy} onClose={() => setArchiving(null)} onConfirm={() => void transition(archiving, "archive")} />}
     </>
   );
 }
@@ -282,6 +293,7 @@ function EventDetail({
             <EventMeta event={event} />
             {event.description && <p className="mt-1 text-sm text-muted-foreground">{event.description}</p>}
             <EventCancelledNote event={event} className="mt-2" />
+            <EventArchivedNote event={event} className="mt-2" />
           </div>
           <div className="w-full sm:w-56">
             <FillMeter {...fill} />
@@ -304,9 +316,13 @@ function EventDetail({
           </div>
         ) : (
           <p className="text-sm text-muted-foreground">
-            {event.status === "finished" || event.status === "cancelled"
-              ? "Evento encerrado: não há mais ação a tomar."
-              : "Você não conduz este evento. Fale com o caller dono ou com a staff."}
+            {event.status === "archived"
+              ? "Evento arquivado: nada mais muda por aqui."
+              : event.status === "cancelled"
+                ? "Evento cancelado: não há mais ação a tomar."
+                : event.status === "finished"
+                  ? "Evento finalizado. Quem conduz ainda acerta a taxa e os splits, e arquiva quando terminar."
+                  : "Você não conduz este evento. Fale com o caller dono ou com a staff."}
           </p>
         )}
       </div>
@@ -533,6 +549,35 @@ function CancelEventDialog({ event, busy, onClose, onConfirm }: { event: EventDt
           <Button variant="destructive" disabled={busy} onClick={() => onConfirm(reason.trim())}>
             <X />
             Cancelar evento
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+/**
+ * Arquivamento (TASK-044, AC#3). Confirmação obrigatória e sem campo nenhum: o valor da tela é dizer
+ * o que se perde. `finished` continua aceitando corrigir a taxa e os splits, e é justamente isso que
+ * some aqui — quem clica precisa ler essa frase antes, não descobrir com um 409 depois.
+ */
+function ArchiveEventDialog({ event, busy, onClose, onConfirm }: { event: EventDto; busy: boolean; onClose: () => void; onConfirm: () => void }) {
+  return (
+    <Dialog open onOpenChange={(open) => !open && onClose()}>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>Arquivar {event.name}?</DialogTitle>
+          <DialogDescription>
+            Não volta atrás: depois de arquivado, os dados do evento, a taxa e os loot splits não podem mais ser editados. Confira o acerto da prata antes.
+          </DialogDescription>
+        </DialogHeader>
+        <DialogFooter>
+          <Button variant="ghost" onClick={onClose}>
+            Voltar
+          </Button>
+          <Button autoFocus disabled={busy} onClick={onConfirm}>
+            <Archive />
+            Arquivar evento
           </Button>
         </DialogFooter>
       </DialogContent>

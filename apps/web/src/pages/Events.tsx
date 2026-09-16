@@ -5,7 +5,7 @@ import { toast } from "sonner";
 import * as api from "@/api/events";
 import { errorText } from "@/api/http";
 import { usePoll } from "@/api/use-poll";
-import { EventCancelledNote, EventMeta, EventStatusPill, FillMeter, Freshness } from "@/components/events";
+import { EventArchivedNote, EventCancelledNote, EventMeta, EventStatusPill, FillMeter, Freshness } from "@/components/events";
 import { EmptyState, PageHeader, Panel, Pill, StatCard } from "@/components/display";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -125,7 +125,7 @@ export function Events() {
             )}
 
             {groups.done.length > 0 && (
-              <Panel title="Encerrados e cancelados" titleId="events-done">
+              <Panel title="Encerrados, cancelados e arquivados" titleId="events-done">
                 <ul className="divide-y">
                   {groups.done.slice(0, 5).map((event) => (
                     <li key={event.id} className="px-4 py-3">
@@ -138,6 +138,7 @@ export function Events() {
                       </div>
                       {/* AC#4: quem estava inscrito descobre aqui que o evento caiu, e por quê. */}
                       <EventCancelledNote event={event} className="mt-2" />
+                      <EventArchivedNote event={event} className="mt-2" />
                     </li>
                   ))}
                 </ul>
@@ -185,6 +186,7 @@ function EventRow({
           <EventMeta event={event} className="mt-0.5" />
           {event.description && <p className="mt-1 text-sm text-muted-foreground">{event.description}</p>}
           <EventCancelledNote event={event} className="mt-2" />
+          <EventArchivedNote event={event} className="mt-2" />
         </div>
         <div className="w-full sm:w-52">
           <FillMeter {...fill} />

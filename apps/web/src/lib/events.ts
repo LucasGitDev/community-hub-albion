@@ -2,6 +2,7 @@ import {
   ALLOWED_EVENT_TRANSITIONS,
   EVENT_TRANSITIONS,
   EVENT_TRANSITION_ACTIONS,
+  eventEditBlocked,
   freeSlots,
   type AppAbility,
   type EventDto,
@@ -38,6 +39,7 @@ const GROUP_OF: Record<EventStatus, EventGroup> = {
   closed: "upcoming",
   finished: "done",
   cancelled: "done",
+  archived: "done",
 };
 
 const eventGroup = (status: EventStatus): EventGroup => GROUP_OF[status];
@@ -118,9 +120,12 @@ export function availableTransitions(event: EventDto, ability: AppAbility): Even
 export const canManageRoster = (event: EventDto, ability: AppAbility): boolean =>
   (event.status === "open" || event.status === "closed") && ability.can("update", asSubject("Event", { ownerId: event.ownerUserId }));
 
-/** Trocar o dono é `manage Event`: só staff (Q21). */
+/**
+ * Trocar o dono é `manage Event`: só staff (Q21). Vale até o evento ser arquivado: a taxa e as sobras
+ * vão para o owner e o acerto acontece depois do jogo, então `finished` ainda troca (TASK-044, AC#2).
+ */
 export const canTransferOwner = (event: EventDto, ability: AppAbility): boolean =>
-  !["finished", "cancelled"].includes(event.status) && ability.can("manage", asSubject("Event", { ownerId: event.ownerUserId }));
+  !eventEditBlocked(event.status) && event.status !== "cancelled" && ability.can("manage", asSubject("Event", { ownerId: event.ownerUserId }));
 
 export const nickOf = (userId: string, members: readonly EventMemberDto[]): string => members.find((m) => m.userId === userId)?.nick ?? "Membro";
 

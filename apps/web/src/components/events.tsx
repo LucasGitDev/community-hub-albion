@@ -1,5 +1,5 @@
 import { eventCancelledText, type EventDto, type EventStatus } from "@albion-hub/shared";
-import { CalendarClock, CheckCircle2, CircleDot, DoorOpen, FileEdit, Lock, XCircle } from "lucide-react";
+import { Archive, CalendarClock, CheckCircle2, CircleDot, DoorOpen, FileEdit, Lock, XCircle } from "lucide-react";
 import type { ReactNode } from "react";
 import { Pill, type Tone } from "@/components/display";
 import { POLL_INTERVAL_MS } from "@/lib/events";
@@ -13,8 +13,11 @@ const STATUS_META: Record<EventStatus, { label: string; tone: Tone; icon: ReactN
   open: { label: "Inscrições abertas", tone: "success", icon: <DoorOpen aria-hidden /> },
   closed: { label: "Inscrições fechadas", tone: "warning", icon: <Lock aria-hidden /> },
   running: { label: "Acontecendo agora", tone: "info", icon: <CircleDot aria-hidden /> },
-  finished: { label: "Finalizado", tone: "neutral", icon: <CheckCircle2 aria-hidden /> },
+  // Finalizado e arquivado são dois fins diferentes (Q26 revisada, TASK-044 AC#3), então diferem em
+  // ícone, texto e cor — nunca só na cor: "Finalizado" ainda aceita acerto, "Arquivado" não aceita nada.
+  finished: { label: "Finalizado", tone: "success", icon: <CheckCircle2 aria-hidden /> },
   cancelled: { label: "Cancelado", tone: "destructive", icon: <XCircle aria-hidden /> },
+  archived: { label: "Arquivado", tone: "neutral", icon: <Archive aria-hidden /> },
 };
 
 /** Estado do evento com ícone + texto + cor (nunca só cor). */
@@ -41,6 +44,23 @@ export function EventCancelledNote({ event, className }: { event: EventDto; clas
       <span className="min-w-0">
         {eventCancelledText(event.cancelReason)}
         <span className="text-muted-foreground"> Todas as inscrições foram canceladas.</span>
+      </span>
+    </p>
+  );
+}
+
+/**
+ * Aviso de evento arquivado (TASK-044, AC#3). Fica onde o de cancelamento fica, e pelo mesmo motivo:
+ * quem abre um evento arquivado precisa entender, antes de procurar um botão, que não há mais botão.
+ */
+export function EventArchivedNote({ event, className }: { event: EventDto; className?: string }) {
+  if (event.status !== "archived") return null;
+  return (
+    <p className={cn("flex items-start gap-2 rounded-lg border bg-muted px-3 py-2 text-sm", className)}>
+      <Archive className="mt-0.5 size-4 shrink-0 text-muted-foreground" aria-hidden />
+      <span className="min-w-0">
+        Evento arquivado{event.archivedAt ? ` em ${formatDateTime(event.archivedAt)}` : ""}.
+        <span className="text-muted-foreground"> Os dados, a taxa e os splits dele não mudam mais.</span>
       </span>
     </p>
   );
