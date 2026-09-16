@@ -90,6 +90,7 @@ export {
   setEventFee,
   setEventVoiceChannelId,
   transferEventOwner,
+  updateEventDetails,
   type ApplyEventTransitionOptions,
   type CreateEventInput,
   type EventTransitionPrecondition,

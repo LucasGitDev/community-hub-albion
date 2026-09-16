@@ -23,6 +23,7 @@ import {
   saveEventTemplate,
   schema,
   setEventFee,
+  updateEventDetails,
   setEventVoiceChannelId,
   updateLootSplitDraft,
   upsertUserByDiscordId,
@@ -453,6 +454,24 @@ describe.skipIf(!baseUrl)("rascunho de loot split (TASK-027, Postgres real)", ()
       expect(updated!.fee).toEqual({ type: "fixed", value: "9007199254740993" });
       // Percentual acima de 100% é aceito: não há teto (decisão do usuário).
       expect((await setEventFee(handle.db, event.id, { type: "percent", value: 25_000n }))!.fee).toEqual({ type: "percent", value: "25000" });
+    });
+
+    it("nome e observação do evento são corrigíveis depois do finish, sem mexer no resto (TASK-029, AC#2)", async () => {
+      const owner = await nextUser();
+      const channel = `ch-${++seq}`;
+      const event = await finishedEvent(owner.id, channel, new Date("2026-03-16T20:00:00.000Z"), new Date("2026-03-16T21:00:00.000Z"));
+
+      const updated = await updateEventDetails(handle.db, event.id, { name: "Roads corrigida", description: "ponto em Martlock" });
+      expect([updated!.name, updated!.description]).toEqual(["Roads corrigida", "ponto em Martlock"]);
+      // Nada além dos dois campos se move: status, dono, taxa e a janela de presença continuam iguais.
+      expect([updated!.status, updated!.ownerUserId, updated!.fee, updated!.presenceChannelId]).toEqual([
+        event.status,
+        event.ownerUserId,
+        event.fee,
+        event.presenceChannelId,
+      ]);
+      expect((await updateEventDetails(handle.db, event.id, { name: "Sem observação", description: null }))!.description).toBeNull();
+      expect(await updateEventDetails(handle.db, "00000000-0000-4000-8000-000000000000", { name: "x", description: null })).toBeNull();
     });
 
     it("taxa negativa é recusada pelo banco, no evento e no template", async () => {

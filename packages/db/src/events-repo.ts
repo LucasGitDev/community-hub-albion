@@ -279,6 +279,22 @@ export async function setEventFee(db: Database, eventId: string, fee: EventFee):
   return row ? getEvent(db, row.id) : null;
 }
 
+/**
+ * Corrige os dados do evento (TASK-029, AC#2): nome e descrição, e nada mais.
+ *
+ * Só esses dois porque são os únicos que o caller precisa arrumar depois do jogo; template, roles e
+ * horários são o registro do que aconteceu. Quem barra evento arquivado é o `assertEventEditable` do
+ * server, antes de chegar aqui, pelo mesmo caminho da taxa.
+ */
+export async function updateEventDetails(db: Database, eventId: string, fields: { name: string; description: string | null }): Promise<EventDto | null> {
+  const [row] = await db
+    .update(events)
+    .set({ name: fields.name, description: fields.description, updatedAt: new Date() })
+    .where(eq(events.id, eventId))
+    .returning({ id: events.id });
+  return row ? getEvent(db, row.id) : null;
+}
+
 /** Guarda a mensagem do embed de inscrição no canal de eventos (TASK-022). */
 export async function setEventDiscordMessageId(db: Database, eventId: string, messageId: string | null): Promise<void> {
   await db.update(events).set({ discordMessageId: messageId }).where(eq(events.id, eventId));
