@@ -7,7 +7,9 @@ const OAUTH = { DISCORD_CLIENT_ID: "223456789012345678", DISCORD_CLIENT_SECRET: 
 const ROLE = "323456789012345678";
 const CHANNEL = "423456789012345678";
 const EVENTS_CHANNEL = "523456789012345678";
-const valid = { DISCORD_TOKEN: TOKEN, GUILD_ID: "123456789012345678", DATABASE_URL: DB, DISCORD_MEMBER_ROLE_ID: ROLE, DISCORD_STAFF_CHANNEL_ID: CHANNEL, DISCORD_EVENTS_CHANNEL_ID: EVENTS_CHANNEL, ...OAUTH };
+const WAITING_VOICE = "623456789012345678";
+const EVENT_CATEGORY = "723456789012345678";
+const valid = { DISCORD_TOKEN: TOKEN, GUILD_ID: "123456789012345678", DATABASE_URL: DB, DISCORD_MEMBER_ROLE_ID: ROLE, DISCORD_STAFF_CHANNEL_ID: CHANNEL, DISCORD_EVENTS_CHANNEL_ID: EVENTS_CHANNEL, DISCORD_WAITING_VOICE_CHANNEL_ID: WAITING_VOICE, DISCORD_EVENT_CATEGORY_ID: EVENT_CATEGORY, ...OAUTH };
 
 describe("parseEnv", () => {
   it("aceita config válida e aplica defaults", () => {
@@ -21,6 +23,8 @@ describe("parseEnv", () => {
         DISCORD_MEMBER_ROLE_ID: ROLE,
         DISCORD_STAFF_CHANNEL_ID: CHANNEL,
         DISCORD_EVENTS_CHANNEL_ID: EVENTS_CHANNEL,
+        DISCORD_WAITING_VOICE_CHANNEL_ID: WAITING_VOICE,
+        DISCORD_EVENT_CATEGORY_ID: EVENT_CATEGORY,
         ...OAUTH,
         SESSION_TTL_DAYS: 30,
         BOOTSTRAP_ADMIN_DISCORD_IDS: [],
@@ -183,5 +187,24 @@ describe("parseEnv", () => {
       const bad = parseEnv({ ...valid, DISCORD_EVENTS_CHANNEL_ID: "eventos" });
       expect(!bad.ok && bad.message).toContain("DISCORD_EVENTS_CHANNEL_ID: formato inválido");
     });
+  });
+
+  describe("voz do evento (TASK-024)", () => {
+    for (const [name, value] of [
+      ["DISCORD_WAITING_VOICE_CHANNEL_ID", "aguardando"],
+      ["DISCORD_EVENT_CATEGORY_ID", "categoria"],
+    ] as const) {
+      it(`${name} é obrigatória com o bot ligado, opcional com ele desligado e validada como snowflake`, () => {
+        for (const source of [{ ...valid, [name]: undefined }, { ...valid, [name]: "" }]) {
+          const result = parseEnv(source);
+          expect(!result.ok && result.message).toContain(`${name}: obrigatória com DISCORD_BOT_ENABLED=true`);
+        }
+        const off = parseEnv({ ...valid, [name]: undefined, DISCORD_BOT_ENABLED: "false" });
+        expect(off.ok).toBe(true);
+        expect(off.ok && off.env[name]).toBeUndefined();
+        const bad = parseEnv({ ...valid, [name]: value });
+        expect(!bad.ok && bad.message).toContain(`${name}: formato inválido`);
+      });
+    }
   });
 });

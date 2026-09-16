@@ -3,7 +3,7 @@ id: doc-007
 title: Deploy (Docker Hub + Easypanel)
 type: guide
 created_date: '2026-09-15 12:56'
-updated_date: '2026-09-16 01:36'
+updated_date: '2026-09-16 02:47'
 ---
 Deploy de produção: **GitHub Actions → Docker Hub → Easypanel**.
 
@@ -43,9 +43,11 @@ Gate vermelho na `main` não publica nada.
 | `DISCORD_MEMBER_ROLE_ID` | `1547413631627698327` (TASK-014) |
 | `DISCORD_STAFF_CHANNEL_ID` | `1549401951924650025` (TASK-015) |
 | `DISCORD_EVENTS_CHANNEL_ID` | canal onde o bot publica o embed de inscrição dos eventos (TASK-022) |
+| `DISCORD_WAITING_VOICE_CHANNEL_ID` | `1549544894710808696` — canal de voz fixo "Aguardando Evento"; o start só arrasta quem estiver nele (TASK-024, Q29) |
+| `DISCORD_EVENT_CATEGORY_ID` | `1547413743082934394` — categoria onde o canal de voz do evento é criado no start e apagado no finish (TASK-024, Q28) |
 
 Nunca definir `AUTH_DEV_LOGIN` em produção (a app recusa subir).
 
 ### Discord
 - Redirect OAuth2: `<PUBLIC_URL>/api/auth/discord/callback`.
-- Convite do bot com escopos `bot` + `applications.commands` e permissões: Ver canais, Enviar mensagens, Inserir links, Conectar, Mover membros, Gerenciar apelidos, Gerenciar cargos (bitfield `420498432`). O cargo do bot precisa ficar acima do cargo Membro.
+- Convite do bot com escopos `bot` + `applications.commands` e permissões: Ver canais, Enviar mensagens, Inserir links, Conectar, Mover membros, Gerenciar apelidos, Gerenciar cargos, Gerenciar canais (criar/apagar o canal de voz do evento, TASK-024). O cargo do bot precisa ficar acima do cargo Membro.
