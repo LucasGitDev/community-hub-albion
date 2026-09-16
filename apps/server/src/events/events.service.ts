@@ -9,6 +9,7 @@ import {
   transferEventOwner,
   type CreateEventResult,
   type DbHandle,
+  type EventTransitionPrecondition,
   type EventTransitionResult,
   type TransferEventOwnerResult,
 } from "@albion-hub/db";
@@ -49,6 +50,20 @@ export class EventsService {
     return this.listeners.add(listener);
   }
 
+  /**
+   * Arquivar exige que não haja loot split em rascunho (TASK-044, AC#4). O split não existe ainda —
+   * ele nasce na F5 (TASK-027/028) —, então o default aqui é "não há nada pendente" e a F5 registra a
+   * consulta real com `setArchivePrecondition`, sem reabrir este serviço nem o repo.
+   *
+   * A função roda **dentro** da transação da transição, com o evento já travado por `for update`:
+   * é isso que impede a corrida entre conferir os splits e gravar o `archived`.
+   */
+  private archivePrecondition: EventTransitionPrecondition = () => Promise.resolve(null);
+
+  setArchivePrecondition(precondition: EventTransitionPrecondition): void {
+    this.archivePrecondition = precondition;
+  }
+
   /** Cria o evento; quem cria vira owner (Q21, AC#1). */
   create(input: EventCreateInput, actorUserId: string): Promise<CreateEventResult> {
     const { templateId, name, description, startsAt, signupsCloseAt } = input;
@@ -73,7 +88,7 @@ export class EventsService {
    */
   async transition(id: string, transition: EventTransition, actorUserId: string, reason: string | null = null): Promise<EventTransitionResult> {
     const to = EVENT_TRANSITIONS[transition];
-    const result = await applyEventTransition(this.handle.db, id, to, { reason });
+    const result = await applyEventTransition(this.handle.db, id, to, { reason, ...(to === "archived" ? { precondition: this.archivePrecondition } : {}) });
     if (result.ok) await this.listeners.emit({ event: result.event, from: result.from, to, transition, actorUserId, reason: result.event.cancelReason }, `evento ${id}`);
     return result;
   }

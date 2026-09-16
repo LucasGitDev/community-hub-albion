@@ -20,6 +20,7 @@ import type { Response } from "express";
 import type { z } from "zod";
 import { Authorize, CurrentAuth, type AuthorizedRequest } from "../auth/authorize.js";
 import { SameOriginGuard } from "../auth/same-origin.guard.js";
+import { assertEventEditable } from "./archived.guard.js";
 import { EventSignupsService } from "./event-signups.service.js";
 import { EventsService } from "./events.service.js";
 
@@ -109,8 +110,8 @@ export class EventsController {
   }
 
   /**
-   * `open`, `close`, `start`, `finish`, `cancel`. Transição fora da máquina → 409 PT-BR (AC#3), então
-   * evento finalizado não volta a ser cancelado. Só `cancel` lê o corpo, para guardar o motivo (TASK-025);
+   * `open`, `close`, `start`, `finish`, `cancel`, `archive`. Transição fora da máquina → 409 PT-BR
+   * (AC#3), então evento finalizado não volta a ser cancelado e evento arquivado não vai a lugar nenhum. Só `cancel` lê o corpo, para guardar o motivo (TASK-025);
    * nas outras o corpo é ignorado de propósito, em vez de virar 400 por um campo que não existe ali.
    */
   @Post(":id/transitions/:transition")
@@ -125,10 +126,15 @@ export class EventsController {
     const result = await this.events.transition(event.id, transition, auth.user.id, reason);
     if (result.ok) return result.event;
     if (result.reason === "not_found") throw new NotFoundException("Evento não encontrado.");
+    // Precondição de negócio recusou (hoje: split em rascunho barrando o arquivamento, AC#4).
+    if (result.reason === "blocked") throw new ConflictException(result.message);
     throw new ConflictException(transitionError(result.from, EVENT_TRANSITIONS[transition]));
   }
 
-  /** Transferência de owner: só staff (`manage`), com histórico (Q21, AC#4). */
+  /**
+   * Transferência de owner: só staff (`manage`), com histórico (Q21, AC#4). Vale até o evento ser
+   * arquivado — a taxa e as sobras vão para o owner, e o acerto só acaba no `archived` (TASK-044).
+   */
   @Post(":id/owner")
   @HttpCode(200)
   @UseGuards(SameOriginGuard)
@@ -136,11 +142,12 @@ export class EventsController {
   async transferOwner(@Param("id") id: string, @Body() body: unknown, @CurrentAuth() auth: Auth): Promise<EventDto> {
     const { ownerUserId } = parseBody(eventTransferOwnerSchema, body);
     const event = await this.load(id);
+    assertEventEditable(event);
     const result = await this.events.transferOwner(event.id, ownerUserId, auth.user.id);
     if (result.ok) return result.event;
     if (result.reason === "not_found") throw new NotFoundException("Evento não encontrado.");
     if (result.reason === "unknown_user") throw new BadRequestException("Esse usuário não existe.");
     if (result.reason === "same_owner") throw new ConflictException("Essa pessoa já é o owner do evento.");
-    throw new ConflictException("O evento já terminou ou foi cancelado: não dá para trocar o owner.");
+    throw new ConflictException("O evento foi cancelado ou arquivado: não dá para trocar o owner.");
   }
 }

@@ -9,9 +9,9 @@ import type { EmbedButton, EmbedField, EmbedView } from "./embed-view.js";
  * na espera e um "Sair". Fora de `open` os botões aparecem desabilitados — a lista continua visível
  * (a galera confere onde ficou), mas ninguém entra nem sai (AC#5).
  *
- * Cancelado (TASK-025, AC#4) é o único estado sem botão nenhum: a mensagem vira o aviso "Evento
- * cancelado" com o motivo. Deixar botões cinza ali faria a mensagem parecer um evento que ainda vai
- * acontecer, e as inscrições já foram todas canceladas — não há lista para conferir.
+ * Cancelado (TASK-025, AC#4) e arquivado (TASK-044, AC#3) são os estados sem botão nenhum: a mensagem
+ * vira um aviso de fim. Deixar botões cinza ali faria a mensagem parecer um evento que ainda vai
+ * acontecer; no cancelado as inscrições já caíram todas, e no arquivado nada mais muda.
  */
 
 export const EVENT_EMBED_COLORS: Record<EventStatus, number> = {
@@ -21,6 +21,7 @@ export const EVENT_EMBED_COLORS: Record<EventStatus, number> = {
   running: 0x3498db,
   finished: 0x7f8c8d,
   cancelled: 0xe74c3c,
+  archived: 0x34495e,
 };
 
 export interface EventEmbedMember {
@@ -67,9 +68,23 @@ const lines = (values: string[], empty: string) => {
   return kept.join("\n");
 };
 
+/** Quem ficou em cada role e quem está na espera: a lista do evento, sem nenhuma ação. */
+function roleFields(input: EventEmbedInput): EmbedField[] {
+  const fields: EmbedField[] = input.roles.map((role) => ({
+    name: `${role.name} (${role.confirmed.length}/${role.slots})`,
+    value: lines(role.confirmed.map(member), freeSlots({ slots: role.slots, confirmed: role.confirmed.length }) > 0 ? "Vaga livre" : "—"),
+    inline: true,
+  }));
+  const waiting = input.roles.flatMap((role) => role.waitlist.map((m, i) => `${i + 1}. ${member(m)} — ${role.name}`));
+  if (waiting.length > 0) fields.push({ name: "Lista de espera", value: lines(waiting, "—") });
+  if (input.roles.length === 0) fields.push({ name: "Roles", value: "Esse evento não tem nenhuma role configurada." });
+  return fields;
+}
+
 export function buildEventEmbed(input: EventEmbedInput): EmbedView {
   const open = input.status === "open";
   const cancelled = input.status === "cancelled";
+  const archived = input.status === "archived";
   const fields: EmbedField[] = [];
   const header = [input.templateName ? `Template: ${input.templateName}` : null, input.startsAt ? `Início: ${when(input.startsAt)}` : "Sem horário marcado"].filter(Boolean);
   fields.push({ name: "Evento", value: header.join(" · ") });
@@ -81,19 +96,18 @@ export function buildEventEmbed(input: EventEmbedInput): EmbedView {
       fields: [...fields, { name: "Situação", value: `${eventCancelledText(input.cancelReason)} Todas as inscrições foram canceladas.` }],
       buttons: [],
     };
+  if (archived)
+    return {
+      title: input.name,
+      description: input.description ?? undefined,
+      color: EVENT_EMBED_COLORS.archived,
+      // A lista fica: o arquivamento fecha o evento, não apaga quem jogou. O que some é a ação.
+      fields: [...fields, { name: "Situação", value: "Evento arquivado. Acabou e já foi fechado: os dados, a taxa e os splits não mudam mais." }, ...roleFields(input)],
+      buttons: [],
+    };
   if (!open) fields.push({ name: "Situação", value: `Evento ${eventStatusLabel(input.status)}. As inscrições não estão abertas.` });
 
-  for (const role of input.roles) {
-    fields.push({
-      name: `${role.name} (${role.confirmed.length}/${role.slots})`,
-      value: lines(role.confirmed.map(member), freeSlots({ slots: role.slots, confirmed: role.confirmed.length }) > 0 ? "Vaga livre" : "—"),
-      inline: true,
-    });
-  }
-
-  const waiting = input.roles.flatMap((role) => role.waitlist.map((m, i) => `${i + 1}. ${member(m)} — ${role.name}`));
-  if (waiting.length > 0) fields.push({ name: "Lista de espera", value: lines(waiting, "—") });
-  if (input.roles.length === 0) fields.push({ name: "Roles", value: "Esse evento não tem nenhuma role configurada." });
+  fields.push(...roleFields(input));
 
   const buttons: EmbedButton[] = input.roles.slice(0, MAX_EVENT_ROLE_BUTTONS).map((role) => ({
     customId: eventJoinButtonId(role.slotId),

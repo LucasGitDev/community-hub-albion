@@ -31,7 +31,7 @@ export interface EventCommandInteraction {
   editReply(options: { content: string }): Promise<unknown>;
 }
 
-type EventCommandAction = "start" | "finish" | "cancel";
+type EventCommandAction = "start" | "finish" | "cancel" | "archive";
 
 /** Estados de onde cada ação faz sentido; o comando só oferece eventos que a máquina aceitaria (Q26). */
 const CANDIDATE_STATUSES: Record<EventCommandAction, readonly EventStatus[]> = {
@@ -39,16 +39,22 @@ const CANDIDATE_STATUSES: Record<EventCommandAction, readonly EventStatus[]> = {
   finish: ["running"],
   // Cancelar vale de qualquer estado antes de finalizado (Q26); finalizado e cancelado não voltam atrás.
   cancel: ["draft", "open", "closed", "running"],
+  // Arquivar só depois de encerrar (TASK-044, Q26): `finished` é o único estado que vai para `archived`.
+  archive: ["finished"],
 };
-const ACTION: Record<EventCommandAction, Action> = { start: "start", finish: "finish", cancel: "cancel" };
+const ACTION: Record<EventCommandAction, Action> = { start: "start", finish: "finish", cancel: "cancel", archive: "archive" };
 const NONE: Record<EventCommandAction, string> = {
   start: EVENT_COMMAND_REPLIES.noneToStart,
   finish: EVENT_COMMAND_REPLIES.noneToFinish,
   cancel: EVENT_COMMAND_REPLIES.noneToCancel,
+  archive: EVENT_COMMAND_REPLIES.noneToArchive,
 };
 
 /**
- * `/evento iniciar` e `/evento encerrar` (TASK-024, AC#4).
+ * `/evento iniciar`, `/evento encerrar`, `/evento cancelar` e `/evento arquivar` (TASK-024 AC#4,
+ * TASK-025, TASK-044). `arquivar` entrou aqui porque é o mesmo caminho das outras três — muda só o
+ * estado buscado, a ação CASL e a copy —, e quem conduz o evento pelo Discord fecharia o evento pelo
+ * painel só por não ter o comando.
  *
  * Decisão: comando em vez de botão no embed. O embed de inscrição (TASK-022) já chega perto do teto de
  * 25 botões com uma role por botão, e um "Iniciar" visível para a guilda inteira convida clique errado;
@@ -83,6 +89,11 @@ export class EventCommand {
   @Subcommand({ name: EVENT_COMMAND.cancel.name, description: EVENT_COMMAND.cancel.description })
   async onCancel(@Context() [interaction]: [EventCommandInteraction], @Options() { evento, motivo }: EventCancelOptions): Promise<void> {
     await this.run(interaction, "cancel", evento, motivo);
+  }
+
+  @Subcommand({ name: EVENT_COMMAND.archive.name, description: EVENT_COMMAND.archive.description })
+  async onArchive(@Context() [interaction]: [EventCommandInteraction], @Options() { evento }: EventTargetOptions): Promise<void> {
+    await this.run(interaction, "archive", evento);
   }
 
   /** Um caminho só para as três ações: muda o estado buscado, a ação CASL e a copy. */
@@ -128,10 +139,13 @@ export class EventCommand {
     if (!result.ok) {
       // Estado mudou entre a listagem e o clique: devolve o 409 da máquina, sem inventar outra regra.
       if (result.reason === "not_found") return NONE[action];
+      // Precondição de negócio (hoje: split em rascunho barrando o arquivamento) já vem com a frase pronta.
+      if (result.reason === "blocked") return result.message;
       return EVENT_COMMAND_REPLIES.invalidState(result.from, transitionError(result.from, EVENT_TRANSITIONS[transition]));
     }
     if (action === "start") return EVENT_COMMAND_REPLIES.started(result.event.name);
     if (action === "finish") return EVENT_COMMAND_REPLIES.finished(result.event.name);
+    if (action === "archive") return EVENT_COMMAND_REPLIES.archived(result.event.name);
     return EVENT_COMMAND_REPLIES.cancelled(result.event.name, result.event.cancelReason);
   }
 

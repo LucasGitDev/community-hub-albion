@@ -124,6 +124,31 @@ describe("embed do evento cancelado (TASK-025, AC#4)", () => {
   });
 });
 
+describe("embed do evento arquivado (TASK-044, AC#3)", () => {
+  it("diz que acabou e já foi fechado, mantém a lista e não deixa nenhum botão", () => {
+    const view = buildEventEmbed(
+      input({ status: "archived", roles: [{ slotId: TANK, name: "Tank", slots: 1, confirmed: [person(1, "Mago")], waitlist: [person(2)] }] }),
+    );
+    expect(view.color).toBe(EVENT_EMBED_COLORS.archived);
+    expect(field(view, "Situação")).toBe("Evento arquivado. Acabou e já foi fechado: os dados, a taxa e os splits não mudam mais.");
+    expect(view.buttons).toEqual([]);
+    // Ao contrário do cancelado, a lista fica: o evento aconteceu e quem jogou continua no registro.
+    expect(field(view, "Tank (1/1)")).toContain("Mago");
+    expect(field(view, "Lista de espera")).toContain("Tank");
+  });
+
+  it("finalizado e arquivado não se confundem: cor, situação e botões diferentes", () => {
+    const finished = buildEventEmbed(input({ status: "finished" }));
+    const archived = buildEventEmbed(input({ status: "archived" }));
+    expect(finished.color).not.toBe(archived.color);
+    expect(field(finished, "Situação")).toBe("Evento finalizado. As inscrições não estão abertas.");
+    expect(field(archived, "Situação")).not.toBe(field(finished, "Situação"));
+    // Finalizado ainda mostra a lista com os botões desabilitados; arquivado não tem botão nenhum.
+    expect(finished.buttons.length).toBeGreaterThan(0);
+    expect(archived.buttons).toEqual([]);
+  });
+});
+
 describe("respostas efêmeras dos botões", () => {
   it("dizem o que fazer em cada recusa (PT-BR)", () => {
     expect(EVENT_BUTTON_REPLIES.accountCreated).toContain("/registrar");

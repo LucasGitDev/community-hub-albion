@@ -207,7 +207,7 @@ describe.skipIf(!baseUrl)("eventos e máquina de estados HTTP (TASK-021, Q9/Q21/
       expect((await go(caller, event.id, "finish")).status).toBe(200);
       const res = await go(caller, event.id, "cancel", { reason: "mudei de ideia" });
       expect(res.status).toBe(409);
-      expect(res.body.message).toBe("O evento está finalizado e não pode ir para cancelado. Esse é um estado final.");
+      expect(res.body.message).toBe("O evento está finalizado e não pode ir para cancelado. Daqui só dá para ir para: arquivado.");
       const after = (await http().get(`/api/events/${event.id}`).set("Cookie", caller)).body as EventDto;
       expect(after).toMatchObject({ status: "finished", cancelReason: null, cancelledAt: null });
     });
@@ -331,6 +331,84 @@ describe.skipIf(!baseUrl)("eventos e máquina de estados HTTP (TASK-021, Q9/Q21/
     } finally {
       unsubscribe();
     }
+  });
+
+  describe("arquivamento (TASK-044, Q26 revisada)", () => {
+    /** Leva um evento novo até `finished` pelo caminho da máquina. */
+    const finished = async (name = "Para arquivar") => {
+      const event = await createdBy(caller, { name });
+      for (const step of ["open", "start", "finish"] as const) expect((await go(caller, event.id, step)).status, step).toBe(200);
+      return event;
+    };
+    const get = async (id: string) => (await http().get(`/api/events/${id}`).set("Cookie", caller)).body as EventDto;
+
+    it("owner arquiva o evento finalizado e o carimbo fica gravado (AC#1)", async () => {
+      const event = await finished();
+      const res = await go(caller, event.id, "archive");
+      expect(res.status).toBe(200);
+      expect(res.body as EventDto).toMatchObject({ status: "archived" });
+      expect((res.body as EventDto).archivedAt).not.toBeNull();
+      // O carimbo do fim de jogo continua lá: arquivar fecha o evento, não apaga a história.
+      expect((res.body as EventDto).finishedAt).not.toBeNull();
+    });
+
+    it("staff também arquiva; membro e caller de outro evento tomam 403 (AC#3)", async () => {
+      const doStaff = await finished("Staff arquiva");
+      expect((await go(member, doStaff.id, "archive")).status).toBe(403);
+      expect((await go(caller2, doStaff.id, "archive")).status).toBe(403);
+      expect((await go(staff, doStaff.id, "archive")).status).toBe(200);
+    });
+
+    it("de archived não sai nenhuma transição: 409 PT-BR e nada muda (AC#1)", async () => {
+      const event = await finished("Arquivado trancado");
+      expect((await go(caller, event.id, "archive")).status).toBe(200);
+      for (const transition of ["archive", "cancel", "finish", "start", "close", "open"] as const) {
+        const res = await go(caller, event.id, transition);
+        expect(res.status, transition).toBe(409);
+        expect(res.body.message, transition).toContain("O evento está arquivado");
+        expect(res.body.message, transition).toContain("Esse é um estado final.");
+      }
+      expect((await get(event.id)).status).toBe("archived");
+    });
+
+    it("evento finalizado ainda aceita edição; arquivado devolve 409 com a frase do arquivamento (AC#2)", async () => {
+      const event = await finished("Edição depois do jogo");
+      const tank = event.roles.find((r) => r.name === "Tank")!;
+      // `finished` é o momento do acerto (taxa, splits): trocar o owner continua valendo.
+      expect((await send("post", `/api/events/${event.id}/owner`, staff, { ownerUserId: caller2Id })).status).toBe(200);
+      expect((await send("post", `/api/events/${event.id}/owner`, staff, { ownerUserId: callerId })).status).toBe(200);
+
+      expect((await go(caller, event.id, "archive")).status).toBe(200);
+      const blocked = [
+        await send("post", `/api/events/${event.id}/owner`, staff, { ownerUserId: caller2Id }),
+        await send("post", `/api/events/${event.id}/signups`, member, { slotId: tank.id }),
+        await send("delete", `/api/events/${event.id}/signups/me`, member),
+        await send("patch", `/api/events/${event.id}/signups/${callerId}`, caller, { target: "waitlist" }),
+      ];
+      for (const res of blocked) {
+        expect(res.status).toBe(409);
+        expect(res.body.message).toBe("Evento arquivado não pode mais ser editado.");
+      }
+      expect((await get(event.id)).ownerUserId).toBe(callerId);
+    });
+
+    it("split em rascunho barra o arquivamento: 409 e o evento continua finalizado (AC#4)", async () => {
+      const event = await finished("Com split pendente");
+      const events = app.get(EventsService);
+      // A F5 (TASK-027/028) pluga aqui a consulta real de splits; o teste usa o mesmo encaixe.
+      events.setArchivePrecondition(() => Promise.resolve("Esse evento ainda tem um loot split em rascunho. Confirme ou descarte antes de arquivar."));
+      try {
+        const res = await go(caller, event.id, "archive");
+        expect(res.status).toBe(409);
+        expect(res.body.message).toBe("Esse evento ainda tem um loot split em rascunho. Confirme ou descarte antes de arquivar.");
+        const after = await get(event.id);
+        expect(after).toMatchObject({ status: "finished", archivedAt: null });
+      } finally {
+        events.setArchivePrecondition(() => Promise.resolve(null));
+      }
+      // Sem pendência, arquiva.
+      expect((await go(caller, event.id, "archive")).status).toBe(200);
+    });
   });
 
   it("listagem filtra por estado, owner e template", async () => {

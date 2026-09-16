@@ -3,6 +3,7 @@ import { asSubject, eventJoinSchema, eventSignupMoveSchema, eventStatusLabel, fi
 import type { Response } from "express";
 import { Authorize, CurrentAuth, type AuthorizedRequest } from "../auth/authorize.js";
 import { SameOriginGuard } from "../auth/same-origin.guard.js";
+import { assertEventEditable } from "./archived.guard.js";
 import { EventSignupsService } from "./event-signups.service.js";
 import { EventsService } from "./events.service.js";
 
@@ -59,6 +60,7 @@ export class EventSignupsController {
     const parsed = eventJoinSchema.safeParse(body);
     if (!parsed.success) throw new BadRequestException(firstIssue(parsed.error));
     const event = await this.load(id);
+    assertEventEditable(event);
     const result = await this.signups.join(event.id, auth.user.id, parsed.data.slotId);
     if (result.ok) return result.signup;
     if (result.reason === "not_open") throw new ConflictException(SIGNUP_ERRORS.notOpen(eventStatusLabel(result.status)));
@@ -73,6 +75,7 @@ export class EventSignupsController {
   @Authorize("join", "Event")
   async leave(@Param("id") id: string, @CurrentAuth() auth: Auth): Promise<EventSignupDto> {
     const event = await this.load(id);
+    assertEventEditable(event);
     const result = await this.signups.leave(event.id, auth.user.id);
     if (result.ok) return result.signup;
     if (result.reason === "not_open") throw new ConflictException(SIGNUP_ERRORS.notOpen(eventStatusLabel(result.status)));
@@ -90,6 +93,7 @@ export class EventSignupsController {
     const parsed = eventSignupMoveSchema.safeParse(body);
     if (!parsed.success) throw new BadRequestException(firstIssue(parsed.error));
     const event = await this.load(id);
+    assertEventEditable(event);
     if (!auth.ability.can("update", asSubject("Event", { ownerId: event.ownerUserId })))
       throw new ForbiddenException("Só o owner do evento ou a staff pode mexer na lista de inscritos.");
     const target = parsed.data.target === "waitlist" ? ({ kind: "waitlist" } as const) : ({ kind: "role", slotId: parsed.data.slotId } as const);
