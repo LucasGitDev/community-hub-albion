@@ -102,3 +102,16 @@ export {
   type LeaveEventResult,
   type MoveEventSignupResult,
 } from "./event-signups-repo.js";
+export {
+  getLedgerBalance,
+  insertLedgerEntry,
+  listLedgerEntries,
+  listLedgerEntriesByReference,
+  reverseLedgerEntry,
+  type LedgerEntry,
+  type LedgerEntryInput,
+  type LedgerPage,
+  type LedgerPageQuery,
+  type ReverseLedgerEntryOptions,
+  type ReverseLedgerEntryResult,
+} from "./ledger-repo.js";
