@@ -224,6 +224,8 @@ export const events = pgTable(
     startedAt: timestamp("started_at", { withTimezone: true }),
     finishedAt: timestamp("finished_at", { withTimezone: true }),
     cancelledAt: timestamp("cancelled_at", { withTimezone: true }),
+    /** Arquivamento (TASK-044, Q26): o evento virou histórico e não aceita mais nenhuma edição. */
+    archivedAt: timestamp("archived_at", { withTimezone: true }),
     /** Motivo que o caller/staff escreveu ao cancelar (TASK-025); o inscrito lê no embed e no painel. */
     cancelReason: text("cancel_reason"),
     createdAt: createdAt(),
@@ -236,10 +238,15 @@ export const events = pgTable(
     // Fechamento automático varre só os abertos com prazo (AC#5).
     index("events_signups_close_idx").on(t.signupsCloseAt).where(sql`${t.status} = 'open'`),
     check("events_name_not_blank", sql`length(trim(${t.name})) > 0`),
-    // Estado e carimbo andam juntos: running só existe com started_at, finished com finished_at, cancelled com cancelled_at.
-    check("events_started_consistent", sql`(${t.status} in ('running', 'finished')) <= (${t.startedAt} is not null)`),
-    check("events_finished_consistent", sql`(${t.status} = 'finished') = (${t.finishedAt} is not null)`),
+    // Estado e carimbo andam juntos: running só existe com started_at, finished/archived com finished_at,
+    // cancelled com cancelled_at e archived com archived_at.
+    // `archived` vem por `::text` de propósito: comparar com o literal do enum recém-criado quebraria a
+    // migração ("unsafe use of new value"), já que `alter type ... add value` roda na mesma transação.
+    check("events_started_consistent", sql`((${t.status})::text in ('running', 'finished', 'archived')) <= (${t.startedAt} is not null)`),
+    // `archived` guarda o finished_at de quando o jogo acabou: o carimbo do fim de jogo não se perde ao arquivar.
+    check("events_finished_consistent", sql`(${t.finishedAt} is not null) = ((${t.status})::text in ('finished', 'archived'))`),
     check("events_cancelled_consistent", sql`(${t.status} = 'cancelled') = (${t.cancelledAt} is not null)`),
+    check("events_archived_consistent", sql`((${t.status})::text = 'archived') = (${t.archivedAt} is not null)`),
     // Motivo só existe em evento cancelado, e com tamanho: o texto vai parar no embed do Discord.
     check(
       "events_cancel_reason_consistent",

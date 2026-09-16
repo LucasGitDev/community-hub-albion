@@ -71,6 +71,13 @@
       "when": 1789560631768,
       "tag": "0009_hard_purifiers",
       "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1789570676080,
+      "tag": "0010_blushing_toad_men",
+      "breakpoints": true
     }
   ]
 }
