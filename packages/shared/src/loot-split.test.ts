@@ -1,6 +1,15 @@
 import { describe, expect, it } from "vitest";
 import {
   calculateSplitDraft,
+  checkSplitConfirm,
+  distributeByShare,
+  feeBreakdown,
+  lootSplitReversalSchema,
+  lootSplitUpdateSchema,
+  splitConfirmRefusalMessage,
+  splitShareSum,
+  type ConfirmableLine,
+  type EventFee,
   eventFeeSchema,
   eventFeeUpdateSchema,
   feeFromDto,
@@ -52,7 +61,8 @@ describe("rateio do rascunho de loot split (TASK-027)", () => {
     it("não há presença mínima: 1 minuto já participa (Q5)", () => {
       const { lines } = calculateSplitDraft([present("a", 119), present("b", 1)], 1_200_000n);
       expect(lines[1]!.shareBp).toBe(83);
-      expect(lines[1]!.amount).toBe(10_000n);
+      // A prata sai do percentual, não dos milissegundos (TASK-028): 0,83% de 1.200.000.
+      expect(lines[1]!.amount).toBe(9_960n);
     });
   });
 
@@ -125,8 +135,14 @@ describe("rateio do rascunho de loot split (TASK-027)", () => {
     it("prata é exata acima de 2^53 (bigint, Q20)", () => {
       const total = 9_007_199_254_740_993n * 3n;
       const { lines, residual } = calculateSplitDraft([present("a", 1), present("b", 1), present("c", 1)], total);
+      // Nada perdido nem inventado, mesmo muito acima do que um `number` aguentaria.
       expect(sumAmount(lines) + residual).toBe(total);
-      expect(lines[0]!.amount).toBe(9_007_199_254_740_993n);
+      // A linha é o percentual exibido aplicado ao total: 33,33% e 33,34%, não "um terço" idealizado.
+      // A granularidade é a do basis point (0,01%), e ela é a mesma que o caller vê e edita na tela.
+      expect(lines.map((l) => l.shareBp)).toEqual([3334, 3333, 3333]);
+      expect(lines[0]!.amount).toBe((total * 3334n) / 10_000n);
+      // Sobra minúscula, como sempre: são tostões do truncamento por linha, e vão para o dono (Q23).
+      expect(residual).toBe(2n);
     });
 
     it("ninguém presente e inscrito: tudo vira sobra do dono", () => {
@@ -224,5 +240,157 @@ describe("formatação da tela (TASK-029)", () => {
     expect(formatPresence(30_000)).toBe("menos de 1min");
     expect(formatPresence(4 * MIN)).toBe("4min");
     expect(formatPresence(72 * MIN)).toBe("1h 12min");
+  });
+});
+
+describe("taxa aplicada antes da divisão (TASK-028, doc-005 \"Taxa do split\")", () => {
+  const percent = (bp: number): EventFee => ({ type: "percent", value: BigInt(bp) });
+  const fixed = (silver: bigint): EventFee => ({ type: "fixed", value: silver });
+
+  it("percentual é retirado do total e o resto é o distribuível", () => {
+    expect(feeBreakdown(1_000_000n, percent(1250))).toEqual({ feeSilver: 125_000n, distributable: 875_000n, exceedsTotal: false });
+  });
+
+  it("valor fixo é retirado cru", () => {
+    expect(feeBreakdown(1_000_000n, fixed(300_000n))).toEqual({ feeSilver: 300_000n, distributable: 700_000n, exceedsTotal: false });
+  });
+
+  it("taxa zero não muda nada", () => {
+    expect(feeBreakdown(999n, percent(0))).toEqual({ feeSilver: 0n, distributable: 999n, exceedsTotal: false });
+  });
+
+  it("percentual trunca para baixo: a taxa nunca fica maior do que deveria", () => {
+    expect(feeBreakdown(999n, percent(1)).feeSilver).toBe(0n);
+    expect(feeBreakdown(19_999n, percent(1)).feeSilver).toBe(1n);
+  });
+
+  it("prata acima de 2^53 não perde nada (Q20)", () => {
+    const total = 9_007_199_254_740_993_000n;
+    const { feeSilver, distributable } = feeBreakdown(total, percent(1000));
+    expect(feeSilver + distributable).toBe(total);
+    expect(feeSilver).toBe(900_719_925_474_099_300n);
+  });
+
+  it("taxa fixa maior que o total marca excesso e zera o distribuível, em vez de virar prata negativa", () => {
+    expect(feeBreakdown(100n, fixed(101n))).toEqual({ feeSilver: 101n, distributable: 0n, exceedsTotal: true });
+    // Split sem loot nenhum: qualquer taxa fixa já não cabe.
+    expect(feeBreakdown(0n, fixed(1n)).exceedsTotal).toBe(true);
+  });
+
+  it("percentual acima de 100% cai na mesma regra: a taxa não tem teto, mas não cabe", () => {
+    expect(feeBreakdown(10_000n, percent(10_001)).exceedsTotal).toBe(true);
+    // Exatamente 100% cabe: leva tudo e não sobra nada para dividir, o que é uma decisão, não um erro.
+    expect(feeBreakdown(10_000n, percent(10_000))).toEqual({ feeSilver: 10_000n, distributable: 0n, exceedsTotal: false });
+  });
+});
+
+describe("prata a partir do percentual (TASK-028)", () => {
+  it("cada linha recebe o seu percentual do distribuível e a sobra é o que faltou", () => {
+    expect(distributeByShare([5000, 2500, 2500], 1_000_000n)).toEqual({ amounts: [500_000n, 250_000n, 250_000n], residual: 0n });
+    expect(distributeByShare([3334, 3333, 3333], 100n)).toEqual({ amounts: [33n, 33n, 33n], residual: 1n });
+  });
+
+  it("linha com 0% não recebe nada", () => {
+    const { amounts } = distributeByShare([10_000, 0], 777n);
+    expect(amounts).toEqual([777n, 0n]);
+  });
+
+  it("distribuível zero não credita ninguém", () => {
+    expect(distributeByShare([5000, 5000], 0n)).toEqual({ amounts: [0n, 0n], residual: 0n });
+  });
+});
+
+describe("conferência da confirmação (TASK-028, AC#1, AC#2, Q22, Q23)", () => {
+  const line = (shareBp: number, over: Partial<ConfirmableLine> = {}): ConfirmableLine => ({ shareBp, userId: "u", signedUp: true, ...over });
+  const noFee: EventFee = { type: "percent", value: 0n };
+
+  it("soma diferente de 100% é recusada (AC#1, Q22)", () => {
+    expect(checkSplitConfirm([line(5000), line(4999)], 1000n, noFee)).toEqual({ ok: false, reason: "shares_not_100" });
+    expect(checkSplitConfirm([line(5000), line(5001)], 1000n, noFee)).toEqual({ ok: false, reason: "shares_not_100" });
+    expect(checkSplitConfirm([], 1000n, noFee)).toEqual({ ok: false, reason: "shares_not_100" });
+  });
+
+  it("taxa fixa maior que o total é recusada: sem isso o distribuível ficaria negativo", () => {
+    expect(checkSplitConfirm([line(10_000)], 1000n, { type: "fixed", value: 1001n })).toEqual({ ok: false, reason: "fee_exceeds_total" });
+  });
+
+  it("participação para quem não estava inscrito é recusada (Q7)", () => {
+    expect(checkSplitConfirm([line(5000), line(5000, { signedUp: false })], 1000n, noFee)).toEqual({ ok: false, reason: "share_without_signup" });
+  });
+
+  it("participação para quem não tem conta no painel é recusada: não há para quem creditar", () => {
+    expect(checkSplitConfirm([line(5000), line(5000, { userId: null })], 1000n, noFee)).toEqual({ ok: false, reason: "share_without_account" });
+  });
+
+  it("presente sem conta e sem participação não atrapalha ninguém (Q7)", () => {
+    const result = checkSplitConfirm([line(10_000), line(0, { userId: null, signedUp: false })], 1000n, noFee);
+    expect(result.ok).toBe(true);
+  });
+
+  it("o plano fecha exatamente o total: linhas + taxa + sobra (AC#2)", () => {
+    const result = checkSplitConfirm([line(3334), line(3333), line(3333)], 1_000_000n, { type: "percent", value: 1000n });
+    if (!result.ok) throw new Error(result.reason);
+    const { fee, amounts, residual, ownerSilver } = result.plan;
+    expect(fee.feeSilver).toBe(100_000n);
+    expect(fee.distributable).toBe(900_000n);
+    expect(amounts).toEqual([300_060n, 299_970n, 299_970n]);
+    expect(residual).toBe(0n);
+    expect(ownerSilver).toBe(100_000n);
+    expect(amounts.reduce((a, b) => a + b, 0n) + ownerSilver).toBe(1_000_000n);
+  });
+
+  it("a sobra do arredondamento entra no crédito do dono junto com a taxa (Q23)", () => {
+    const result = checkSplitConfirm([line(3334), line(3333), line(3333)], 100n, { type: "fixed", value: 1n });
+    if (!result.ok) throw new Error(result.reason);
+    const { amounts, residual, ownerSilver } = result.plan;
+    expect(amounts).toEqual([33n, 32n, 32n]);
+    expect(residual).toBe(2n);
+    expect(ownerSilver).toBe(3n);
+    expect(amounts.reduce((a, b) => a + b, 0n) + ownerSilver).toBe(100n);
+  });
+
+  it("split sem loot nenhum confirma sem creditar ninguém", () => {
+    const result = checkSplitConfirm([line(10_000)], 0n, noFee);
+    if (!result.ok) throw new Error(result.reason);
+    expect(result.plan).toMatchObject({ amounts: [0n], residual: 0n, ownerSilver: 0n });
+  });
+
+  it("splitShareSum soma os basis points sem passar por float", () => {
+    expect(splitShareSum([{ shareBp: 3334 }, { shareBp: 3333 }, { shareBp: 3333 }])).toBe(10_000);
+  });
+
+  it("toda recusa tem uma frase em PT-BR que diz o que fazer", () => {
+    for (const reason of ["shares_not_100", "fee_exceeds_total", "share_without_account", "share_without_signup"] as const) {
+      expect(splitConfirmRefusalMessage(reason)).toMatch(/\S/);
+    }
+    expect(splitConfirmRefusalMessage("fee_exceeds_total")).toContain("taxa");
+    expect(splitConfirmRefusalMessage("shares_not_100")).toContain("100%");
+  });
+});
+
+describe("corpo da edição e do estorno (TASK-028)", () => {
+  it("aceita só o total, só as linhas, ou os dois", () => {
+    expect(lootSplitUpdateSchema.safeParse({ totalSilver: "1000" }).success).toBe(true);
+    expect(lootSplitUpdateSchema.safeParse({ lines: [{ id: "11111111-1111-4111-8111-111111111111", shareBp: 10_000 }] }).success).toBe(true);
+    expect(lootSplitUpdateSchema.safeParse({}).success).toBe(false);
+  });
+
+  it("recusa participação negativa, acima de 100% ou fracionada", () => {
+    const id = "11111111-1111-4111-8111-111111111111";
+    for (const shareBp of [-1, 10_001, 1.5]) expect(lootSplitUpdateSchema.safeParse({ lines: [{ id, shareBp }] }).success).toBe(false);
+  });
+
+  it("recusa id de linha que não é uuid", () => {
+    expect(lootSplitUpdateSchema.safeParse({ lines: [{ id: "nao-e-uuid", shareBp: 0 }] }).success).toBe(false);
+  });
+
+  it("total continua vindo como string e virando bigint (Q20)", () => {
+    const parsed = lootSplitUpdateSchema.parse({ totalSilver: "9007199254740993" });
+    expect(parsed.totalSilver).toBe(9_007_199_254_740_993n);
+  });
+
+  it("estorno exige motivo com conteúdo", () => {
+    expect(lootSplitReversalSchema.safeParse({ reason: "  " }).success).toBe(false);
+    expect(lootSplitReversalSchema.safeParse({ reason: "loot contado errado" }).success).toBe(true);
   });
 });
