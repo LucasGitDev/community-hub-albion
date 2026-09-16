@@ -69,6 +69,36 @@ export async function getWithdrawalBalance(db: Database | Tx, userId: string): P
   return { balance, reserved, available: balance - reserved };
 }
 
+/**
+ * Mesma conta de `getWithdrawalBalance`, para vários membros de uma vez (TASK-032): a fila da staff
+ * mostra o saldo de quem pediu ao lado de cada pedido, e uma query por linha não serve.
+ *
+ * Duas somas agrupadas por usuário — o ledger de um lado, as reservas do outro — juntadas em memória.
+ * Os totais voltam como `bigint` (Q20). Quem não tem lançamento nem reserva sai daqui com zero, para o
+ * chamador não precisar distinguir "sem saldo" de "não perguntei".
+ */
+export async function getWithdrawalBalances(db: Database | Tx, userIds: readonly string[]): Promise<Map<string, WithdrawalBalance>> {
+  const ids = [...new Set(userIds)];
+  const out = new Map<string, WithdrawalBalance>(ids.map((id) => [id, { balance: 0n, reserved: 0n, available: 0n }]));
+  if (ids.length === 0) return out;
+
+  const ledgerRows = await db
+    .select({ userId: ledgerEntries.userId, total: sql<bigint>`coalesce(sum(${ledgerEntries.amount}), 0)::int8` })
+    .from(ledgerEntries)
+    .where(inArray(ledgerEntries.userId, ids))
+    .groupBy(ledgerEntries.userId);
+  const reservedRows = await db
+    .select({ userId: withdrawals.userId, total: sql<bigint>`coalesce(sum(${withdrawals.amount}), 0)::int8` })
+    .from(withdrawals)
+    .where(and(inArray(withdrawals.userId, ids), inArray(withdrawals.status, [...RESERVING_WITHDRAWAL_STATUSES])))
+    .groupBy(withdrawals.userId);
+
+  for (const row of ledgerRows) out.get(row.userId)!.balance = BigInt(row.total);
+  for (const row of reservedRows) out.get(row.userId)!.reserved = BigInt(row.total);
+  for (const balance of out.values()) balance.available = balance.balance - balance.reserved;
+  return out;
+}
+
 const columns = {
   id: withdrawals.id,
   userId: withdrawals.userId,

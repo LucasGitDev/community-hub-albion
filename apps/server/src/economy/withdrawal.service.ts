@@ -3,6 +3,7 @@ import {
   approveWithdrawal,
   getWithdrawal,
   getWithdrawalBalance,
+  getWithdrawalBalances,
   listWithdrawals,
   rejectWithdrawal,
   requestWithdrawal,
@@ -37,6 +38,11 @@ export class WithdrawalService {
   /** Saldo, reserva e disponível do membro: a conta única do sistema (AC#2). */
   async balance(userId: string): Promise<WithdrawalBalance> {
     return getWithdrawalBalance(this.handle.db, userId);
+  }
+
+  /** Saldo de vários membros de uma vez: a fila da staff mostra o de cada dono junto do pedido (TASK-032). */
+  balances(userIds: readonly string[]): Promise<Map<string, WithdrawalBalance>> {
+    return getWithdrawalBalances(this.handle.db, userIds);
   }
 
   /** Cria o pedido `pending`, que reserva o saldo. Recusas em AC#1/Q24 voltam como `ok: false`. */

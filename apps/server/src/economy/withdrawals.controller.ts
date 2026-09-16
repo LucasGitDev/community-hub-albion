@@ -11,6 +11,7 @@ import {
   withdrawalTransitionError,
   type WithdrawalBalanceDto,
   type WithdrawalDto,
+  type WithdrawalQueueResponse,
 } from "@albion-hub/shared";
 import type { WithdrawalDecisionResult } from "@albion-hub/db";
 import type { Response } from "express";
@@ -106,16 +107,23 @@ export class WithdrawalsController {
     return auth.ability.can("approve", "Withdrawal");
   }
 
+  /**
+   * A fila que a tela da staff desenha (TASK-032). Junto dos pedidos vai o saldo de cada dono **que já
+   * está na lista devolvida**: é o contexto de quem aprova, e não amplia o que a resposta mostra — quem
+   * não é staff só recebe os próprios saques, logo só o próprio saldo.
+   */
   @Get()
   @Authorize("read", "Withdrawal")
-  async list(@Query() query: Record<string, unknown>, @CurrentAuth() auth: Auth, @Res({ passthrough: true }) res: Response): Promise<{ withdrawals: WithdrawalDto[] }> {
+  async list(@Query() query: Record<string, unknown>, @CurrentAuth() auth: Auth, @Res({ passthrough: true }) res: Response): Promise<WithdrawalQueueResponse> {
     const parsed = parseWithdrawalListQuery(query);
     if (!parsed.ok) throw new BadRequestException(parsed.error);
     const all = this.canSeeAll(auth);
     if (!all && parsed.filters.userId && parsed.filters.userId !== auth.user.id) throw new ForbiddenException("Você só pode ver os seus próprios saques.");
     res.setHeader("Cache-Control", "no-store");
     // Sem permissão de staff o filtro é o próprio id, não o que veio na query.
-    return { withdrawals: await this.withdrawals.list({ ...parsed.filters, userId: all ? parsed.filters.userId : auth.user.id }) };
+    const withdrawals = await this.withdrawals.list({ ...parsed.filters, userId: all ? parsed.filters.userId : auth.user.id });
+    const balances = await this.withdrawals.balances(withdrawals.map((w) => w.userId));
+    return { withdrawals, balances: Object.fromEntries([...balances].map(([id, b]) => [id, toBalanceDto(b)])) };
   }
 
   /** 404 (e não 403) quando o saque é de outro membro: a resposta não diz nem que o id existe. */
