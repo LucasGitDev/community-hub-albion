@@ -8,12 +8,14 @@ import { AuthProvider } from "./auth/AuthProvider";
 import { RequireAuth, RequirePermission } from "./auth/guards";
 import { AppShell } from "./components/AppShell";
 import { AdminRoles } from "./pages/AdminRoles";
+import { Events } from "./pages/Events";
 import { StoreProvider } from "./mock/store";
 import { Login } from "./pages/Login";
 import { MyWithdrawals } from "./pages/MyWithdrawals";
 import { Nick } from "./pages/Nick";
 import { Placeholder } from "./pages/Placeholder";
 import { StaffMembers } from "./pages/StaffMembers";
+import { StaffEvents } from "./pages/StaffEvents";
 import { StaffTemplates } from "./pages/StaffTemplates";
 import { StaffWithdrawals } from "./pages/StaffWithdrawals";
 import { Wallet } from "./pages/Wallet";
@@ -38,6 +40,8 @@ createRoot(document.getElementById("root")!).render(
             <Route path="/carteira" element={<Wallet />} />
             <Route path="/saques" element={<MyWithdrawals />} />
             <Route path="/nick" element={<Nick />} />
+            {/* Eventos: qualquer membro vê e se inscreve (TASK-023). */}
+            <Route path="/eventos" element={<Events />} />
             {/* Gate de UI com as mesmas regras CASL da API; a API é a autoridade (TASK-009). */}
             <Route
               path="/staff/saques"
@@ -51,7 +55,7 @@ createRoot(document.getElementById("root")!).render(
               path="/staff/eventos"
               element={
                 <RequirePermission action="create" subject="Event">
-                  <Placeholder title="Eventos" description="Criar, abrir inscrições, iniciar e encerrar eventos." task="TASK-023" />
+                  <StaffEvents />
                 </RequirePermission>
               }
             />
