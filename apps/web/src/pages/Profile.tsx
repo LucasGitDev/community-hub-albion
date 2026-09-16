@@ -33,11 +33,6 @@ export function Profile() {
       <PageHeader
         title="Meu perfil"
         description="Quem você é na comunidade: o nick que a staff aprovou, a conta do Discord que usa pra entrar e o que seus papéis liberam no painel."
-        action={
-          <Button variant="outline" asChild>
-            <Link to="/carteira">Ver carteira</Link>
-          </Button>
-        }
       />
       <Identity user={user} state={state} />
       <div className="mt-4 grid items-start gap-4 lg:grid-cols-[minmax(0,1fr)_20rem]">
@@ -226,6 +221,7 @@ function NickSection({ state, reload, set }: { state: MyNickState; reload: () =>
   );
 }
 
+/** Trilha do registro; com o nick já aprovado ela explica o que acontece numa troca (marclou-review #6). */
 function HowItWorks({ step }: { step: 1 | 2 | 3 }) {
   const steps = [
     { title: "Envie o nick do personagem", detail: "Igual aparece no jogo." },
@@ -233,7 +229,7 @@ function HowItWorks({ step }: { step: 1 | 2 | 3 }) {
     { title: "Apelido no Discord atualizado", detail: "Seu nome no servidor passa a ser o novo nick." },
   ];
   return (
-    <Panel title="Como funciona">
+    <Panel title={step === 3 ? "Como funciona a troca de nick" : "Como funciona"}>
       <ol className="space-y-1 p-3">
         {steps.map((s, i) => {
           const n = i + 1;
