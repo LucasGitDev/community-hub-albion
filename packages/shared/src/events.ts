@@ -215,6 +215,11 @@ export interface EventRoleSlotDto {
   id: string;
   roleId: string | null;
   name: string;
+  /**
+   * Descrição da role no catálogo (TASK-039): lida ao vivo por `roleId`, não congelada na vaga.
+   * Staff corrigir a descrição vale para evento já aberto. `null` quando a role saiu do catálogo.
+   */
+  description: string | null;
   slots: number;
 }
 
