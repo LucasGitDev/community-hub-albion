@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
-import { Check, CircleDashed, CloudOff, Download, Search, UserRoundX, Users } from "lucide-react";
+import { Check, CircleDashed, CloudOff, Download, Loader2, RefreshCw, Search, SlidersHorizontal, UserRoundX, Users } from "lucide-react";
 import { toast } from "sonner";
 import {
   describeAlbionCheck,
@@ -10,14 +10,16 @@ import {
   type AlbionCheckKind,
   type MemberFilter,
 } from "@albion-hub/shared";
-import { fetchAdminMembers, importDiscordMembers, type AdminMember, type AdminMembersPage, type MemberImportSummary } from "@/api/members";
+import { checkMemberAlbion, fetchAdminMembers, importDiscordMembers, type AdminMember, type AdminMembersPage, type MemberImportSummary } from "@/api/members";
 import { errorText } from "@/api/http";
 import { usePoll } from "@/api/use-poll";
+import { MemberManageDialog } from "@/components/MemberManageDialog";
 import { EmptyState, PageHeader, Panel, Pill, StatCard, type Tone } from "@/components/display";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { formatDateTime } from "@/lib/format";
 import { cn } from "@/lib/utils";
 
@@ -52,6 +54,12 @@ export function AdminMembers() {
   const [page, setPage] = useState(1);
   const [importing, setImporting] = useState(false);
   const [summary, setSummary] = useState<MemberImportSummary | null>(null);
+  const [managing, setManaging] = useState<string | null>(null);
+  /**
+   * O que a tela já sabe e o servidor ainda não repetiu: conferir o nick ou editar o membro troca só a linha,
+   * sem recarregar a lista (AC#1/AC#2). O próximo carregamento traz o valor do servidor e o mapa é descartado.
+   */
+  const [edits, setEdits] = useState<Record<string, Partial<AdminMember>>>({});
   const debouncedSearch = useDebounced(search);
 
   // Trocar busca ou filtro volta pra primeira página: página 3 de um resultado com 2 páginas é uma tela vazia.
@@ -88,9 +96,11 @@ export function AdminMembers() {
 
   const counts = data?.counts ?? { todos: 0, nao_encontrados: 0, sem_nick: 0 };
   const pageCount = data ? memberPageCount(data.total, data.pageSize) : 1;
+  const members = data?.members.map((m) => ({ ...m, ...edits[m.id] })) ?? [];
+  const patch = (id: string, values: Partial<AdminMember>) => setEdits((prev) => ({ ...prev, [id]: { ...prev[id], ...values } }));
 
   return (
-    <>
+    <TooltipProvider>
       <PageHeader
         title="Membros"
         description="Quem já tem conta no painel, com o nick conferido na API do Albion. Importar traz de novo quem tem cargo Membro e apelido no Discord."
@@ -159,7 +169,7 @@ export function AdminMembers() {
 
         {loading && <p className="px-4 py-6 text-sm text-muted-foreground">Carregando membros…</p>}
 
-        {data && data.members.length === 0 && (
+        {data && members.length === 0 && (
           <div className="p-4">
             <EmptyState
               icon={<Users />}
@@ -191,7 +201,7 @@ export function AdminMembers() {
           </div>
         )}
 
-        {data && data.members.length > 0 && (
+        {data && members.length > 0 && (
           <Table>
             <TableHeader>
               <TableRow>
@@ -200,11 +210,12 @@ export function AdminMembers() {
                 <TableHead className="hidden sm:table-cell">Papéis</TableHead>
                 <TableHead className="hidden lg:table-cell">Entrou</TableHead>
                 <TableHead>Albion</TableHead>
+                <TableHead className="text-right">Ações</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
-              {data.members.map((m) => (
-                <MemberRow key={m.id} member={m} />
+              {members.map((m) => (
+                <MemberRow key={m.id} member={m} onChecked={(albion) => patch(m.id, { albion })} onManage={() => setManaging(m.id)} />
               ))}
             </TableBody>
           </Table>
@@ -229,11 +240,20 @@ export function AdminMembers() {
       </Panel>
 
       <ImportSummaryDialog summary={summary} onClose={() => setSummary(null)} />
-    </>
+
+      <MemberManageDialog
+        member={members.find((m) => m.id === managing) ?? null}
+        onClose={() => setManaging(null)}
+        onSaved={(saved) => {
+          // Nick trocado zera a conferência no servidor: a linha precisa refletir isso na hora, não mentir.
+          if (managing) patch(managing, { gameNick: saved.nick, guildTag: saved.guildTag, albion: { status: null, playerId: null, guildName: null, checkedAt: null } });
+        }}
+      />
+    </TooltipProvider>
   );
 }
 
-function MemberRow({ member }: { member: AdminMember }) {
+function MemberRow({ member, onChecked, onManage }: { member: AdminMember; onChecked: (albion: AdminMember["albion"]) => void; onManage: () => void }) {
   const name = member.gameNick || member.displayName || member.discordUsername;
   const albion = describeAlbionCheck({ status: member.albion.status, guildName: member.albion.guildName, checkedAt: member.albion.checkedAt });
   const meta = albionMeta[albion.kind];
@@ -260,8 +280,72 @@ function MemberRow({ member }: { member: AdminMember }) {
           {albion.label}
         </Pill>
         {albion.detail && <p className="mt-0.5 truncate text-xs text-muted-foreground">{albion.detail}</p>}
+        {member.albion.checkedAt && <p className="num mt-0.5 truncate text-xs text-muted-foreground">{formatDateTime(member.albion.checkedAt)}</p>}
+      </TableCell>
+      <TableCell>
+        <MemberActions member={member} onChecked={onChecked} onManage={onManage} />
       </TableCell>
     </TableRow>
+  );
+}
+
+/**
+ * Ações da linha (AC#1/AC#2/AC#3). Botões de ícone com rótulo acessível e dica: a coluna precisa caber em
+ * 400px de largura, e nome de ação por extenso em toda linha rouba o espaço do que o admin veio ler.
+ */
+function MemberActions({ member, onChecked, onManage }: { member: AdminMember; onChecked: (albion: AdminMember["albion"]) => void; onManage: () => void }) {
+  const [checking, setChecking] = useState(false);
+  const name = member.gameNick || member.discordUsername;
+
+  async function check() {
+    setChecking(true);
+    try {
+      const { albion } = await checkMemberAlbion(member.id);
+      onChecked(albion);
+      const message =
+        albion.status === "found"
+          ? `${name} encontrado no Albion`
+          : albion.status === "not_found"
+            ? `${name} não foi encontrado no Albion`
+            : `A API do Albion não respondeu sobre ${name}`;
+      // Achar é sucesso; não achar é o resultado acionável da tela, não uma falha da ferramenta: aviso, não erro.
+      (albion.status === "found" ? toast.success : toast.warning)(message, {
+        description: albion.status === "found" ? (albion.guildName ? `Guilda ${albion.guildName}` : "Sem guilda") : "Confira o nick com a pessoa.",
+      });
+    } catch (e) {
+      toast.error(errorText(e, "Não foi possível conferir o nick no Albion"));
+    } finally {
+      setChecking(false);
+    }
+  }
+
+  return (
+    <div className="flex justify-end gap-1">
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <Button
+            variant="outline"
+            size="icon"
+            className="press"
+            disabled={checking || !member.gameNick}
+            aria-label={`Conferir ${name} no Albion`}
+            onClick={() => void check()}
+          >
+            {checking ? <Loader2 className="animate-spin" /> : <RefreshCw />}
+          </Button>
+        </TooltipTrigger>
+        <TooltipContent>{member.gameNick ? "Conferir o nick na API do Albion agora" : "Sem nick registrado: não há o que conferir"}</TooltipContent>
+      </Tooltip>
+
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <Button variant="outline" size="icon" className="press" aria-label={`Gerenciar ${name}`} onClick={onManage}>
+            <SlidersHorizontal />
+          </Button>
+        </TooltipTrigger>
+        <TooltipContent>Editar nick e tag, ler e escrever notas</TooltipContent>
+      </Tooltip>
+    </div>
   );
 }
 
