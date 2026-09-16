@@ -5,18 +5,25 @@ import type { Action } from "./permissions.js";
 /**
  * Evento e sua máquina de estados (TASK-021, Q26). Máquina pura: mesma fonte para API, bot e painel.
  *
- * Fluxo: `draft → open → closed → running → finished`, com `cancelled` alcançável de qualquer
- * estado antes de `finished`. Duas arestas merecem nota:
+ * Fluxo: `draft → open → closed → running → finished → archived`, com `cancelled` alcançável de
+ * qualquer estado antes de `finished`. Arestas que merecem nota:
  * - `open → running` existe porque Q26 diz que o start fecha a inscrição: quem clica em iniciar
  *   com o evento aberto não precisa fechar antes (o repo grava `closed_at` junto).
- * - não há volta (`closed → open`, `running → open`...): reabrir inscrição não está em nenhuma Q
+ * - `finished → archived` (TASK-044, Q26 revisada em 2026-09-16): `finished` encerra o **jogo**, não o
+ *   trabalho — o caller ainda acerta os dados do evento, a taxa e os loot splits depois que a galera
+ *   desloga. `archived` é o fim de fato: dali nada mais muda (ver `eventEditBlocked`).
+ * - `cancelled → archived` **não** existe: cancelado já é um fim, e não tem nada pendente para fechar
+ *   (as inscrições caíram junto e o evento não aceita split). Dois estados finais distintos dizem
+ *   coisas diferentes — "terminou e foi fechado" e "não aconteceu" — e juntá-los só apagaria essa
+ *   informação do histórico.
+ * - não há volta (`closed → open`, `archived → finished`...): reabrir inscrição não está em nenhuma Q
  *   da v1 e reabrir depois do start bagunçaria a janela de presença (Q6). Fica para quando houver pedido.
  */
-export const EVENT_STATUSES = ["draft", "open", "closed", "running", "finished", "cancelled"] as const;
+export const EVENT_STATUSES = ["draft", "open", "closed", "running", "finished", "cancelled", "archived"] as const;
 export type EventStatus = (typeof EVENT_STATUSES)[number];
 
-/** Estados terminais: nada sai deles. */
-export const TERMINAL_EVENT_STATUSES: readonly EventStatus[] = ["finished", "cancelled"];
+/** Estados terminais: nada sai deles. `finished` saiu daqui na TASK-044 — agora ele ainda vai para `archived`. */
+export const TERMINAL_EVENT_STATUSES: readonly EventStatus[] = ["cancelled", "archived"];
 
 /** Única fonte de verdade das arestas. Tudo que não está aqui é inválido. */
 export const ALLOWED_EVENT_TRANSITIONS: Readonly<Record<EventStatus, readonly EventStatus[]>> = {
@@ -24,8 +31,9 @@ export const ALLOWED_EVENT_TRANSITIONS: Readonly<Record<EventStatus, readonly Ev
   open: ["closed", "running", "cancelled"],
   closed: ["running", "cancelled"],
   running: ["finished", "cancelled"],
-  finished: [],
+  finished: ["archived"],
   cancelled: [],
+  archived: [],
 };
 
 export function canTransition(from: EventStatus, to: EventStatus): boolean {
@@ -44,6 +52,7 @@ export const EVENT_TRANSITIONS = {
   start: "running",
   finish: "finished",
   cancel: "cancelled",
+  archive: "archived",
 } as const satisfies Record<string, EventStatus>;
 
 export type EventTransition = keyof typeof EVENT_TRANSITIONS;
@@ -59,6 +68,7 @@ export const EVENT_TRANSITION_ACTIONS: Readonly<Record<EventTransition, Action>>
   start: "start",
   finish: "finish",
   cancel: "cancel",
+  archive: "archive",
 };
 export const EVENT_TRANSITION_NAMES = Object.keys(EVENT_TRANSITIONS) as EventTransition[];
 
@@ -73,9 +83,28 @@ const STATUS_LABELS: Record<EventStatus, string> = {
   running: "em andamento",
   finished: "finalizado",
   cancelled: "cancelado",
+  archived: "arquivado",
 };
 
 export const eventStatusLabel = (status: EventStatus) => STATUS_LABELS[status];
+
+/**
+ * 409 de qualquer escrita num evento arquivado (TASK-044, AC#2). Uma frase só, num lugar só: a API, o
+ * bot e o painel dizem exatamente isso, então ninguém descobre a regra com três versões da história.
+ */
+export const EVENT_ARCHIVED_EDIT_ERROR = "Evento arquivado não pode mais ser editado.";
+
+/**
+ * Motivo pelo qual este evento não aceita mais edição, ou `null` quando aceita.
+ *
+ * É o guard único do arquivamento: mexer nos dados do evento, na lista de inscritos, na taxa ou nos
+ * loot splits passa por aqui antes de tocar no banco. `finished` **não** bloqueia nada — Q26 (revisada
+ * em 2026-09-16) diz que o acerto da prata acontece depois que o jogo acabou. O serviço de split da F5
+ * (TASK-027/028) chama esta mesma função em vez de reescrever a regra.
+ */
+export function eventEditBlocked(status: EventStatus): string | null {
+  return status === "archived" ? EVENT_ARCHIVED_EDIT_ERROR : null;
+}
 
 /** Mensagem PT-BR do 409: diz o estado atual e o que dá para fazer agora. */
 export function transitionError(from: EventStatus, to: EventStatus): string {
@@ -195,6 +224,8 @@ export interface EventDto {
   startedAt: string | null;
   finishedAt: string | null;
   cancelledAt: string | null;
+  /** Quando o evento foi arquivado (TASK-044); a partir daqui nada mais muda. */
+  archivedAt: string | null;
   /** Motivo do cancelamento (TASK-025); null quando não foi cancelado ou ninguém escreveu nada. */
   cancelReason: string | null;
   roles: EventRoleSlotDto[];
