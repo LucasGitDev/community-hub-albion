@@ -27,7 +27,7 @@ export class AppModule {
   static register(env: Env, options: AppModuleOptions = { bot: true }): DynamicModule {
     return {
       module: AppModule,
-      imports: [DbModule.register(env.DATABASE_URL), EconomyModule, AuthModule.register(env, options.memberImporter), NickModule.register(env), MembersModule.register(env), TemplatesModule.register(env), EventsModule.register(env), ...(options.bot ? [BotModule.register(env)] : [])],
+      imports: [DbModule.register(env.DATABASE_URL), EconomyModule.register(env), AuthModule.register(env, options.memberImporter), NickModule.register(env), MembersModule.register(env), TemplatesModule.register(env), EventsModule.register(env), ...(options.bot ? [BotModule.register(env)] : [])],
       controllers: [HealthController],
     };
   }
