@@ -1,8 +1,7 @@
 import { expect, test, type Page } from "@playwright/test";
+import { ORIGIN } from "./session";
 
 /** Registro e troca de nick (TASK-012, Q14/Q31). Discord IDs por projeto: desktop e mobile rodam em paralelo no mesmo banco. */
-
-const ORIGIN = "http://localhost:4173";
 
 async function login(page: Page, base: string, username: string, gameNick?: string) {
   const suffix = test.info().project.name === "mobile" ? "9" : "8";

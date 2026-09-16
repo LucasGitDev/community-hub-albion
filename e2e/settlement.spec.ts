@@ -1,4 +1,5 @@
 import { expect, test, type Page } from "@playwright/test";
+import { ORIGIN } from "./session";
 
 /**
  * Acerto do evento finalizado (TASK-029): dados, taxa e loot split até o crédito no ledger.
@@ -7,7 +8,6 @@ import { expect, test, type Page } from "@playwright/test";
  * execução cria o seu próprio template, o seu evento e os seus usuários.
  */
 
-const ORIGIN = "http://localhost:4173";
 const tag = () => (test.info().project.name === "mobile" ? "M" : "D");
 
 async function login(page: Page, base: string, username: string, roles: string[] = []) {

@@ -1,12 +1,11 @@
 import { expect, test, type Page } from "@playwright/test";
+import { ORIGIN } from "./session";
 
 /**
  * Lista de membros do admin (TASK-043). Discord IDs por projeto: desktop e mobile rodam em paralelo no mesmo banco.
  * O bot está desligado no e2e (DISCORD_BOT_ENABLED=false), então o import responde 503 com texto claro — é isso que
  * a tela precisa mostrar. Nenhuma chamada real ao Discord ou ao Albion acontece aqui.
  */
-
-const ORIGIN = "http://localhost:4173";
 
 async function login(page: Page, base: string, username: string, roles: string[] = []) {
   const suffix = test.info().project.name === "mobile" ? "9" : "8";
