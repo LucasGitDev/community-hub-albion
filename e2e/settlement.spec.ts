@@ -42,7 +42,7 @@ const selectEvent = (page: Page, eventName: string) =>
  */
 test("caller acerta o evento finalizado: dados, taxa, split e confirmação (AC#1 a #11)", async ({ page }) => {
   test.setTimeout(180_000);
-  const run = `${tag()}s${Date.now().toString(36)}`;
+  const run = `${tag()}s${Date.now().toString(36)}${Math.floor(Math.random() * 1e4).toString(36)}`;
   const templateName = `Acerto ${run}`;
   const eventName = `Evento acerto ${run}`;
 
@@ -81,6 +81,9 @@ test("caller acerta o evento finalizado: dados, taxa, split e confirmação (AC#
   await page.reload();
   const fila = page.getByRole("region", { name: "Eventos", exact: true });
   await expect(fila.getByRole("heading", { name: /A acertar/ })).toBeVisible();
+  // O evento está na seção A acertar, e não no meio do histórico (o banco do e2e tem eventos de outras rodadas).
+  await expect(fila.getByRole("button", { name: new RegExp(eventName) })).toBeVisible();
+  await selectEvent(page, eventName);
   const painel = page.getByRole("region", { name: eventName });
   await expect(painel.getByRole("tab", { name: "Acerto" })).toHaveAttribute("data-state", "active");
   await snap(page, `acerto-fila-${tag()}`);
@@ -173,22 +176,28 @@ test("caller acerta o evento finalizado: dados, taxa, split e confirmação (AC#
   await expect(acerto.getByLabel(/^Participação de .* em porcentagem$/)).toHaveCount(0);
   await snap(page, `acerto-confirmado-${tag()}`);
 
-  /*
-   * A prata foi creditada de verdade, e não só desenhada: o split voltou confirmado, com a linha
-   * fechando os 9.000.000 do distribuível. (A carteira do membro ainda é a tela de demonstração —
-   * ligá-la ao ledger real é a TASK-031 —, então a prova vem da API que gravou.)
-   */
+  /* A prata foi creditada de verdade, e não só desenhada: o split voltou confirmado pela API... */
+  const eventId = await page.evaluate(async (name) => {
+    const res = await fetch("/api/events");
+    return ((await res.json()) as { events: { id: string; name: string }[] }).events.find((e) => e.name === name)!.id;
+  }, eventName);
   const gravado = await page.evaluate(async (id) => {
     const res = await fetch(`/api/events/${id}/splits`);
     return (await res.json()) as { splits: { status: string; totalSilver: string; feeSilver: string; lines: { amount: string }[] }[] };
-  }, await page.evaluate(async (name) => {
-    const res = await fetch("/api/events");
-    return ((await res.json()) as { events: { id: string; name: string }[] }).events.find((e) => e.name === name)!.id;
-  }, eventName));
+  }, eventId);
   expect(gravado.splits).toHaveLength(1);
   expect(gravado.splits[0]!.status).toBe("confirmed");
   expect(gravado.splits[0]!.feeSilver).toBe("1000000");
   expect(gravado.splits[0]!.lines.map((l) => l.amount)).toEqual(["9000000"]);
+
+  // ...e quem jogou vê os 9.000.000 na carteira dele, formatados em PT-BR (AC#11).
+  await login(page, "75000000000000003", "jogadorAc");
+  await page.goto("/carteira");
+  await expect(page.getByText("9.000.000").first()).toBeVisible();
+  await snap(page, `acerto-carteira-${tag()}`);
+
+  await login(page, "75000000000000002", "callerAc", ["caller"]);
+  await page.goto("/staff/eventos");
 
   // AC#10: sem rascunho pendente, arquivar volta a ser possível e fecha o evento de vez (AC#2).
   await selectEvent(page, eventName);
@@ -206,7 +215,7 @@ test("caller acerta o evento finalizado: dados, taxa, split e confirmação (AC#
 /** AC#12: quem não conduz o evento não vê a aba nem passa pela API — nem o caller do evento do vizinho. */
 test("membro e caller de outro evento não alcançam o acerto (AC#12)", async ({ page }) => {
   test.setTimeout(120_000);
-  const run = `${tag()}p${Date.now().toString(36)}`;
+  const run = `${tag()}p${Date.now().toString(36)}${Math.floor(Math.random() * 1e4).toString(36)}`;
   const templateName = `Privado ${run}`;
   const eventName = `Evento privado ${run}`;
 
