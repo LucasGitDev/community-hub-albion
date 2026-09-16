@@ -1,18 +1,7 @@
 import type { EventRoleDto, EventTemplateDto, EventTemplateInput } from "@albion-hub/shared";
+import { api } from "@/api/http";
 
 /** API do catálogo de roles e templates (TASK-020). Mensagem PT-BR da API vira o texto do toast. */
-async function api<T>(path: string, init?: RequestInit): Promise<T> {
-  const res = await fetch(path, {
-    credentials: "same-origin",
-    ...init,
-    headers: { Accept: "application/json", "Content-Type": "application/json", ...init?.headers },
-  });
-  if (!res.ok) {
-    const body = (await res.json().catch(() => null)) as { message?: unknown } | null;
-    throw new Error(typeof body?.message === "string" ? body.message : `Falha na requisição (HTTP ${res.status})`);
-  }
-  return (res.status === 204 ? undefined : await res.json()) as T;
-}
 
 export const fetchEventRoles = () => api<{ roles: EventRoleDto[] }>("/api/event-roles").then((r) => r.roles);
 export const fetchEventTemplates = () => api<{ templates: EventTemplateDto[] }>("/api/event-templates").then((r) => r.templates);
