@@ -1,4 +1,4 @@
-import { EVENT_SIGNUP_STATUSES, EVENT_STATUSES, LEDGER_ENTRY_KINDS, LEDGER_REFERENCE_TYPES, NICK_REQUEST_STATUSES, ROLES, USER_NOTE_KINDS } from "@albion-hub/shared";
+import { EVENT_SIGNUP_STATUSES, EVENT_STATUSES, LEDGER_ENTRY_KINDS, LEDGER_REFERENCE_TYPES, NICK_REQUEST_STATUSES, ROLES, USER_NOTE_KINDS, WITHDRAWAL_STATUSES } from "@albion-hub/shared";
 import { sql } from "drizzle-orm";
 import { bigint, boolean, check, index, integer, pgEnum, pgTable, primaryKey, text, timestamp, uniqueIndex, uuid, type AnyPgColumn } from "drizzle-orm/pg-core";
 
@@ -424,5 +424,61 @@ export const userNotes = pgTable(
     // A tela lê sempre "as notas deste membro em ordem"; o índice cobre exatamente essa consulta.
     index("user_notes_user_idx").on(t.userId, t.createdAt),
     check("user_notes_body_not_blank", sql`length(btrim(${t.body})) > 0`),
+  ],
+);
+
+export const withdrawalStatusEnum = pgEnum("withdrawal_status", WITHDRAWAL_STATUSES);
+
+/**
+ * Pedido de saque de prata (TASK-030, doc-002). Tabela própria, **fora** do ledger: enquanto o saque está
+ * `pending` ele só reserva saldo (AC#2, Q25) e nada aparece no extrato do membro. A aprovação é que cria o
+ * lançamento de débito, e `ledger_entry_id` guarda qual foi — é o vínculo que prova que não houve débito
+ * duplicado nem aprovação sem lançamento.
+ *
+ * Diferente do ledger, esta linha **muda de estado** (é um pedido, não um fato contábil), mas cada passo
+ * é carimbado e só anda para frente: `pending → approved → settled`, ou `pending → rejected`.
+ */
+export const withdrawals = pgTable(
+  "withdrawals",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    /** Dono do saque. `restrict` como no ledger: a dívida com o membro (Q10) não some junto com a conta. */
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "restrict" }),
+    /** Prata inteira (Q20), sempre positiva: o sinal de débito é do lançamento, não do pedido. */
+    amount: bigint("amount", { mode: "bigint" }).notNull(),
+    status: withdrawalStatusEnum("status").notNull().default("pending"),
+    /** Débito lançado na aprovação. `restrict`: o lançamento é append-only e não pode ser apagado. */
+    ledgerEntryId: uuid("ledger_entry_id").references(() => ledgerEntries.id, { onDelete: "restrict" }),
+    /** Staff que aprovou ou recusou (AC#3). */
+    decidedBy: uuid("decided_by").references(() => users.id, { onDelete: "restrict" }),
+    decidedAt: timestamp("decided_at", { withTimezone: true }),
+    /** Motivo da recusa (obrigatório) ou observação da aprovação (opcional). */
+    decisionNote: text("decision_note"),
+    /** Quem pagou in-game e quando (Q11, AC#4). */
+    settledBy: uuid("settled_by").references(() => users.id, { onDelete: "restrict" }),
+    settledAt: timestamp("settled_at", { withTimezone: true }),
+    settlementNote: text("settlement_note"),
+    createdAt: createdAt(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    // Fila da staff e reserva por membro: as duas consultas quentes.
+    index("withdrawals_status_idx").on(t.status, t.createdAt),
+    index("withdrawals_user_idx").on(t.userId, t.createdAt),
+    uniqueIndex("withdrawals_ledger_entry_unique").on(t.ledgerEntryId).where(sql`${t.ledgerEntryId} is not null`),
+    check("withdrawals_amount_positive", sql`${t.amount} > 0`),
+    // Débito no ledger existe exatamente nos estados em que a prata já saiu (Q25).
+    check("withdrawals_ledger_entry_consistent", sql`(${t.ledgerEntryId} is not null) = (${t.status} in ('approved', 'settled'))`),
+    // Decisão completa: quem, quando e (na recusa) por quê.
+    check("withdrawals_decision_consistent", sql`(${t.decidedBy} is null) = (${t.decidedAt} is null)`),
+    check("withdrawals_decided_when_not_pending", sql`(${t.status} = 'pending') = (${t.decidedAt} is null)`),
+    check("withdrawals_rejection_note_required", sql`${t.status} <> 'rejected' or (${t.decisionNote} is not null and length(btrim(${t.decisionNote})) > 0)`),
+    // Liquidação exige quem + quando + nota, e só existe em `settled` (AC#4, Q11).
+    check(
+      "withdrawals_settlement_consistent",
+      sql`(${t.status} = 'settled') = (${t.settledBy} is not null and ${t.settledAt} is not null and ${t.settlementNote} is not null and length(btrim(${t.settlementNote})) > 0)`,
+    ),
   ],
 );
