@@ -130,6 +130,8 @@ export function parseEventListQuery(query: Record<string, unknown>): { ok: true;
 
 /** Vaga de role copiada do template no momento da criação (não muda se o template for editado depois). */
 export interface EventRoleSlotDto {
+  /** Id da vaga no evento (`event_role_slots.id`): é ele que o botão de inscrição carrega (TASK-022). */
+  id: string;
   roleId: string | null;
   name: string;
   slots: number;
@@ -145,6 +147,8 @@ export interface EventDto {
   ownerUserId: string;
   createdByUserId: string | null;
   voiceChannelId: string | null;
+  /** Mensagem do embed de inscrição no Discord (TASK-022); null enquanto o evento não foi publicado. */
+  discordMessageId: string | null;
   startsAt: string | null;
   signupsCloseAt: string | null;
   openedAt: string | null;
