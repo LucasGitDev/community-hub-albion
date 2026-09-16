@@ -6,6 +6,9 @@ import { DISCORD_GUILD_GATEWAY, DISCORD_GUILD_ID, DiscordJsGuildGateway } from "
 import { DISCORD_MEMBER_ROLE_ID, DiscordMemberSync } from "./discord-member-sync.service.js";
 import { EventEmbedService } from "./event-embed.service.js";
 import { EventSignupInteractions } from "./event-signup.interactions.js";
+import { DISCORD_EVENT_CATEGORY_ID, DISCORD_WAITING_VOICE_CHANNEL_ID, DiscordJsEventVoiceGateway, EVENT_VOICE_GATEWAY } from "./event-voice.gateway.js";
+import { EventVoiceService } from "./event-voice.service.js";
+import { EventCommand } from "./event.command.js";
 import { DISCORD_EVENTS_CHANNEL_ID, DiscordJsEventsChannelGateway, EVENTS_CHANNEL_GATEWAY } from "./events-channel.gateway.js";
 import { NickEmbedInteractions } from "./nick-embed.interactions.js";
 import { NickStaffEmbedService } from "./nick-staff-embed.service.js";
@@ -20,10 +23,12 @@ import { VOICE_GUILD_ID, VoiceListener } from "./voice.listener.js";
 
 @Module({})
 export class BotModule {
-  static register(env: Pick<Env, "DISCORD_TOKEN" | "GUILD_ID" | "DISCORD_MEMBER_ROLE_ID" | "DISCORD_STAFF_CHANNEL_ID" | "DISCORD_EVENTS_CHANNEL_ID">): DynamicModule {
+  static register(env: Pick<Env, "DISCORD_TOKEN" | "GUILD_ID" | "DISCORD_MEMBER_ROLE_ID" | "DISCORD_STAFF_CHANNEL_ID" | "DISCORD_EVENTS_CHANNEL_ID" | "DISCORD_WAITING_VOICE_CHANNEL_ID" | "DISCORD_EVENT_CATEGORY_ID">): DynamicModule {
     if (!env.DISCORD_MEMBER_ROLE_ID) throw new Error("DISCORD_MEMBER_ROLE_ID obrigatória com o bot ligado");
     if (!env.DISCORD_STAFF_CHANNEL_ID) throw new Error("DISCORD_STAFF_CHANNEL_ID obrigatória com o bot ligado");
     if (!env.DISCORD_EVENTS_CHANNEL_ID) throw new Error("DISCORD_EVENTS_CHANNEL_ID obrigatória com o bot ligado");
+    if (!env.DISCORD_WAITING_VOICE_CHANNEL_ID) throw new Error("DISCORD_WAITING_VOICE_CHANNEL_ID obrigatória com o bot ligado");
+    if (!env.DISCORD_EVENT_CATEGORY_ID) throw new Error("DISCORD_EVENT_CATEGORY_ID obrigatória com o bot ligado");
     return {
       module: BotModule,
       imports: [
@@ -62,6 +67,12 @@ export class BotModule {
         { provide: EVENTS_CHANNEL_GATEWAY, useClass: DiscordJsEventsChannelGateway },
         EventEmbedService,
         EventSignupInteractions,
+        // TASK-024: canal de voz por evento (start cria e arrasta; finish devolve e apaga) + /evento iniciar|encerrar.
+        { provide: DISCORD_WAITING_VOICE_CHANNEL_ID, useValue: env.DISCORD_WAITING_VOICE_CHANNEL_ID },
+        { provide: DISCORD_EVENT_CATEGORY_ID, useValue: env.DISCORD_EVENT_CATEGORY_ID },
+        { provide: EVENT_VOICE_GATEWAY, useClass: DiscordJsEventVoiceGateway },
+        EventVoiceService,
+        EventCommand,
       ],
     };
   }
