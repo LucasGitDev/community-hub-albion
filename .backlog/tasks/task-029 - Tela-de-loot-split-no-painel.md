@@ -5,7 +5,7 @@ status: In Progress
 assignee:
   - '@claude'
 created_date: '2026-09-15 03:24'
-updated_date: '2026-09-16 20:56'
+updated_date: '2026-09-16 21:04'
 labels:
   - frontend
   - economy
@@ -194,6 +194,30 @@ Skills: emil-design-eng, frontend-design, ask-sonner, security-review, task-done
 | #5 doc-005 | Q26 (finished acerta, archived fecha), Q22 (100% para confirmar), Q23 (taxa e resíduo para o dono, N levas), Q20 (prata inteira, UI formata), Q7 (presente não inscrito com 0%), bloco "Taxa do split" (% ou fixo, sem teto, antes da divisão) |
 | #6 security-review | sem achado ≥ 8 |
 | #7 notas e commits | 6 commits Conventional atômicos, sem co-autor |
+
+## Rebase em origin/main (TASK-031/032 mergeadas) + gate final
+
+Rebase limpo em `0b83525`, sem conflito (a TASK-031 tocou a carteira, esta task não). Com a carteira real na `main`, o e2e deixou de provar o crédito só pela API e passa a abrir `/carteira` como o jogador: os 9.000.000 aparecem lá, formatados em PT-BR.
+
+Duas correções de flake vieram do CI e de um `--repeat-each=2` local:
+- **toast repetido**: o teste salva 10% duas vezes e os dois toasts coexistem por um instante; as asserções de toast agora usam `.first()`;
+- **seleção automática**: o banco do e2e acumula eventos finalizados de outras rodadas, e a auto-seleção do painel podia abrir o evento de outra rodada. O teste agora confere que o evento está **dentro** da seção A acertar e clica nele, o que prova a mesma coisa sem depender de qual é o primeiro da fila. O nome do evento também ganhou sufixo aleatório, porque dois testes começando no mesmo milissegundo colidiam no nome do template.
+
+Com isso, 8/8 em `--repeat-each=2` (2 testes × 2 viewports × 2 repetições).
+
+| Métrica | Resultado | Threshold | Status |
+|---|---|---|---|
+| Linting | 0 issues | 0 | ✅ |
+| Race conditions | 0 | 0 | ✅ |
+| Typecheck | ok | 0 erros | ✅ |
+| Testes + coverage (branch) | 89.22% | ≥ 79% | ✅ |
+| E2E + screenshots (1280/400) | 76 ok, 0 falha, 0 flaky | 0 falhas | ✅ |
+| Imagem Docker (build + smoke) | ok | ok | ✅ |
+| Duplicação | 1.80% | ≤ 15% | ✅ |
+| Dead code | 6, todos pré-existentes em apps/web/src/components/ui | advisory | ⚠️ |
+| Vulnerabilidades high+ | 0 | 0 | ✅ |
+
+Commit do gate: `5e1cae65`.
 <!-- SECTION:NOTES:END -->
 
 ## Final Summary
