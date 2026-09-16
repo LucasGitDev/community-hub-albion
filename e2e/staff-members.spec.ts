@@ -18,7 +18,7 @@ async function snap(page: Page, name: string) {
 }
 
 async function requestNick(page: Page, nick: string) {
-  await page.goto("/nick");
+  await page.goto("/perfil");
   const change = page.getByRole("button", { name: "Pedir troca de nick" });
   const submit = page.getByRole("button", { name: /^(Enviar para aprovação|Pedir troca)$/ });
   // Reexecução no mesmo banco: membro já aprovado vê "Pedir troca de nick" em vez do formulário.
@@ -48,7 +48,7 @@ test("staff aprova nick e membro vê o nick aprovado (AC#1, AC#2)", async ({ pag
   await expect(row).toHaveCount(0);
 
   await login(page, "71000000000000001", "aprovar");
-  await page.goto("/nick");
+  await page.goto("/perfil");
   await expect(page.getByText("Nick aprovado")).toBeVisible();
   await expect(page.getByText(nick, { exact: true })).toBeVisible();
   await expect(page.getByText("Aguardando aprovação da staff")).toHaveCount(0);
@@ -71,7 +71,7 @@ test("staff recusa com motivo e membro vê o motivo (AC#1, AC#2)", async ({ page
   await expect(row).toHaveCount(0);
 
   await login(page, "71000000000000002", "recusar");
-  await page.goto("/nick");
+  await page.goto("/perfil");
   await expect(page.getByText(`A staff recusou o nick ${nick}`)).toBeVisible();
   await expect(page.getByText("Não achei esse personagem no jogo.")).toBeVisible();
   await expect(page.getByRole("button", { name: "Enviar para aprovação" })).toBeVisible();
