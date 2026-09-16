@@ -1,6 +1,6 @@
 import { ROLE_LABELS, type Action, type SubjectType } from "@albion-hub/shared";
 import { NavLink, Outlet, useLocation } from "react-router";
-import { CalendarRange, Coins, LayoutTemplate, HandCoins, KeyRound, LogOut, ScrollText, Swords, UserPen, Users, Vault } from "lucide-react";
+import { CalendarPlus, CalendarRange, Coins, LayoutTemplate, HandCoins, KeyRound, LogOut, ScrollText, Swords, UserPen, Users, Vault } from "lucide-react";
 import type { ReactNode } from "react";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
@@ -32,13 +32,14 @@ export function AppShell() {
 
   const personal: NavItem[] = [
     { to: "/carteira", label: "Carteira", icon: <Coins /> },
+    { to: "/eventos", label: "Eventos", icon: <CalendarRange /> },
     { to: "/saques", label: "Meus saques", icon: <HandCoins />, count: myOpen },
     { to: "/nick", label: "Meu nick", icon: <UserPen /> },
   ];
   const management = (
     [
       { to: "/staff/saques", label: "Fila de saques", icon: <Vault />, can: ["approve", "Withdrawal"], count: queue },
-      { to: "/staff/eventos", label: "Eventos", icon: <CalendarRange />, can: ["create", "Event"] },
+      { to: "/staff/eventos", label: "Central de eventos", icon: <CalendarPlus />, can: ["create", "Event"] },
       { to: "/staff/templates", label: "Templates", icon: <LayoutTemplate />, can: ["update", "EventTemplate"] },
       { to: "/staff/membros", label: "Membros", icon: <Users />, can: ["approve", "MemberRequest"] },
       { to: "/staff/splits", label: "Loot splits", icon: <ScrollText />, can: ["update", "LootSplit"] },
