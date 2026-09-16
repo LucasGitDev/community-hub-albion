@@ -126,3 +126,17 @@ export {
   type ReverseLedgerEntryOptions,
   type ReverseLedgerEntryResult,
 } from "./ledger-repo.js";
+export {
+  approveWithdrawal,
+  getWithdrawal,
+  getWithdrawalBalance,
+  listWithdrawals,
+  rejectWithdrawal,
+  requestWithdrawal,
+  settleWithdrawal,
+  type DecideWithdrawalOptions,
+  type RequestWithdrawalInput,
+  type RequestWithdrawalResult,
+  type WithdrawalBalance,
+  type WithdrawalDecisionResult,
+} from "./withdrawals-repo.js";
