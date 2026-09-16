@@ -29,8 +29,8 @@ export interface EmbedView {
 }
 
 /** Limites do Discord: 5 botões por linha, 5 linhas por mensagem. */
-export const BUTTONS_PER_ROW = 5;
-export const MAX_BUTTON_ROWS = 5;
+const BUTTONS_PER_ROW = 5;
+const MAX_BUTTON_ROWS = 5;
 
 /** Quebra os botões em linhas e descarta o que não cabe (o embed continua legível em vez de a mensagem ser recusada). */
 export function buttonRows(buttons: readonly EmbedButton[]): EmbedButton[][] {
