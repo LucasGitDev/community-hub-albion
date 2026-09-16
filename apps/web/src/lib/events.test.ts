@@ -41,8 +41,8 @@ const event = (id: string, status: EventStatus, ownerUserId = CALLER): EventDto 
   archivedAt: null,
   cancelReason: null,
   roles: [
-    { id: "tank", roleId: null, name: "Tank", slots: 1 },
-    { id: "healer", roleId: null, name: "Healer", slots: 2 },
+    { id: "tank", roleId: null, name: "Tank", description: "Segura a frente e chama o engage.", slots: 1 },
+    { id: "healer", roleId: null, name: "Healer", description: null, slots: 2 },
   ],
   totalSlots: 3,
   createdAt: "2026-09-15T12:00:00.000Z",
@@ -96,6 +96,12 @@ describe("roleViews", () => {
     { eventId: "e1", slotId: "tank", confirmed: 1, waitlist: 2 },
     { eventId: "e1", slotId: "healer", confirmed: 1, waitlist: 0 },
   ];
+
+  it("leva a descrição da role pra decisão de inscrição, e null quando não tem (TASK-039, AC#2/AC#3)", () => {
+    const [tank, healer] = roleViews(event("e1", "open"), [], null);
+    expect(tank!.description).toBe("Segura a frente e chama o engage.");
+    expect(healer!.description).toBeNull();
+  });
 
   it("cruza vagas do evento com a contagem do banco e marca a role lotada (Q27)", () => {
     const [tank, healer] = roleViews(event("e1", "open"), occupancy, null);

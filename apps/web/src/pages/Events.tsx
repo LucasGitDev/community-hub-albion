@@ -1,5 +1,5 @@
 import type { EventDto } from "@albion-hub/shared";
-import { CalendarRange, CircleDot, DoorOpen, LogOut, Ticket } from "lucide-react";
+import { CalendarRange, ChevronRight, CircleDot, DoorOpen, LogOut, Ticket } from "lucide-react";
 import { useCallback, useState } from "react";
 import { toast } from "sonner";
 import * as api from "@/api/events";
@@ -220,6 +220,8 @@ function EventRow({
           </Button>
         )}
       </div>
+
+      <RoleGuide roles={roles} />
     </li>
   );
 }
@@ -236,7 +238,7 @@ function RoleButton({ role, busy, onClick }: { role: RoleView; busy: boolean; on
       size="sm"
       disabled={busy || role.mine === "confirmed"}
       onClick={onClick}
-      aria-label={`${role.name}, ${role.confirmed} de ${role.slots} vagas${role.full ? ", lotada" : ""}`}
+      aria-label={`${role.name}, ${role.confirmed} de ${role.slots} vagas${role.full ? ", lotada" : ""}${role.description ? `. ${role.description}` : ""}`}
       className={cn("gap-1.5", role.full && !role.mine && "border-dashed text-muted-foreground")}
     >
       <span className="truncate">{role.name}</span>
@@ -246,5 +248,31 @@ function RoleButton({ role, busy, onClick }: { role: RoleView; busy: boolean; on
       {mineLabel && <span className="text-xs opacity-80">· {mineLabel}</span>}
       {!role.mine && role.full && <span className="text-xs">· espera</span>}
     </Button>
+  );
+}
+
+/**
+ * O que se espera de cada role (TASK-039), no lugar onde a decisão acontece: logo abaixo dos botões
+ * de inscrição. Fica fechado porque quem já sabe a role só quer clicar; `details` abre no toque e no
+ * teclado, então funciona no celular — que é onde a galera se inscreve — sem depender de hover.
+ */
+function RoleGuide({ roles }: { roles: readonly RoleView[] }) {
+  const described = roles.filter((r) => r.description);
+  if (described.length === 0) return null;
+  return (
+    <details className="group mt-2">
+      <summary className="inline-flex w-fit cursor-pointer list-none items-center gap-1.5 text-xs text-muted-foreground transition-colors hover:text-foreground focus-visible:ring-[3px] focus-visible:ring-ring/50 focus-visible:outline-none">
+        <ChevronRight className="size-3.5 transition-transform duration-150 ease-out group-open:rotate-90" aria-hidden />
+        O que cada role faz
+      </summary>
+      <dl className="mt-1.5 grid gap-1 border-l pl-3 text-xs sm:grid-cols-2">
+        {described.map((role) => (
+          <div key={role.slotId} className="flex gap-1.5">
+            <dt className="shrink-0 font-medium">{role.name}</dt>
+            <dd className="min-w-0 text-muted-foreground">{role.description}</dd>
+          </div>
+        ))}
+      </dl>
+    </details>
   );
 }

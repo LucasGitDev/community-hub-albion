@@ -23,6 +23,7 @@ import { Label } from "@/components/ui/label";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Textarea } from "@/components/ui/textarea";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
+import { cn } from "@/lib/utils";
 import * as api from "@/templates/api";
 
 const errorText = (e: unknown, fallback: string) => (e instanceof Error ? e.message : fallback);
@@ -278,10 +279,24 @@ function TemplateRow({ template, onEdit, onRemove }: { template: EventTemplateDt
           </span>
         </p>
         <ul className="mt-2 flex flex-wrap gap-1.5">
+          {/* A descrição da role (TASK-039) fica no hover/foco da pill: o card do template é um resumo,
+              e despejar o texto de cada role aqui enterraria o que o card existe pra mostrar. */}
           {template.roles.map((r) => (
-            <li key={r.roleId} className="flex h-6 items-center gap-1.5 rounded-full border px-2 text-xs">
-              <span className="num font-semibold">{r.slots}</span>
-              {r.name}
+            <li key={r.roleId}>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <span
+                    tabIndex={r.description ? 0 : -1}
+                    className={cn("flex h-6 items-center gap-1.5 rounded-full border px-2 text-xs", r.description && "border-dashed border-foreground/40")}
+                  >
+                    <span className="num font-semibold">{r.slots}</span>
+                    {r.name}
+                  </span>
+                </TooltipTrigger>
+                <TooltipContent hidden={!r.description} className="max-w-64">
+                  {r.description}
+                </TooltipContent>
+              </Tooltip>
             </li>
           ))}
         </ul>

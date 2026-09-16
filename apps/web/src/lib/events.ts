@@ -59,6 +59,8 @@ export const mySignupFor = (eventId: string, mine: readonly EventSignupDto[]): E
 export interface RoleView {
   slotId: string;
   name: string;
+  /** O que se espera de quem pega a role (TASK-039); null quando ninguém escreveu. */
+  description: string | null;
   slots: number;
   confirmed: number;
   waitlist: number;
@@ -78,6 +80,7 @@ export function roleViews(event: EventDto, occupancy: readonly EventOccupancyDto
     return {
       slotId: role.id,
       name: role.name,
+      description: role.description,
       slots: role.slots,
       confirmed,
       waitlist: count?.waitlist ?? 0,
