@@ -121,7 +121,7 @@ test("caller cria evento, abre inscrições, membro entra, role lotada vira espe
   // AC#4: a tela do membro se atualiza sozinha (polling), sem recarregar a página.
   await login(page, "73000000000000003", "membroE");
   await page.goto("/eventos");
-  await expect(page.getByText("atualizado", { exact: false }).first()).toBeVisible();
+  await expect(page.getByText("atualiza sozinho", { exact: false }).first()).toBeVisible();
   const closed = page.getByRole("listitem").filter({ hasText: eventName }).first();
   await expect(closed.getByText("Inscrições fechadas")).toBeVisible();
   await expect(closed.getByRole("button", { name: "Sair do evento" })).toHaveCount(0);

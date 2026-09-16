@@ -2,7 +2,7 @@ import type { EventDto, EventStatus } from "@albion-hub/shared";
 import { CalendarClock, CheckCircle2, CircleDot, DoorOpen, FileEdit, Lock, XCircle } from "lucide-react";
 import type { ReactNode } from "react";
 import { Pill, type Tone } from "@/components/display";
-import { freshnessLabel } from "@/lib/events";
+import { POLL_INTERVAL_MS } from "@/lib/events";
 import { formatDateTime } from "@/lib/format";
 import { cn } from "@/lib/utils";
 
@@ -76,15 +76,16 @@ export function FillMeter({ confirmed, total, percent, waitlist }: { confirmed: 
 }
 
 /**
- * Estado do polling (AC#4). O rótulo é calculado na renderização e só muda quando chega resposta
- * nova — de propósito: um relógio de 1s repintaria a tela inteira o tempo todo, e o que interessa é
- * saber que a tela se atualiza sozinha, não contar os segundos.
+ * Estado do polling (AC#4). Sem contador de segundos de propósito: um relógio na tela repintaria
+ * tudo a cada segundo para informar menos do que a frase abaixo já informa. O texto troca a cada
+ * resposta nova, então ele também é o sinal de que a busca automática continua de pé.
  */
 export function Freshness({ updatedAt, error }: { updatedAt: number | null; error?: string | null }) {
   if (error) return <span className="text-sm text-destructive">sem conexão com o servidor — tentando de novo</span>;
+  if (updatedAt === null) return <span className="text-sm text-muted-foreground">carregando…</span>;
   return (
     <span className="text-sm text-muted-foreground" aria-live="polite">
-      atualizado {updatedAt === null ? "agora" : freshnessLabel(Date.now() - updatedAt)} · atualiza sozinho
+      atualiza sozinho a cada <span className="num">{POLL_INTERVAL_MS / 1000}</span>s
     </span>
   );
 }

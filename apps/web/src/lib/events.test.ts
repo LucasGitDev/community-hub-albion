@@ -6,7 +6,6 @@ import {
   canManageRoster,
   canTransferOwner,
   eventFill,
-  freshnessLabel,
   groupEvents,
   mySignupFor,
   mySignupLabel,
@@ -231,12 +230,4 @@ describe("polling (AC#4)", () => {
     expect(nextPollDelay({ visible: true, failures: 9 })).toBe(60_000);
   });
 
-  it("rótulo de frescor fala em segundos e depois em minutos", () => {
-    expect(freshnessLabel(0)).toBe("agora");
-    expect(freshnessLabel(4_999)).toBe("agora");
-    expect(freshnessLabel(12_000)).toBe("há 12s");
-    expect(freshnessLabel(59_999)).toBe("há 59s");
-    expect(freshnessLabel(120_000)).toBe("há 2min");
-    expect(freshnessLabel(-5)).toBe("agora");
-  });
 });

@@ -83,11 +83,11 @@ test("navegação segue o papel: membro, caller e staff (TASK-010 AC#2)", async 
   const nav = page.getByRole("navigation", { name: "Principal" }).first();
   await loginAs(page, "ravenmoor");
   await expect(page.getByRole("link", { name: "Fila de saques" })).toHaveCount(0);
-  await expect(page.getByRole("link", { name: "Eventos" })).toHaveCount(0);
+  await expect(page.getByRole("link", { name: "Central de eventos" })).toHaveCount(0);
 
   await loginAs(page, "thalya");
   await expect(nav).toBeVisible();
-  await expect(page.getByRole("link", { name: "Eventos" }).first()).toBeVisible();
+  await expect(page.getByRole("link", { name: "Central de eventos" }).first()).toBeVisible();
   await expect(page.getByRole("link", { name: "Fila de saques" })).toHaveCount(0);
 
   await loginAs(page, "grimwald");
@@ -165,7 +165,7 @@ test("admin concede e remove caller pelo painel (TASK-011 AC#1)", async ({ page 
   await snap(page, "admin-papeis");
 
   await loginAs(page, who);
-  await expect(page.getByRole("link", { name: "Eventos" }).first()).toBeVisible();
+  await expect(page.getByRole("link", { name: "Central de eventos" }).first()).toBeVisible();
 
   await loginAs(page, "valdris");
   await page.goto("/admin/papeis");
