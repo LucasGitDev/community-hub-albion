@@ -25,11 +25,12 @@ export function Events() {
   const groups = groupEvents(board.events);
   const mine = board.mySignups.filter((s) => s.status !== "cancelled");
 
-  async function act(key: string, run: () => Promise<unknown>, ok: (r: never) => { title: string; description?: string }) {
+  /** Toda mutação segue o mesmo rito: trava o botão, avisa no toast e recarrega a lista (AC#4). */
+  async function act<T>(key: string, run: () => Promise<T>, ok: (result: T) => { title: string; description?: string }) {
     setBusy(key);
     try {
       const result = await run();
-      const message = ok(result as never);
+      const message = ok(result);
       toast.success(message.title, { description: message.description });
       refresh();
     } catch (e) {
@@ -41,7 +42,7 @@ export function Events() {
   }
 
   const join = (event: EventDto, role: RoleView) =>
-    void act(`${event.id}:${role.slotId}`, () => api.joinEvent(event.id, role.slotId), (signup: { status: string; position: number }) =>
+    void act(`${event.id}:${role.slotId}`, () => api.joinEvent(event.id, role.slotId), (signup) =>
       signup.status === "confirmed"
         ? { title: `Vaga garantida em ${role.name}`, description: event.name }
         : { title: `Você entrou na espera de ${role.name}`, description: `Posição ${signup.position}. Se abrir vaga, você sobe sozinho.` },

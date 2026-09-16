@@ -29,8 +29,7 @@ export interface EventBoard {
  * Faixas da tela do membro, na ordem em que interessam a quem chega: o que está rolando agora, o que
  * dá pra entrar agora, o que vem depois e, por último, o histórico.
  */
-export const EVENT_GROUPS = ["running", "open", "upcoming", "done"] as const;
-export type EventGroup = (typeof EVENT_GROUPS)[number];
+export type EventGroup = "running" | "open" | "upcoming" | "done";
 
 const GROUP_OF: Record<EventStatus, EventGroup> = {
   running: "running",
@@ -41,7 +40,7 @@ const GROUP_OF: Record<EventStatus, EventGroup> = {
   cancelled: "done",
 };
 
-export const eventGroup = (status: EventStatus): EventGroup => GROUP_OF[status];
+const eventGroup = (status: EventStatus): EventGroup => GROUP_OF[status];
 
 /** Agrupa mantendo a ordem de entrada dentro de cada faixa (a API já manda do mais novo pro mais velho). */
 export function groupEvents(events: readonly EventDto[]): Record<EventGroup, EventDto[]> {
@@ -137,12 +136,4 @@ export function nextPollDelay(options: { visible: boolean; failures?: number }):
   if (!options.visible) return null;
   const failures = options.failures ?? 0;
   return Math.min(POLL_INTERVAL_MS * 2 ** failures, 60_000);
-}
-
-/** "atualizado agora" / "há 12s" / "há 3min": prova visível de que a tela se atualiza sozinha (AC#4). */
-export function freshnessLabel(ageMs: number): string {
-  const seconds = Math.max(0, Math.floor(ageMs / 1000));
-  if (seconds < 5) return "agora";
-  if (seconds < 60) return `há ${seconds}s`;
-  return `há ${Math.floor(seconds / 60)}min`;
 }
