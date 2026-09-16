@@ -1,11 +1,11 @@
 ---
 id: TASK-040
 title: Página separada de roles
-status: In Progress
+status: Done
 assignee:
   - '@claude'
 created_date: '2026-09-16 03:45'
-updated_date: '2026-09-16 16:13'
+updated_date: '2026-09-16 16:21'
 labels:
   - frontend
 dependencies: []
@@ -31,11 +31,11 @@ Tirar o catálogo de roles de dentro de /staff/templates e dar uma página próp
 - [x] #1 pnpm quality sem falha bloqueante; resumo do gate colado nas notas
 - [x] #2 Cada AC verificado com evidência objetiva (teste, e2e, screenshot ou saída de comando), nunca só leitura de código
 - [x] #3 Skills aplicáveis do doc-003 invocadas e listadas nas notas
-- [ ] #4 UI alterada: fluxo coberto por e2e e screenshots desktop 1280 e mobile 400 revisados pelo agent
+- [x] #4 UI alterada: fluxo coberto por e2e e screenshots desktop 1280 e mobile 400 revisados pelo agent
 - [x] #5 Comportamento confere com decisões do doc-005 (Qs citadas) e nada fora do escopo da task
 - [x] #6 Toca auth, ledger, prata ou saque: security-review sem achado crítico
 - [x] #7 Notas e final summary com evidências; commits Conventional atômicos sem co-autor
-- [ ] #8 PR merged na main com quality gate verde; branch e worktree removidos
+- [x] #8 PR merged na main com quality gate verde; branch e worktree removidos
 <!-- DOD:END -->
 
 ## Implementation Plan
