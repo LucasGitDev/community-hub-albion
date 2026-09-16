@@ -1,9 +1,7 @@
 import {
-  EVENT_ROLE_NAME_MAX,
   EVENT_TEMPLATE_DESCRIPTION_MAX,
   EVENT_TEMPLATE_NAME_MAX,
   checkPartySize,
-  eventRoleInputSchema,
   eventTemplateInputSchema,
   firstIssue,
   formatPartySize,
@@ -15,6 +13,7 @@ import {
 } from "@albion-hub/shared";
 import { Check, Download, LayoutTemplate, Pencil, Plus, Shield, Sparkles, Trash2, Upload, Users, X } from "lucide-react";
 import { useCallback, useEffect, useId, useMemo, useState } from "react";
+import { NavLink } from "react-router";
 import { toast } from "sonner";
 import { EmptyState, PageHeader, Panel, Pill, StatCard } from "@/components/display";
 import { Button } from "@/components/ui/button";
@@ -321,161 +320,6 @@ function downloadYaml(yaml: string, filename: string) {
 }
 
 /** Catálogo global: criar, renomear e apagar role. Role em uso não apaga (AC#3). */
-function RolesPanel({ roles, setRoles, className }: { roles: EventRoleDto[]; setRoles: (f: (r: EventRoleDto[] | null) => EventRoleDto[] | null) => void; className?: string }) {
-  const nameId = useId();
-  const [name, setName] = useState("");
-  const [busy, setBusy] = useState(false);
-  const [editingId, setEditingId] = useState<string | null>(null);
-
-  async function create(e: React.FormEvent) {
-    e.preventDefault();
-    const parsed = eventRoleInputSchema.safeParse({ name, description: null });
-    if (!parsed.success) return toast.error(firstIssue(parsed.error));
-    setBusy(true);
-    try {
-      const role = await api.createEventRole(parsed.data);
-      setRoles((list) => [...(list ?? []), role]);
-      setName("");
-      toast.success("Role criada", { description: `${role.name} já pode entrar nos templates.` });
-    } catch (err) {
-      toast.error(errorText(err, "Não foi possível criar a role."));
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  async function rename(role: EventRoleDto, value: string) {
-    const parsed = eventRoleInputSchema.safeParse({ name: value, description: role.description });
-    if (!parsed.success) return toast.error(firstIssue(parsed.error));
-    if (parsed.data.name === role.name) return setEditingId(null);
-    try {
-      const updated = await api.updateEventRole(role.id, { name: parsed.data.name });
-      setRoles((list) => list?.map((r) => (r.id === role.id ? updated : r)) ?? null);
-      setEditingId(null);
-      toast.success("Role atualizada", { description: `Agora é ${updated.name}.` });
-    } catch (err) {
-      toast.error(errorText(err, "Não foi possível salvar a role."));
-    }
-  }
-
-  async function remove(role: EventRoleDto) {
-    try {
-      await api.deleteEventRole(role.id);
-      setRoles((list) => list?.filter((r) => r.id !== role.id) ?? null);
-      toast.success("Role apagada", { description: `${role.name} saiu do catálogo.` });
-    } catch (err) {
-      toast.error(errorText(err, "Não foi possível apagar a role."));
-    }
-  }
-
-  return (
-    <Panel title="Catálogo de roles" titleId="roles-title" className={className}>
-      <form onSubmit={(e) => void create(e)} className="flex flex-wrap items-end gap-2 border-b px-4 py-3">
-        <div className="min-w-0 flex-1">
-          <Label htmlFor={nameId} className="text-xs text-muted-foreground">
-            Nova role
-          </Label>
-          <Input id={nameId} value={name} maxLength={EVENT_ROLE_NAME_MAX} onChange={(e) => setName(e.target.value)} placeholder="Ex: Battlemount" className="mt-1.5" />
-        </div>
-        <Button type="submit" variant="outline" disabled={busy || !name.trim()}>
-          <Plus />
-          Adicionar
-        </Button>
-      </form>
-      {roles.length === 0 ? (
-        <div className="p-4">
-          <EmptyState icon={<Shield />} title="Catálogo vazio." description="Crie ao menos uma role pra montar um template." />
-        </div>
-      ) : (
-        <ul className="divide-y">
-          {roles.map((role) => (
-            <RoleRow
-              key={role.id}
-              role={role}
-              editing={editingId === role.id}
-              onEdit={() => setEditingId(role.id)}
-              onCancel={() => setEditingId(null)}
-              onRename={(value) => void rename(role, value)}
-              onRemove={() => void remove(role)}
-            />
-          ))}
-        </ul>
-      )}
-    </Panel>
-  );
-}
-
-function RoleRow({
-  role,
-  editing,
-  onEdit,
-  onCancel,
-  onRename,
-  onRemove,
-}: {
-  role: EventRoleDto;
-  editing: boolean;
-  onEdit: () => void;
-  onCancel: () => void;
-  onRename: (value: string) => void;
-  onRemove: () => void;
-}) {
-  const [value, setValue] = useState(role.name);
-  const inUse = role.templateCount > 0;
-
-  if (editing) {
-    return (
-      <li className="flex items-center gap-2 px-4 py-2">
-        <Input
-          autoFocus
-          aria-label={`Nome da role ${role.name}`}
-          value={value}
-          maxLength={EVENT_ROLE_NAME_MAX}
-          onChange={(e) => setValue(e.target.value)}
-          onKeyDown={(e) => {
-            if (e.key === "Enter") onRename(value);
-            if (e.key === "Escape") onCancel();
-          }}
-        />
-        <Button size="icon-sm" aria-label="Salvar nome" onClick={() => onRename(value)}>
-          <Check />
-        </Button>
-        <Button variant="ghost" size="icon-sm" aria-label="Cancelar" onClick={onCancel}>
-          <X />
-        </Button>
-      </li>
-    );
-  }
-
-  return (
-    <li className="flex items-center gap-3 px-4 py-2">
-      <span className="min-w-0 flex-1 truncate text-sm font-medium">{role.name}</span>
-      <span className="text-xs text-muted-foreground">
-        {inUse ? (
-          <>
-            em <span className="num">{role.templateCount}</span> template{role.templateCount > 1 ? "s" : ""}
-          </>
-        ) : (
-          "sem template"
-        )}
-      </span>
-      <Button variant="ghost" size="icon-sm" aria-label={`Renomear ${role.name}`} onClick={onEdit}>
-        <Pencil />
-      </Button>
-      <Tooltip>
-        {/* Botão desabilitado não dispara hover: o span envolve pra explicar por que não dá pra apagar. */}
-        <TooltipTrigger asChild>
-          <span className="inline-flex" tabIndex={inUse ? 0 : -1}>
-            <Button variant="ghost" size="icon-sm" aria-label={`Apagar ${role.name}`} disabled={inUse} onClick={onRemove}>
-              <Trash2 />
-            </Button>
-          </span>
-        </TooltipTrigger>
-        <TooltipContent hidden={!inUse}>Role em uso por {role.templateCount} template(s). Tire ela dos templates antes de apagar.</TooltipContent>
-      </Tooltip>
-    </li>
-  );
-}
 
 function TemplateDialog({
   roles,
