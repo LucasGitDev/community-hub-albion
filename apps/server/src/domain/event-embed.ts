@@ -33,6 +33,8 @@ export interface EventEmbedMember {
 export interface EventEmbedRole {
   slotId: string;
   name: string;
+  /** O que se espera de quem pega a role (TASK-039); null quando ninguém escreveu. */
+  description: string | null;
   slots: number;
   confirmed: EventEmbedMember[];
   waitlist: EventEmbedMember[];
@@ -68,6 +70,25 @@ const lines = (values: string[], empty: string) => {
   return kept.join("\n");
 };
 
+/** Teto de campos do embed no Discord. O guia de roles só entra se ainda couber. */
+const MAX_EMBED_FIELDS = 25;
+/** A descrição inteira (200) espicharia a mensagem com 6 roles; o guia é chamada, não manual. */
+const ROLE_GUIDE_DESCRIPTION_MAX = 120;
+
+const truncate = (text: string, max: number) => (text.length <= max ? text : `${text.slice(0, max - 1).trimEnd()}…`);
+
+/**
+ * "O que cada role faz" (TASK-039): um campo só, antes da lista, em vez de uma linha dentro de cada
+ * role. Os campos de role são `inline` (três colunas estreitas) e a descrição ali viraria uma parede
+ * de texto que empurra o roster pra baixo. Os botões continuam só nome + vagas: o label do Discord
+ * tem 80 caracteres e é a contagem que muda a cada clique.
+ */
+function roleGuideField(input: EventEmbedInput): EmbedField | null {
+  const described = input.roles.filter((r) => r.description);
+  if (described.length === 0) return null;
+  return { name: "O que cada role faz", value: lines(described.map((r) => `**${r.name}** — ${truncate(r.description!, ROLE_GUIDE_DESCRIPTION_MAX)}`), "—") };
+}
+
 /** Quem ficou em cada role e quem está na espera: a lista do evento, sem nenhuma ação. */
 function roleFields(input: EventEmbedInput): EmbedField[] {
   const fields: EmbedField[] = input.roles.map((role) => ({
@@ -78,6 +99,20 @@ function roleFields(input: EventEmbedInput): EmbedField[] {
   const waiting = input.roles.flatMap((role) => role.waitlist.map((m, i) => `${i + 1}. ${member(m)} — ${role.name}`));
   if (waiting.length > 0) fields.push({ name: "Lista de espera", value: lines(waiting, "—") });
   if (input.roles.length === 0) fields.push({ name: "Roles", value: "Esse evento não tem nenhuma role configurada." });
+  return fields;
+}
+
+/** Guia de roles + lista, respeitando o teto de campos do embed. */
+function pushRoleFields(fields: EmbedField[], input: EventEmbedInput): void {
+  const guide = roleGuideField(input);
+  const list = roleFields(input);
+  if (guide && fields.length + list.length < MAX_EMBED_FIELDS) fields.push(guide);
+  fields.push(...list);
+}
+
+function archivedFields(base: EmbedField[], input: EventEmbedInput): EmbedField[] {
+  const fields = [...base, { name: "Situação", value: "Evento arquivado. Acabou e já foi fechado: os dados, a taxa e os splits não mudam mais." }];
+  pushRoleFields(fields, input);
   return fields;
 }
 
@@ -102,12 +137,12 @@ export function buildEventEmbed(input: EventEmbedInput): EmbedView {
       description: input.description ?? undefined,
       color: EVENT_EMBED_COLORS.archived,
       // A lista fica: o arquivamento fecha o evento, não apaga quem jogou. O que some é a ação.
-      fields: [...fields, { name: "Situação", value: "Evento arquivado. Acabou e já foi fechado: os dados, a taxa e os splits não mudam mais." }, ...roleFields(input)],
+      fields: archivedFields(fields, input),
       buttons: [],
     };
   if (!open) fields.push({ name: "Situação", value: `Evento ${eventStatusLabel(input.status)}. As inscrições não estão abertas.` });
 
-  fields.push(...roleFields(input));
+  pushRoleFields(fields, input);
 
   const buttons: EmbedButton[] = input.roles.slice(0, MAX_EVENT_ROLE_BUTTONS).map((role) => ({
     customId: eventJoinButtonId(role.slotId),

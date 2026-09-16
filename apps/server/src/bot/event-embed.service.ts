@@ -92,6 +92,7 @@ function rolesWithMembers(event: EventDto, members: readonly EventSignupMember[]
   return event.roles.map((role) => ({
     slotId: role.id,
     name: role.name,
+    description: role.description,
     slots: role.slots,
     confirmed: members.filter((m) => m.slotId === role.id && m.status === "confirmed").map(person),
     waitlist: members.filter((m) => m.slotId === role.id && m.status === "waitlist").sort((a, b) => a.position - b.position).map(person),
