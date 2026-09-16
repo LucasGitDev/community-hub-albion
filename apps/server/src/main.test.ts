@@ -27,7 +27,9 @@ describe("boot do servidor compilado", () => {
     expect(result.stderr).toContain("Configuração inválida");
     expect(result.stderr).toContain("DISCORD_TOKEN: obrigatória");
     expect(result.stderr).toContain("GUILD_ID: obrigatória");
-  });
+    // Timeout explícito: subir o bundle do Nest leva ~6 s em máquina carregada (mais ainda sob cobertura),
+    // e o padrão de 5 s do vitest transformava isso em flake.
+  }, 30_000);
 
   it("GUILD_ID inválido sai com código 1 sem vazar o token", () => {
     const token = "vazamento-proibido";
@@ -35,7 +37,7 @@ describe("boot do servidor compilado", () => {
     expect(result.status).toBe(1);
     expect(result.stderr).toContain("GUILD_ID: formato inválido");
     expect(`${result.stdout}${result.stderr}`).not.toContain(token);
-  });
+  }, 30_000);
 
   // TASK-004: mesmo processo serve SPA na raiz (com fallback de rota) e API em /api.
   it("serve a SPA em / e em rotas client-side, mantendo /api na API", async () => {
