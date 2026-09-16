@@ -40,6 +40,6 @@ describe("DiscordJsGuildGateway (TASK-014, client falso)", () => {
 
 describe("BotModule.register", () => {
   it("exige DISCORD_MEMBER_ROLE_ID", () => {
-    expect(() => BotModule.register({ DISCORD_TOKEN: "a.b.c", GUILD_ID: GUILD, DISCORD_MEMBER_ROLE_ID: undefined, DISCORD_STAFF_CHANNEL_ID: "423456789012345678" })).toThrow("DISCORD_MEMBER_ROLE_ID");
+    expect(() => BotModule.register({ DISCORD_TOKEN: "a.b.c", GUILD_ID: GUILD, DISCORD_MEMBER_ROLE_ID: undefined, DISCORD_STAFF_CHANNEL_ID: "423456789012345678", DISCORD_EVENTS_CHANNEL_ID: "523456789012345678" })).toThrow("DISCORD_MEMBER_ROLE_ID");
   });
 });

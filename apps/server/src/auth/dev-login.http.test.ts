@@ -35,6 +35,7 @@ async function boot(databaseUrl: string, devLogin: boolean): Promise<INestApplic
     DISCORD_CLIENT_SECRET: "secret",
     DISCORD_MEMBER_ROLE_ID: "323456789012345678",
     DISCORD_STAFF_CHANNEL_ID: "423456789012345678",
+    DISCORD_EVENTS_CHANNEL_ID: "523456789012345678",
     PUBLIC_URL,
     AUTH_DEV_LOGIN: String(devLogin),
   });
