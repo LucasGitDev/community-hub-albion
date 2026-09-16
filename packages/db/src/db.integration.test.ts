@@ -35,6 +35,14 @@ import {
   schema,
   touchHeartbeat,
   upsertUserByDiscordId,
+  applyEventTransition,
+  closeDueEvents,
+  createEvent,
+  getEvent,
+  listEventOwnerHistory,
+  listEvents,
+  transferEventOwner,
+  type CreateEventInput,
   type DbHandle,
 } from "./index.js";
 
@@ -488,6 +496,174 @@ describe.skipIf(!url)("@albion-hub/db (Postgres real)", () => {
       expect(await deleteEventTemplate(handle.db, saved.template.id)).toBe(true);
       expect(await deleteEventTemplate(handle.db, saved.template.id)).toBe(false);
       expect(await getEventTemplate(handle.db, saved.template.id)).toBeNull();
+    });
+  });
+
+  describe("eventos e máquina de estados (TASK-021, Q26, Q21)", () => {
+    const MISSING = "00000000-0000-4000-8000-000000000000";
+    let owner: string;
+    let other: string;
+    let templateId: string;
+
+    beforeAll(async () => {
+      owner = (await upsertUserByDiscordId(handle.db, { discordId: "710000000000000001", discordUsername: "caller" })).id;
+      other = (await upsertUserByDiscordId(handle.db, { discordId: "710000000000000002", discordUsername: "outro" })).id;
+      const roles = await listEventRoles(handle.db);
+      const saved = await saveEventTemplate(handle.db, {
+        name: "Template de eventos",
+        description: null,
+        minPartySize: 1,
+        maxPartySize: null,
+        active: true,
+        roles: [
+          { roleId: roles.find((r) => r.name === "Tank")!.id, slots: 1 },
+          { roleId: roles.find((r) => r.name === "Healer")!.id, slots: 2 },
+        ],
+      });
+      if (!saved.ok) throw new Error(saved.reason);
+      templateId = saved.template.id;
+    });
+
+    const make = (name: string, extra: Partial<CreateEventInput> = {}) =>
+      createEvent(handle.db, { templateId, name, description: null, startsAt: null, signupsCloseAt: null, ownerUserId: owner, createdBy: owner, ...extra });
+
+    const created = async (name: string, extra?: Partial<CreateEventInput>) => {
+      const result = await make(name, extra);
+      if (!result.ok) throw new Error(result.reason);
+      return result.event;
+    };
+
+    it("cria em draft com snapshot das roles do template e primeira linha de histórico (AC#1)", async () => {
+      const event = await created("Roads das 21h");
+      expect(event).toMatchObject({ status: "draft", ownerUserId: owner, createdByUserId: owner, templateName: "Template de eventos", totalSlots: 3, voiceChannelId: null });
+      expect(event.roles).toEqual([{ roleId: expect.any(String), name: "Tank", slots: 1 }, { roleId: expect.any(String), name: "Healer", slots: 2 }]);
+      expect(await listEventOwnerHistory(handle.db, event.id)).toEqual([{ fromUserId: null, toUserId: owner, changedByUserId: owner, changedAt: expect.any(String) }]);
+      expect(await getEvent(handle.db, MISSING)).toBeNull();
+    });
+
+    it("snapshot não muda quando o template é editado ou a role some do catálogo", async () => {
+      const extra = await createEventRole(handle.db, { name: "Batedor do evento", description: null });
+      if (!extra.ok) throw new Error("falhou");
+      const saved = await saveEventTemplate(handle.db, {
+        name: "Template descartável",
+        description: null,
+        minPartySize: 1,
+        maxPartySize: null,
+        active: true,
+        roles: [{ roleId: extra.role.id, slots: 3 }],
+      });
+      if (!saved.ok) throw new Error(saved.reason);
+      const result = await createEvent(handle.db, { templateId: saved.template.id, name: "Congelado", description: null, startsAt: null, signupsCloseAt: null, ownerUserId: owner, createdBy: owner });
+      if (!result.ok) throw new Error(result.reason);
+
+      // Template muda depois: o evento publicado mantém as vagas com que foi criado.
+      const roles = await listEventRoles(handle.db);
+      await saveEventTemplate(handle.db, { name: "Template descartável", description: null, minPartySize: 1, maxPartySize: null, active: true, roles: [{ roleId: roles.find((r) => r.name === "Tank")!.id, slots: 9 }] }, saved.template.id);
+      expect(await deleteEventRole(handle.db, extra.role.id)).toBe("deleted");
+      expect((await getEvent(handle.db, result.event.id))!.roles).toEqual([{ roleId: null, name: "Batedor do evento", slots: 3 }]);
+      expect((await getEvent(handle.db, result.event.id))!.totalSlots).toBe(3);
+    });
+
+    it("recusa template inexistente ou inativo", async () => {
+      expect(await make("Sem template", { templateId: MISSING })).toEqual({ ok: false, reason: "unknown_template" });
+      const roles = await listEventRoles(handle.db);
+      const saved = await saveEventTemplate(handle.db, { name: "Aposentado", description: null, minPartySize: 1, maxPartySize: null, active: false, roles: [{ roleId: roles[0]!.id, slots: 1 }] });
+      if (!saved.ok) throw new Error(saved.reason);
+      expect(await make("Aposentado", { templateId: saved.template.id })).toEqual({ ok: false, reason: "inactive_template" });
+    });
+
+    it("carimba um timestamp por transição no caminho feliz draft→open→closed→running→finished (Q26)", async () => {
+      const event = await created("Caminho feliz");
+      for (const to of ["open", "closed", "running", "finished"] as const) {
+        const result = await applyEventTransition(handle.db, event.id, to);
+        expect(result, to).toMatchObject({ ok: true, event: { status: to } });
+      }
+      const final = (await getEvent(handle.db, event.id))!;
+      expect(final.openedAt).not.toBeNull();
+      expect(final.closedAt).not.toBeNull();
+      expect(final.startedAt).not.toBeNull();
+      expect(final.finishedAt).not.toBeNull();
+      expect(final.cancelledAt).toBeNull();
+      expect(Date.parse(final.startedAt!)).toBeGreaterThanOrEqual(Date.parse(final.closedAt!));
+    });
+
+    it("start com inscrição aberta fecha a inscrição junto (Q26: start fecha)", async () => {
+      const event = await created("Start direto");
+      await applyEventTransition(handle.db, event.id, "open");
+      const started = await applyEventTransition(handle.db, event.id, "running");
+      expect(started).toMatchObject({ ok: true, from: "open", event: { status: "running" } });
+      if (!started.ok) throw new Error("falhou");
+      expect(started.event.closedAt).toBe(started.event.startedAt);
+    });
+
+    it("transição inválida não muda nada e devolve o estado atual (AC#3)", async () => {
+      const event = await created("Inválida");
+      expect(await applyEventTransition(handle.db, event.id, "finished")).toEqual({ ok: false, reason: "invalid", from: "draft" });
+      expect((await getEvent(handle.db, event.id))!.status).toBe("draft");
+      expect(await applyEventTransition(handle.db, MISSING, "open")).toEqual({ ok: false, reason: "not_found" });
+
+      await applyEventTransition(handle.db, event.id, "cancelled");
+      expect((await getEvent(handle.db, event.id))!.cancelledAt).not.toBeNull();
+      // Estado final: nem cancelar de novo nem reabrir.
+      expect(await applyEventTransition(handle.db, event.id, "cancelled")).toEqual({ ok: false, reason: "invalid", from: "cancelled" });
+      expect(await applyEventTransition(handle.db, event.id, "open")).toEqual({ ok: false, reason: "invalid", from: "cancelled" });
+    });
+
+    it("fecha só os eventos open com prazo vencido, e é idempotente (AC#5)", async () => {
+      const now = new Date("2026-10-01T22:00:00.000Z");
+      const past = new Date("2026-10-01T21:59:00.000Z");
+      const future = new Date("2026-10-01T22:10:00.000Z");
+      const vencido = await created("Vencido", { signupsCloseAt: past });
+      const futuro = await created("Futuro", { signupsCloseAt: future });
+      const semPrazo = await created("Sem prazo");
+      const rascunho = await created("Rascunho vencido", { signupsCloseAt: past });
+      for (const e of [vencido, futuro, semPrazo]) await applyEventTransition(handle.db, e.id, "open");
+
+      const closed = await closeDueEvents(handle.db, now);
+      expect(closed.map((e) => e.name)).toEqual(["Vencido"]);
+      expect(closed[0]!.closedAt).toBe(now.toISOString());
+      expect(await closeDueEvents(handle.db, now)).toEqual([]);
+      expect((await getEvent(handle.db, futuro.id))!.status).toBe("open");
+      expect((await getEvent(handle.db, semPrazo.id))!.status).toBe("open");
+      expect((await getEvent(handle.db, rascunho.id))!.status).toBe("draft");
+    });
+
+    it("staff transfere owner e o histórico guarda cada troca (AC#4, Q21)", async () => {
+      const event = await created("Transferido");
+      const moved = await transferEventOwner(handle.db, event.id, other, other);
+      expect(moved).toMatchObject({ ok: true, from: owner, event: { ownerUserId: other } });
+      const back = await transferEventOwner(handle.db, event.id, owner, other);
+      expect(back).toMatchObject({ ok: true, from: other });
+      expect(await listEventOwnerHistory(handle.db, event.id)).toMatchObject([
+        { fromUserId: null, toUserId: owner },
+        { fromUserId: owner, toUserId: other },
+        { fromUserId: other, toUserId: owner },
+      ]);
+      expect(await transferEventOwner(handle.db, event.id, owner, other)).toEqual({ ok: false, reason: "same_owner" });
+      expect(await transferEventOwner(handle.db, event.id, MISSING, other)).toEqual({ ok: false, reason: "unknown_user" });
+      expect(await transferEventOwner(handle.db, MISSING, other, other)).toEqual({ ok: false, reason: "not_found" });
+
+      await applyEventTransition(handle.db, event.id, "cancelled");
+      expect(await transferEventOwner(handle.db, event.id, other, other)).toEqual({ ok: false, reason: "terminal" });
+    });
+
+    it("lista com filtros de estado, owner e template", async () => {
+      const mine = await created("Filtrado");
+      await applyEventTransition(handle.db, mine.id, "open");
+      const abertos = await listEvents(handle.db, { status: ["open"] });
+      expect(abertos.map((e) => e.id)).toContain(mine.id);
+      expect(abertos.every((e) => e.status === "open")).toBe(true);
+      expect((await listEvents(handle.db, { ownerUserId: MISSING })).length).toBe(0);
+      expect((await listEvents(handle.db, { templateId, status: ["draft"] })).every((e) => e.templateId === templateId && e.status === "draft")).toBe(true);
+      // Mais recentes primeiro.
+      const all = await listEvents(handle.db);
+      expect(all.length).toBeGreaterThan(1);
+      expect(Date.parse(all[0]!.createdAt)).toBeGreaterThanOrEqual(Date.parse(all[all.length - 1]!.createdAt));
+    });
+
+    it("template que já virou evento não pode ser apagado (FK restrict)", async () => {
+      await created("Trava o template");
+      await expect(deleteEventTemplate(handle.db, templateId)).rejects.toThrow();
     });
   });
 });
