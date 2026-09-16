@@ -188,6 +188,9 @@ importers:
       '@casl/ability':
         specifier: ^7.0.1
         version: 7.0.1
+      yaml:
+        specifier: 2.9.1
+        version: 2.9.1
       zod:
         specifier: ^4.6.5
         version: 4.6.5
