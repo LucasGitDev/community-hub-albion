@@ -1,8 +1,9 @@
-import { BadRequestException, Body, ConflictException, Controller, ForbiddenException, Get, HttpCode, Inject, NotFoundException, Param, Post, Query, Res, UseGuards } from "@nestjs/common";
+import { BadRequestException, Body, ConflictException, Controller, ForbiddenException, Get, HttpCode, Inject, NotFoundException, Param, Patch, Post, Query, Res, UseGuards } from "@nestjs/common";
 import {
   asSubject,
   eventCancelSchema,
   eventCreateSchema,
+  eventUpdateSchema,
   eventTransferOwnerSchema,
   firstIssue,
   isEventTransition,
@@ -107,6 +108,27 @@ export class EventsController {
     if (result.ok) return result.event;
     if (result.reason === "unknown_template") throw new BadRequestException("Esse template não existe mais. Atualize a página e escolha de novo.");
     throw new ConflictException("Esse template está inativo. Reative ou escolha outro para criar o evento.");
+  }
+
+  /**
+   * Corrige os dados do evento depois que ele já existe (TASK-029, AC#2).
+   *
+   * Existe porque o acerto acontece **depois** do jogo: Q26 (revisada) mantém `finished` editável, e
+   * até esta task não havia nenhum caminho para arrumar o nome que saiu errado. `update` em `Event` é
+   * do owner (condição `ownerId`) e da staff; evento arquivado recusa com a frase única do
+   * arquivamento, conferida antes de qualquer escrita.
+   */
+  @Patch(":id")
+  @HttpCode(200)
+  @UseGuards(SameOriginGuard)
+  @Authorize("update", "Event")
+  async update(@Param("id") id: string, @Body() body: unknown, @CurrentAuth() auth: Auth): Promise<EventDto> {
+    const event = await this.load(id);
+    this.assertCan(auth, "update", event);
+    assertEventEditable(event);
+    const updated = await this.events.update(event.id, parseBody(eventUpdateSchema, body));
+    if (!updated) throw new NotFoundException("Evento não encontrado.");
+    return updated;
   }
 
   /**
