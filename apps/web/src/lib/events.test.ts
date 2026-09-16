@@ -28,6 +28,8 @@ const event = (id: string, status: EventStatus, ownerUserId = CALLER): EventDto 
   ownerNick: "Caller",
   createdByUserId: ownerUserId,
   voiceChannelId: null,
+  presenceChannelId: null,
+  fee: { type: "percent", value: "0" },
   discordMessageId: null,
   startsAt: null,
   signupsCloseAt: null,
