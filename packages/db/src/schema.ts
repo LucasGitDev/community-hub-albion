@@ -1,4 +1,4 @@
-import { EVENT_STATUSES, NICK_REQUEST_STATUSES, ROLES } from "@albion-hub/shared";
+import { EVENT_SIGNUP_STATUSES, EVENT_STATUSES, NICK_REQUEST_STATUSES, ROLES } from "@albion-hub/shared";
 import { sql } from "drizzle-orm";
 import { boolean, check, index, integer, pgEnum, pgTable, primaryKey, text, timestamp, uniqueIndex, uuid } from "drizzle-orm/pg-core";
 
@@ -207,6 +207,8 @@ export const events = pgTable(
     /** Fechamento automático da inscrição (AC#5); null = só fecha na mão ou no start. */
     signupsCloseAt: timestamp("signups_close_at", { withTimezone: true }),
     voiceChannelId: text("voice_channel_id"),
+    /** Mensagem do embed de inscrição no canal de eventos (TASK-022); null até o evento abrir. */
+    discordMessageId: text("discord_message_id"),
     openedAt: timestamp("opened_at", { withTimezone: true }),
     closedAt: timestamp("closed_at", { withTimezone: true }),
     startedAt: timestamp("started_at", { withTimezone: true }),
@@ -271,4 +273,50 @@ export const eventOwnerHistory = pgTable(
     changedAt: timestamp("changed_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => [index("event_owner_history_event_idx").on(t.eventId, t.changedAt)],
+);
+
+export const eventSignupStatusEnum = pgEnum("event_signup_status", EVENT_SIGNUP_STATUSES);
+
+/**
+ * Inscrição de um membro numa role do evento (TASK-022, Q27). `slot_id` aponta para a vaga já copiada
+ * do template (`event_role_slots`), então editar o template depois não move ninguém de lugar; `role_name`
+ * repete o nome porque a role pode ser apagada do catálogo e a lista precisa continuar legível.
+ *
+ * `position` é a ordem na espera **daquela role** (1, 2, 3...) e vale 0 para confirmado. Trocar de role ou
+ * sair não apaga linha: a inscrição antiga vira `cancelled` e uma nova é criada, então o histórico do
+ * evento fica inteiro (mesma ideia do ledger imutável).
+ */
+export const eventSignups = pgTable(
+  "event_signups",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    eventId: uuid("event_id")
+      .notNull()
+      .references(() => events.id, { onDelete: "cascade" }),
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    slotId: uuid("slot_id")
+      .notNull()
+      .references(() => eventRoleSlots.id, { onDelete: "cascade" }),
+    roleName: text("role_name").notNull(),
+    status: eventSignupStatusEnum("status").notNull(),
+    position: integer("position").notNull().default(0),
+    /** Caller/owner ou staff que moveu a pessoa (AC#4); null quando ela mesma se inscreveu. */
+    decidedBy: uuid("decided_by").references(() => users.id, { onDelete: "set null" }),
+    createdAt: createdAt(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    // Uma inscrição ativa por pessoa por evento: o banco impede estar confirmado e na espera ao mesmo tempo.
+    uniqueIndex("event_signups_active_idx")
+      .on(t.eventId, t.userId)
+      .where(sql`${t.status} in ('confirmed', 'waitlist')`),
+    index("event_signups_event_idx").on(t.eventId, t.status),
+    index("event_signups_slot_idx").on(t.slotId, t.status, t.position),
+    index("event_signups_user_idx").on(t.userId),
+    check("event_signups_position_positive", sql`${t.position} >= 0`),
+    // Confirmado não tem posição de espera; quem espera tem sempre uma.
+    check("event_signups_waitlist_position", sql`(${t.status} = 'waitlist') = (${t.position} > 0)`),
+  ],
 );

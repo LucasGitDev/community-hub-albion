@@ -62,9 +62,23 @@ export {
   getEvent,
   listEventOwnerHistory,
   listEvents,
+  setEventDiscordMessageId,
   transferEventOwner,
   type CreateEventInput,
   type CreateEventResult,
   type EventTransitionResult,
   type TransferEventOwnerResult,
 } from "./events-repo.js";
+export {
+  findEventRoleSlot,
+  joinEventRole,
+  leaveEvent,
+  listEventSignupMembers,
+  listEventSignups,
+  moveEventSignup,
+  type EventSignupChange,
+  type EventSignupMember,
+  type JoinEventRoleResult,
+  type LeaveEventResult,
+  type MoveEventSignupResult,
+} from "./event-signups-repo.js";

@@ -42,6 +42,10 @@ import {
   listEventOwnerHistory,
   listEvents,
   transferEventOwner,
+  joinEventRole,
+  leaveEvent,
+  listEventSignups,
+  moveEventSignup,
   type CreateEventInput,
   type DbHandle,
 } from "./index.js";
@@ -536,7 +540,10 @@ describe.skipIf(!url)("@albion-hub/db (Postgres real)", () => {
     it("cria em draft com snapshot das roles do template e primeira linha de histórico (AC#1)", async () => {
       const event = await created("Roads das 21h");
       expect(event).toMatchObject({ status: "draft", ownerUserId: owner, createdByUserId: owner, templateName: "Template de eventos", totalSlots: 3, voiceChannelId: null });
-      expect(event.roles).toEqual([{ roleId: expect.any(String), name: "Tank", slots: 1 }, { roleId: expect.any(String), name: "Healer", slots: 2 }]);
+      expect(event.roles).toEqual([
+        { id: expect.any(String), roleId: expect.any(String), name: "Tank", slots: 1 },
+        { id: expect.any(String), roleId: expect.any(String), name: "Healer", slots: 2 },
+      ]);
       expect(await listEventOwnerHistory(handle.db, event.id)).toEqual([{ fromUserId: null, toUserId: owner, changedByUserId: owner, changedAt: expect.any(String) }]);
       expect(await getEvent(handle.db, MISSING)).toBeNull();
     });
@@ -560,7 +567,7 @@ describe.skipIf(!url)("@albion-hub/db (Postgres real)", () => {
       const roles = await listEventRoles(handle.db);
       await saveEventTemplate(handle.db, { name: "Template descartável", description: null, minPartySize: 1, maxPartySize: null, active: true, roles: [{ roleId: roles.find((r) => r.name === "Tank")!.id, slots: 9 }] }, saved.template.id);
       expect(await deleteEventRole(handle.db, extra.role.id)).toBe("deleted");
-      expect((await getEvent(handle.db, result.event.id))!.roles).toEqual([{ roleId: null, name: "Batedor do evento", slots: 3 }]);
+      expect((await getEvent(handle.db, result.event.id))!.roles).toEqual([{ id: expect.any(String), roleId: null, name: "Batedor do evento", slots: 3 }]);
       expect((await getEvent(handle.db, result.event.id))!.totalSlots).toBe(3);
     });
 
@@ -664,6 +671,187 @@ describe.skipIf(!url)("@albion-hub/db (Postgres real)", () => {
     it("template que já virou evento não pode ser apagado (FK restrict)", async () => {
       await created("Trava o template");
       await expect(deleteEventTemplate(handle.db, templateId)).rejects.toThrow();
+    });
+  });
+
+  describe("inscrição por role e lista de espera (TASK-022, Q27)", () => {
+    const MISSING = "00000000-0000-4000-8000-000000000000";
+    let owner: string;
+    let templateId: string;
+    let seq = 0;
+
+    const user = async () => (await upsertUserByDiscordId(handle.db, { discordId: `73000000000000${String(++seq).padStart(4, "0")}`, discordUsername: `s${seq}` })).id;
+
+    beforeAll(async () => {
+      owner = await user();
+      const roles = await listEventRoles(handle.db);
+      const saved = await saveEventTemplate(handle.db, {
+        name: "Template de inscrição",
+        description: null,
+        minPartySize: 1,
+        maxPartySize: null,
+        active: true,
+        roles: [
+          { roleId: roles.find((r) => r.name === "Tank")!.id, slots: 1 },
+          { roleId: roles.find((r) => r.name === "Healer")!.id, slots: 2 },
+        ],
+      });
+      if (!saved.ok) throw new Error(saved.reason);
+      templateId = saved.template.id;
+    });
+
+    /** Evento já aberto, com as duas roles do template (Tank 1 vaga, Healer 2). */
+    const openEvent = async (name: string) => {
+      const result = await createEvent(handle.db, { templateId, name, description: null, startsAt: null, signupsCloseAt: null, ownerUserId: owner, createdBy: owner });
+      if (!result.ok) throw new Error(result.reason);
+      const opened = await applyEventTransition(handle.db, result.event.id, "open");
+      if (!opened.ok) throw new Error("não abriu");
+      const tank = opened.event.roles.find((r) => r.name === "Tank")!;
+      const healer = opened.event.roles.find((r) => r.name === "Healer")!;
+      return { event: opened.event, tank, healer };
+    };
+
+    it("entra na role, e uma segunda inscrição ativa no mesmo evento é impossível (índice único parcial)", async () => {
+      const { event, tank } = await openEvent("Inscrição simples");
+      const membro = await user();
+      const joined = await joinEventRole(handle.db, { eventId: event.id, userId: membro, slotId: tank.id });
+      expect(joined).toMatchObject({ ok: true, promoted: null, signup: { status: "confirmed", position: 0, roleName: "Tank", slotId: tank.id, decidedByUserId: null } });
+
+      // Repetir a mesma role é recusado antes de tocar o banco...
+      expect(await joinEventRole(handle.db, { eventId: event.id, userId: membro, slotId: tank.id })).toEqual({ ok: false, reason: "already_in_role" });
+      // ...e o índice único parcial impede duas linhas ativas por evento/pessoa mesmo por fora do repo.
+      await expect(
+        handle.db.insert(schema.eventSignups).values({ eventId: event.id, userId: membro, slotId: tank.id, roleName: "Tank", status: "confirmed", position: 0 }),
+      ).rejects.toThrow();
+
+      expect(await joinEventRole(handle.db, { eventId: event.id, userId: membro, slotId: MISSING })).toEqual({ ok: false, reason: "unknown_role" });
+      expect(await joinEventRole(handle.db, { eventId: MISSING, userId: membro, slotId: tank.id })).toEqual({ ok: false, reason: "not_found" });
+    });
+
+    it("role lotada manda para a espera, na ordem de chegada (AC#2)", async () => {
+      const { event, tank } = await openEvent("Lotou o tank");
+      const [a, b, c] = [await user(), await user(), await user()];
+      const first = await joinEventRole(handle.db, { eventId: event.id, userId: a, slotId: tank.id });
+      const second = await joinEventRole(handle.db, { eventId: event.id, userId: b, slotId: tank.id });
+      const third = await joinEventRole(handle.db, { eventId: event.id, userId: c, slotId: tank.id });
+      expect(first.ok && first.signup.status).toBe("confirmed");
+      expect(second.ok && second.signup).toMatchObject({ status: "waitlist", position: 1 });
+      expect(third.ok && third.signup).toMatchObject({ status: "waitlist", position: 2 });
+
+      const list = await listEventSignups(handle.db, event.id);
+      expect(list.map((s) => [s.userId, s.status, s.position])).toEqual([
+        [a, "confirmed", 0],
+        [b, "waitlist", 1],
+        [c, "waitlist", 2],
+      ]);
+    });
+
+    it("sair promove o primeiro da espera daquela role; quem espera em outra role não pula (AC#3)", async () => {
+      const { event, tank, healer } = await openEvent("Promoção ao sair");
+      const [dono, espera, outraRole] = [await user(), await user(), await user()];
+      await joinEventRole(handle.db, { eventId: event.id, userId: dono, slotId: tank.id });
+      await joinEventRole(handle.db, { eventId: event.id, userId: espera, slotId: tank.id });
+      await joinEventRole(handle.db, { eventId: event.id, userId: outraRole, slotId: healer.id });
+
+      const left = await leaveEvent(handle.db, { eventId: event.id, userId: dono });
+      expect(left).toMatchObject({ ok: true, signup: { status: "cancelled" }, promoted: { userId: espera, status: "confirmed", position: 0, roleName: "Tank" } });
+      expect(await leaveEvent(handle.db, { eventId: event.id, userId: dono })).toEqual({ ok: false, reason: "not_signed_up" });
+      expect(await leaveEvent(handle.db, { eventId: MISSING, userId: dono })).toEqual({ ok: false, reason: "not_found" });
+
+      // Quem estava no Healer continua no Healer: a espera é por role (Q27).
+      const healerSignup = (await listEventSignups(handle.db, event.id)).find((s) => s.userId === outraRole)!;
+      expect(healerSignup).toMatchObject({ status: "confirmed", roleName: "Healer" });
+    });
+
+    it("trocar de role libera a vaga antiga e promove quem esperava lá (AC#3)", async () => {
+      const { event, tank, healer } = await openEvent("Troca de role");
+      const [trocador, espera] = [await user(), await user()];
+      await joinEventRole(handle.db, { eventId: event.id, userId: trocador, slotId: tank.id });
+      await joinEventRole(handle.db, { eventId: event.id, userId: espera, slotId: tank.id });
+
+      const moved = await joinEventRole(handle.db, { eventId: event.id, userId: trocador, slotId: healer.id });
+      expect(moved).toMatchObject({ ok: true, signup: { status: "confirmed", roleName: "Healer" }, promoted: { userId: espera, status: "confirmed" } });
+      const active = (await listEventSignups(handle.db, event.id)).filter((s) => s.status !== "cancelled");
+      expect(active.map((s) => [s.userId, s.roleName])).toEqual(expect.arrayContaining([[trocador, "Healer"], [espera, "Tank"]]));
+      // A inscrição antiga não some: vira histórico cancelado.
+      expect((await listEventSignups(handle.db, event.id)).filter((s) => s.status === "cancelled")).toHaveLength(1);
+    });
+
+    it("evento fora de open recusa entrar e sair (AC#5)", async () => {
+      const { event, tank } = await openEvent("Fechado para inscrição");
+      const dentro = await user();
+      await joinEventRole(handle.db, { eventId: event.id, userId: dentro, slotId: tank.id });
+      await applyEventTransition(handle.db, event.id, "closed");
+      const fora = await user();
+      expect(await joinEventRole(handle.db, { eventId: event.id, userId: fora, slotId: tank.id })).toEqual({ ok: false, reason: "not_open", status: "closed" });
+      expect(await leaveEvent(handle.db, { eventId: event.id, userId: dentro })).toEqual({ ok: false, reason: "not_open", status: "closed" });
+    });
+
+    it("caller move inscrito entre role e espera; role lotada recusa (AC#4)", async () => {
+      const { event, tank, healer } = await openEvent("Caller organiza");
+      const [confirmado, esperando, healerCheio1, healerCheio2] = [await user(), await user(), await user(), await user()];
+      await joinEventRole(handle.db, { eventId: event.id, userId: confirmado, slotId: tank.id });
+      await joinEventRole(handle.db, { eventId: event.id, userId: esperando, slotId: tank.id });
+
+      // Espera → role: sobe na frente, com o caller registrado.
+      const promoted = await moveEventSignup(handle.db, { eventId: event.id, userId: esperando, target: { kind: "role", slotId: healer.id }, actorUserId: owner });
+      expect(promoted).toMatchObject({ ok: true, signup: { status: "confirmed", roleName: "Healer", decidedByUserId: owner } });
+
+      // Confirmado → espera: libera a vaga e quem estava esperando naquela role sobe (aqui não há ninguém).
+      const benched = await moveEventSignup(handle.db, { eventId: event.id, userId: confirmado, target: { kind: "waitlist" }, actorUserId: owner });
+      expect(benched).toMatchObject({ ok: true, signup: { status: "waitlist", position: expect.any(Number), decidedByUserId: owner }, promoted: null });
+      expect(benched.ok && benched.signup.userId).toBe(confirmado);
+      expect(await moveEventSignup(handle.db, { eventId: event.id, userId: confirmado, target: { kind: "waitlist" }, actorUserId: owner })).toEqual({ ok: false, reason: "already_there" });
+
+      // Role lotada recusa em vez de estourar a vaga.
+      await joinEventRole(handle.db, { eventId: event.id, userId: healerCheio1, slotId: healer.id });
+      await joinEventRole(handle.db, { eventId: event.id, userId: healerCheio2, slotId: healer.id });
+      expect(await moveEventSignup(handle.db, { eventId: event.id, userId: confirmado, target: { kind: "role", slotId: healer.id }, actorUserId: owner })).toEqual({
+        ok: false,
+        reason: "role_full",
+      });
+      expect(await moveEventSignup(handle.db, { eventId: event.id, userId: owner, target: { kind: "waitlist" }, actorUserId: owner })).toEqual({ ok: false, reason: "not_signed_up" });
+      expect(await moveEventSignup(handle.db, { eventId: MISSING, userId: confirmado, target: { kind: "waitlist" }, actorUserId: owner })).toEqual({ ok: false, reason: "not_found" });
+      expect(await moveEventSignup(handle.db, { eventId: event.id, userId: confirmado, target: { kind: "role", slotId: MISSING }, actorUserId: owner })).toEqual({
+        ok: false,
+        reason: "unknown_role",
+      });
+    });
+
+    it("caller ainda organiza com a inscrição fechada, mas não depois do start (AC#4)", async () => {
+      const { event, tank, healer } = await openEvent("Ajuste pós-fechamento");
+      const membro = await user();
+      await joinEventRole(handle.db, { eventId: event.id, userId: membro, slotId: tank.id });
+      await applyEventTransition(handle.db, event.id, "closed");
+      expect(await moveEventSignup(handle.db, { eventId: event.id, userId: membro, target: { kind: "role", slotId: healer.id }, actorUserId: owner })).toMatchObject({ ok: true });
+      await applyEventTransition(handle.db, event.id, "running");
+      expect(await moveEventSignup(handle.db, { eventId: event.id, userId: membro, target: { kind: "waitlist" }, actorUserId: owner })).toEqual({
+        ok: false,
+        reason: "closed_event",
+        status: "running",
+      });
+    });
+
+    it("dois cliques simultâneos na última vaga: um confirma, o outro espera (corrida)", async () => {
+      const { event, tank } = await openEvent("Corrida pela última vaga");
+      const [a, b] = [await user(), await user()];
+      const [first, second] = await Promise.all([
+        joinEventRole(handle.db, { eventId: event.id, userId: a, slotId: tank.id }),
+        joinEventRole(handle.db, { eventId: event.id, userId: b, slotId: tank.id }),
+      ]);
+      const status = [first, second].map((r) => (r.ok ? r.signup.status : r.reason)).sort();
+      expect(status).toEqual(["confirmed", "waitlist"]);
+      const list = await listEventSignups(handle.db, event.id);
+      expect(list.filter((s) => s.status === "confirmed")).toHaveLength(1);
+      expect(list.filter((s) => s.status === "waitlist")).toHaveLength(1);
+    });
+
+    it("apagar o evento leva as inscrições junto (cascade)", async () => {
+      const { event, tank } = await openEvent("Some tudo");
+      const membro = await user();
+      await joinEventRole(handle.db, { eventId: event.id, userId: membro, slotId: tank.id });
+      await handle.db.delete(schema.events).where(eq(schema.events.id, event.id));
+      expect(await listEventSignups(handle.db, event.id)).toEqual([]);
     });
   });
 });

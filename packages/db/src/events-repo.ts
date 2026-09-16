@@ -57,7 +57,7 @@ async function loadEvents(db: Database, ids?: string[], filters: EventListQuery 
     .where(inArray(eventRoleSlots.eventId, rows.map((r) => r.event.id)))
     .orderBy(asc(eventRoleSlots.sortOrder));
   return rows.map(({ event: e, templateName }) => {
-    const own: EventRoleSlotDto[] = slots.filter((s) => s.eventId === e.id).map(({ roleId, name, slots: n }) => ({ roleId, name, slots: n }));
+    const own: EventRoleSlotDto[] = slots.filter((s) => s.eventId === e.id).map(({ id, roleId, name, slots: n }) => ({ id, roleId, name, slots: n }));
     return {
       id: e.id,
       templateId: e.templateId,
@@ -68,6 +68,7 @@ async function loadEvents(db: Database, ids?: string[], filters: EventListQuery 
       ownerUserId: e.ownerUserId,
       createdByUserId: e.createdBy,
       voiceChannelId: e.voiceChannelId,
+      discordMessageId: e.discordMessageId,
       startsAt: iso(e.startsAt),
       signupsCloseAt: iso(e.signupsCloseAt),
       openedAt: iso(e.openedAt),
@@ -182,4 +183,9 @@ export async function transferEventOwner(db: Database, eventId: string, toUserId
 export async function listEventOwnerHistory(db: Database, eventId: string): Promise<EventOwnerChangeDto[]> {
   const rows = await db.select().from(eventOwnerHistory).where(eq(eventOwnerHistory.eventId, eventId)).orderBy(asc(eventOwnerHistory.changedAt));
   return rows.map((r) => ({ fromUserId: r.fromUserId, toUserId: r.toUserId, changedByUserId: r.changedBy, changedAt: r.changedAt.toISOString() }));
+}
+
+/** Guarda a mensagem do embed de inscrição no canal de eventos (TASK-022). */
+export async function setEventDiscordMessageId(db: Database, eventId: string, messageId: string | null): Promise<void> {
+  await db.update(events).set({ discordMessageId: messageId }).where(eq(events.id, eventId));
 }
