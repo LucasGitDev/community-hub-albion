@@ -1,5 +1,5 @@
 import { BadRequestException, Body, Controller, ForbiddenException, HttpCode, Inject, Post, Req, Res } from "@nestjs/common";
-import { createSession, grantRole, setGameNick, upsertUserByDiscordId, type DbHandle } from "@albion-hub/db";
+import { createSession, grantRole, insertLedgerEntry, setGameNick, upsertUserByDiscordId, type DbHandle } from "@albion-hub/db";
 import { ROLES, validateNick } from "@albion-hub/shared";
 import type { Request, Response } from "express";
 import { z } from "zod";
@@ -14,6 +14,23 @@ const devLoginSchema = z.object({
   roles: z.array(z.enum(ROLES)).max(ROLES.length).default([]),
   /** Nick já aprovado (e2e de troca de nick, TASK-012); aprovação real é da staff (TASK-013). */
   gameNick: z.string().refine((v) => validateNick(v).ok).optional(),
+  /**
+   * Lançamentos de prata para o e2e do extrato (TASK-031). Só existe junto com o dev-login, isto é,
+   * com AUTH_DEV_LOGIN=true, que o env proíbe em produção — é a mesma porta, não uma porta nova.
+   * Vai pelo `LedgerService`/repo, então continua valendo o append-only: aqui também só se insere.
+   */
+  silver: z
+    .array(
+      z.object({
+        /** Prata inteira em string (Q20): positivo credita, negativo debita. */
+        amount: z.string().regex(/^-?\d{1,18}$/).refine((v) => BigInt(v) !== 0n),
+        /** `reversal` fica de fora: estorno só nasce de `reverseLedgerEntry`. */
+        kind: z.enum(["split_payout", "split_fee", "withdrawal", "adjustment"]).default("split_payout"),
+        memo: z.string().trim().max(200).optional(),
+      }),
+    )
+    .max(50)
+    .optional(),
 });
 
 /**
@@ -34,11 +51,12 @@ export class DevLoginController {
     if (!isSameOriginRequest(headers, this.env.PUBLIC_URL)) throw new ForbiddenException("Requisição de outra origem recusada.");
     const parsed = devLoginSchema.safeParse(body);
     if (!parsed.success) throw new BadRequestException("Dados de login de desenvolvimento inválidos.");
-    const { discordId, username, roles, gameNick } = parsed.data;
+    const { discordId, username, roles, gameNick, silver } = parsed.data;
     const db = this.handle.db;
     const user = await upsertUserByDiscordId(db, { discordId, discordUsername: username, displayName: username });
     if (gameNick) await setGameNick(db, user.id, gameNick);
     for (const role of new Set(["member" as const, ...roles])) await grantRole(db, user.id, role);
+    for (const entry of silver ?? []) await insertLedgerEntry(db, { userId: user.id, amount: BigInt(entry.amount), kind: entry.kind, memo: entry.memo ?? null });
     const { token } = await createSession(db, user.id, sessionExpiresAt(new Date(), this.env.SESSION_TTL_DAYS));
     res.cookie(SESSION_COOKIE, token, sessionCookieOptions(this.env.NODE_ENV, this.env.SESSION_TTL_DAYS));
   }
