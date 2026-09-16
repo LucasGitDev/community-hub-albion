@@ -3,10 +3,13 @@ import {
   ALLOWED_EVENT_TRANSITIONS,
   EVENT_STATUSES,
   EVENT_TRANSITIONS,
+  EVENT_CANCEL_REASON_MAX,
   EVENT_TRANSITION_NAMES,
   TERMINAL_EVENT_STATUSES,
   canCancel,
   canTransition,
+  eventCancelSchema,
+  eventCancelledText,
   eventCreateSchema,
   eventStatusLabel,
   eventTransferOwnerSchema,
@@ -56,6 +59,14 @@ describe("máquina de estados do evento (TASK-021, Q26)", () => {
 
   it("cancelled é alcançável de todo estado antes de finished, e só deles (Q26)", () => {
     for (const status of EVENT_STATUSES) expect(canCancel(status), status).toBe(!TERMINAL_EVENT_STATUSES.includes(status));
+  });
+
+  it("evento finalizado não pode ser cancelado, e a mensagem do 409 diz por quê (TASK-025 AC#3)", () => {
+    expect(canCancel("finished")).toBe(false);
+    expect(canTransition("finished", "cancelled")).toBe(false);
+    expect(transitionError("finished", "cancelled")).toBe("O evento está finalizado e não pode ir para cancelado. Esse é um estado final.");
+    // Cancelar duas vezes também não: cancelado é terminal.
+    expect(canCancel("cancelled")).toBe(false);
   });
 
   it("start com inscrição aberta é válido: open→running sem passar por closed (Q26, start fecha)", () => {
@@ -117,6 +128,25 @@ describe("schemas de evento (TASK-021)", () => {
   it("transferência exige uuid do novo owner", () => {
     expect(eventTransferOwnerSchema.safeParse({ ownerUserId: "22222222-2222-4222-8222-222222222222" }).success).toBe(true);
     expect(eventTransferOwnerSchema.safeParse({ ownerUserId: "eu" }).error?.issues[0]?.message).toBe("Novo owner inválido.");
+  });
+
+  it("motivo do cancelamento é opcional, limpa espaços e para nos 300 caracteres (TASK-025)", () => {
+    expect(eventCancelSchema.parse({})).toEqual({ reason: null });
+    expect(eventCancelSchema.parse({ reason: null })).toEqual({ reason: null });
+    expect(eventCancelSchema.parse({ reason: "   " })).toEqual({ reason: null });
+    expect(eventCancelSchema.parse({ reason: "  não fechou grupo  " })).toEqual({ reason: "não fechou grupo" });
+    expect(eventCancelSchema.safeParse({ reason: "x".repeat(EVENT_CANCEL_REASON_MAX) }).success).toBe(true);
+    expect(eventCancelSchema.safeParse({ reason: "x".repeat(EVENT_CANCEL_REASON_MAX + 1) }).error?.issues[0]?.message).toBe(
+      "O motivo tem no máximo 300 caracteres.",
+    );
+  });
+
+  it("aviso de cancelamento cita o motivo quando existe (Q26)", () => {
+    expect(eventCancelledText("não fechou grupo")).toBe("Evento cancelado: não fechou grupo.");
+    // Motivo que já termina em pontuação não ganha um ponto extra.
+    expect(eventCancelledText("não fechou grupo!")).toBe("Evento cancelado: não fechou grupo!");
+    expect(eventCancelledText(null)).toBe("Evento cancelado pelo caller.");
+    expect(eventCancelledText(undefined)).toBe("Evento cancelado pelo caller.");
   });
 
   it("filtros da listagem aceitam status repetido e recusam valor desconhecido", () => {
