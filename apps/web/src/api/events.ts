@@ -19,6 +19,10 @@ export const createEvent = (body: Omit<EventCreateInput, "startsAt" | "signupsCl
 export const transitionEvent = (eventId: string, transition: EventTransition, reason?: string): Promise<EventDto> =>
   api(`/api/events/${eventId}/transitions/${transition}`, { method: "POST", body: JSON.stringify({ reason: reason || null }) });
 
+/** Correção dos dados do evento no acerto (TASK-029, AC#2). Arquivado recusa com 409 do servidor. */
+export const updateEvent = (eventId: string, body: { name: string; description: string | null }): Promise<EventDto> =>
+  api(`/api/events/${eventId}`, { method: "PATCH", body: JSON.stringify(body) });
+
 export const transferEventOwner = (eventId: string, ownerUserId: string): Promise<EventDto> =>
   api(`/api/events/${eventId}/owner`, { method: "POST", body: JSON.stringify({ ownerUserId }) });
 
