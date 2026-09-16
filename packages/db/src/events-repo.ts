@@ -4,9 +4,10 @@ import {
   type EventListQuery,
   type EventOwnerChangeDto,
   type EventRoleSlotDto,
+  type EventFee,
   type EventStatus,
 } from "@albion-hub/shared";
-import { and, asc, desc, eq, inArray, isNotNull, lte } from "drizzle-orm";
+import { and, asc, desc, eq, inArray, isNotNull, lte, sql } from "drizzle-orm";
 import { alias } from "drizzle-orm/pg-core";
 import type { Database } from "./client.js";
 import { memberNick } from "./member-nick.js";
@@ -95,6 +96,8 @@ async function loadEvents(db: Database, ids?: string[], filters: EventListQuery 
       ownerNick,
       createdByUserId: e.createdBy,
       voiceChannelId: e.voiceChannelId,
+      presenceChannelId: e.presenceChannelId,
+      fee: { type: e.feeType, value: e.feeValue.toString() },
       discordMessageId: e.discordMessageId,
       startsAt: iso(e.startsAt),
       signupsCloseAt: iso(e.signupsCloseAt),
@@ -129,7 +132,10 @@ export function listEvents(db: Database, filters: EventListQuery = {}): Promise<
 export async function createEvent(db: Database, input: CreateEventInput): Promise<CreateEventResult> {
   const { templateId, ownerUserId, createdBy, ...fields } = input;
   const created = await db.transaction(async (tx) => {
-    const [template] = await tx.select({ active: eventTemplates.active }).from(eventTemplates).where(eq(eventTemplates.id, templateId));
+    const [template] = await tx
+      .select({ active: eventTemplates.active, feeType: eventTemplates.defaultFeeType, feeValue: eventTemplates.defaultFeeValue })
+      .from(eventTemplates)
+      .where(eq(eventTemplates.id, templateId));
     if (!template) return { ok: false as const, reason: "unknown_template" as const };
     if (!template.active) return { ok: false as const, reason: "inactive_template" as const };
     const templateRoles = await tx
@@ -138,7 +144,12 @@ export async function createEvent(db: Database, input: CreateEventInput): Promis
       .innerJoin(eventRolesCatalog, eq(eventRolesCatalog.id, eventTemplateRoles.roleId))
       .where(eq(eventTemplateRoles.templateId, templateId))
       .orderBy(asc(eventTemplateRoles.sortOrder));
-    const [row] = await tx.insert(events).values({ ...fields, templateId, ownerUserId, createdBy }).returning({ id: events.id });
+    // Taxa herdada do template (TASK-027): é uma **cópia**, não uma referência. Mexer no default do
+    // template depois não muda a taxa de um evento já criado — o caller combinou uma taxa com a galera.
+    const [row] = await tx
+      .insert(events)
+      .values({ ...fields, templateId, ownerUserId, createdBy, feeType: template.feeType, feeValue: template.feeValue })
+      .returning({ id: events.id });
     const eventId = row!.id;
     if (templateRoles.length > 0)
       await tx.insert(eventRoleSlots).values(templateRoles.map((r, i) => ({ eventId, roleId: r.roleId, name: r.name, slots: r.slots, sortOrder: i })));
@@ -243,7 +254,29 @@ export async function listEventOwnerHistory(db: Database, eventId: string): Prom
  * propósito: o canal é efeito colateral no Discord, então falhar aqui nunca desfaz o start já gravado.
  */
 export async function setEventVoiceChannelId(db: Database, eventId: string, channelId: string | null): Promise<void> {
-  await db.update(events).set({ voiceChannelId: channelId }).where(eq(events.id, eventId));
+  await db
+    .update(events)
+    .set({
+      voiceChannelId: channelId,
+      // `presence_channel_id` guarda o primeiro canal e nunca é limpo (TASK-027, Q6): o finish apaga o
+      // canal e zera `voice_channel_id`, mas o split nasce depois disso e precisa saber onde medir a presença.
+      ...(channelId === null ? {} : { presenceChannelId: sql`coalesce(${events.presenceChannelId}, ${channelId})` }),
+    })
+    .where(eq(events.id, eventId));
+}
+
+/**
+ * Taxa do evento (TASK-027). Editável até o arquivamento (Q26); quem barra evento arquivado é o
+ * `assertEventEditable` do server, antes de chegar aqui. Não mexe em split já rascunhado: o split
+ * congela a taxa vigente no momento em que foi criado.
+ */
+export async function setEventFee(db: Database, eventId: string, fee: EventFee): Promise<EventDto | null> {
+  const [row] = await db
+    .update(events)
+    .set({ feeType: fee.type, feeValue: fee.value, updatedAt: new Date() })
+    .where(eq(events.id, eventId))
+    .returning({ id: events.id });
+  return row ? getEvent(db, row.id) : null;
 }
 
 /** Guarda a mensagem do embed de inscrição no canal de eventos (TASK-022). */
