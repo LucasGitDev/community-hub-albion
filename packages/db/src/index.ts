@@ -63,6 +63,7 @@ export {
   listEventOwnerHistory,
   listEvents,
   setEventDiscordMessageId,
+  setEventVoiceChannelId,
   transferEventOwner,
   type CreateEventInput,
   type CreateEventResult,

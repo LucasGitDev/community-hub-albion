@@ -185,6 +185,14 @@ export async function listEventOwnerHistory(db: Database, eventId: string): Prom
   return rows.map((r) => ({ fromUserId: r.fromUserId, toUserId: r.toUserId, changedByUserId: r.changedBy, changedAt: r.changedAt.toISOString() }));
 }
 
+/**
+ * Guarda (ou limpa) o canal de voz do evento (TASK-024, Q28). Escrita fora da transição de estado de
+ * propósito: o canal é efeito colateral no Discord, então falhar aqui nunca desfaz o start já gravado.
+ */
+export async function setEventVoiceChannelId(db: Database, eventId: string, channelId: string | null): Promise<void> {
+  await db.update(events).set({ voiceChannelId: channelId }).where(eq(events.id, eventId));
+}
+
 /** Guarda a mensagem do embed de inscrição no canal de eventos (TASK-022). */
 export async function setEventDiscordMessageId(db: Database, eventId: string, messageId: string | null): Promise<void> {
   await db.update(events).set({ discordMessageId: messageId }).where(eq(events.id, eventId));
