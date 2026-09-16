@@ -1,5 +1,5 @@
 import { Inject, Injectable, Logger, type OnModuleDestroy, type OnModuleInit } from "@nestjs/common";
-import { listEventSignupMembers, setEventVoiceChannelId, type DbHandle } from "@albion-hub/db";
+import { closeOpenVoiceSessionsInChannel, listEventSignupMembers, setEventVoiceChannelId, type DbHandle } from "@albion-hub/db";
 import type { EventDto } from "@albion-hub/shared";
 import { DB_HANDLE } from "../db/db.module.js";
 import { describeDiscordError } from "../domain/discord-errors.js";
@@ -20,6 +20,8 @@ export interface VoiceMoveResult {
  *   canal, e a lista de espera não entra.
  * - `→ finished`: devolve **todo mundo** que estiver no canal do evento para "Aguardando Evento"
  *   (inclusive quem entrou sem inscrição, Q7) e apaga o canal.
+ * - `→ cancelled` **com o evento rodando** (TASK-025, Q26): mesma coisa do finish, reusando
+ *   `closeChannel`, e ainda fecha as sessões de voz que sobraram abertas naquele canal.
  *
  * Nada aqui pode desfazer a transição: ela já está gravada quando o hook roda, então toda falha do
  * Discord vira log com `describeDiscordError`. Falha de uma pessoa não aborta as outras — o evento
@@ -44,6 +46,8 @@ export class EventVoiceService implements OnModuleInit, OnModuleDestroy {
       this.events.onEventTransition(async ({ event, to }) => {
         if (to === "running") await this.openChannel(event);
         else if (to === "finished") await this.closeChannel(event);
+        // Só evento que chegou a rodar tem canal; `closeChannel` sai na hora quando não tem.
+        else if (to === "cancelled") await this.cancelChannel(event);
       }),
     );
   }
@@ -123,6 +127,25 @@ export class EventVoiceService implements OnModuleInit, OnModuleDestroy {
       }
     }
     this.logger.log(`Evento ${event.id}: ${result.moved} pessoa(s) devolvida(s) para Aguardando Evento${result.failed > 0 ? `, ${result.failed} falha(s)` : ""}.`);
+    return result;
+  }
+
+  /**
+   * Cancelamento com o evento em andamento (TASK-025, AC#2): devolve a galera e apaga o canal com o
+   * mesmo `closeChannel` do finish — não há regra diferente, e duplicá-la só criaria dois jeitos de
+   * esvaziar um canal. Depois fecha as sessões de voz ainda abertas naquele canal: quem o Discord não
+   * conseguiu mover não gera sessão nova em "Aguardando Evento" e ficaria aberto num canal apagado.
+   */
+  async cancelChannel(event: EventDto): Promise<VoiceMoveResult> {
+    const { voiceChannelId } = event;
+    const result = await this.closeChannel(event);
+    if (!voiceChannelId) return result;
+    try {
+      const closed = await closeOpenVoiceSessionsInChannel(this.handle.db, voiceChannelId, new Date());
+      if (closed.length > 0) this.logger.log(`Evento ${event.id} cancelado: ${closed.length} sessão(ões) de voz aberta(s) fechada(s) no canal ${voiceChannelId}.`);
+    } catch (error) {
+      this.logger.error(`Evento ${event.id}: falha ao fechar as sessões de voz do canal ${voiceChannelId}: ${String(error)}`);
+    }
     return result;
   }
 

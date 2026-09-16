@@ -1,4 +1,4 @@
-import { eventJoinButtonId, eventLeaveButtonId, eventStatusLabel, freeSlots, MAX_EVENT_ROLE_BUTTONS, roleButtonLabel, type EventStatus } from "@albion-hub/shared";
+import { eventCancelledText, eventJoinButtonId, eventLeaveButtonId, eventStatusLabel, freeSlots, MAX_EVENT_ROLE_BUTTONS, roleButtonLabel, type EventStatus } from "@albion-hub/shared";
 import type { EmbedButton, EmbedField, EmbedView } from "./embed-view.js";
 
 /**
@@ -8,6 +8,10 @@ import type { EmbedButton, EmbedField, EmbedView } from "./embed-view.js";
  * O embed é a lista do evento: um botão por role com as vagas livres, quem está confirmado, quem está
  * na espera e um "Sair". Fora de `open` os botões aparecem desabilitados — a lista continua visível
  * (a galera confere onde ficou), mas ninguém entra nem sai (AC#5).
+ *
+ * Cancelado (TASK-025, AC#4) é o único estado sem botão nenhum: a mensagem vira o aviso "Evento
+ * cancelado" com o motivo. Deixar botões cinza ali faria a mensagem parecer um evento que ainda vai
+ * acontecer, e as inscrições já foram todas canceladas — não há lista para conferir.
  */
 
 export const EVENT_EMBED_COLORS: Record<EventStatus, number> = {
@@ -41,6 +45,8 @@ export interface EventEmbedInput {
   status: EventStatus;
   startsAt: Date | null;
   roles: EventEmbedRole[];
+  /** Motivo do cancelamento (TASK-025); só aparece com o evento cancelado. */
+  cancelReason?: string | null;
 }
 
 const when = (date: Date) => `<t:${Math.floor(date.getTime() / 1000)}:f>`;
@@ -63,9 +69,18 @@ const lines = (values: string[], empty: string) => {
 
 export function buildEventEmbed(input: EventEmbedInput): EmbedView {
   const open = input.status === "open";
+  const cancelled = input.status === "cancelled";
   const fields: EmbedField[] = [];
   const header = [input.templateName ? `Template: ${input.templateName}` : null, input.startsAt ? `Início: ${when(input.startsAt)}` : "Sem horário marcado"].filter(Boolean);
   fields.push({ name: "Evento", value: header.join(" · ") });
+  if (cancelled)
+    return {
+      title: input.name,
+      description: input.description ?? undefined,
+      color: EVENT_EMBED_COLORS.cancelled,
+      fields: [...fields, { name: "Situação", value: `${eventCancelledText(input.cancelReason)} Todas as inscrições foram canceladas.` }],
+      buttons: [],
+    };
   if (!open) fields.push({ name: "Situação", value: `Evento ${eventStatusLabel(input.status)}. As inscrições não estão abertas.` });
 
   for (const role of input.roles) {

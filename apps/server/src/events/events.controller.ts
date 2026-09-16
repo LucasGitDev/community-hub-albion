@@ -1,6 +1,7 @@
 import { BadRequestException, Body, ConflictException, Controller, ForbiddenException, Get, HttpCode, Inject, NotFoundException, Param, Post, Query, Res, UseGuards } from "@nestjs/common";
 import {
   asSubject,
+  eventCancelSchema,
   eventCreateSchema,
   eventTransferOwnerSchema,
   firstIssue,
@@ -107,16 +108,21 @@ export class EventsController {
     throw new ConflictException("Esse template está inativo. Reative ou escolha outro para criar o evento.");
   }
 
-  /** `open`, `close`, `start`, `finish`, `cancel`. Transição fora da máquina → 409 PT-BR (AC#3). */
+  /**
+   * `open`, `close`, `start`, `finish`, `cancel`. Transição fora da máquina → 409 PT-BR (AC#3), então
+   * evento finalizado não volta a ser cancelado. Só `cancel` lê o corpo, para guardar o motivo (TASK-025);
+   * nas outras o corpo é ignorado de propósito, em vez de virar 400 por um campo que não existe ali.
+   */
   @Post(":id/transitions/:transition")
   @HttpCode(200)
   @UseGuards(SameOriginGuard)
   @Authorize()
-  async transition(@Param("id") id: string, @Param("transition") transition: string, @CurrentAuth() auth: Auth): Promise<EventDto> {
+  async transition(@Param("id") id: string, @Param("transition") transition: string, @Body() body: unknown, @CurrentAuth() auth: Auth): Promise<EventDto> {
     if (!isEventTransition(transition)) throw new BadRequestException("Ação de evento desconhecida.");
     const event = await this.load(id);
     this.assertCan(auth, EVENT_TRANSITION_ACTIONS[transition], event);
-    const result = await this.events.transition(event.id, transition, auth.user.id);
+    const reason = transition === "cancel" ? parseBody(eventCancelSchema, body ?? {}).reason : null;
+    const result = await this.events.transition(event.id, transition, auth.user.id, reason);
     if (result.ok) return result.event;
     if (result.reason === "not_found") throw new NotFoundException("Evento não encontrado.");
     throw new ConflictException(transitionError(result.from, EVENT_TRANSITIONS[transition]));

@@ -1,6 +1,19 @@
 import "reflect-metadata";
 import { Test } from "@nestjs/testing";
-import { createDb, createEvent, grantRole, listEventRoles, runMigrations, saveEventTemplate, setGameNick, upsertUserByDiscordId, type DbHandle } from "@albion-hub/db";
+import {
+  createDb,
+  createEvent,
+  grantRole,
+  listEventRoles,
+  listEventSignupMembers,
+  listOpenVoiceSessions,
+  openVoiceSession,
+  runMigrations,
+  saveEventTemplate,
+  setGameNick,
+  upsertUserByDiscordId,
+  type DbHandle,
+} from "@albion-hub/db";
 import type { EventDto, Role } from "@albion-hub/shared";
 import { sql } from "drizzle-orm";
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
@@ -299,6 +312,111 @@ describe.skipIf(!baseUrl)("canal de voz do evento (TASK-024, Postgres real + Dis
     const { event } = await openEvent("Sem canal ainda");
     await expect(voice.closeChannel(await reload(event))).resolves.toEqual({ moved: 0, failed: 0 });
     expect(discord.deleted).toEqual([]);
+  });
+
+  describe("cancelamento (TASK-025, Q26)", () => {
+    /** Sessão de voz aberta num canal, como o listener de voz gravaria. */
+    const connectWithSession = async (channelId: string, discordId: string, at: Date) => {
+      discord.connect(channelId, discordId);
+      await openVoiceSession(handle.db, { discordUserId: discordId, guildId: GUILD, channelId, at });
+    };
+
+    it("cancelar em running devolve a galera, apaga o canal e fecha as sessões daquele canal (AC#2)", async () => {
+      const { event, tank } = await openEvent("Cancelado no meio");
+      discord.connect(WAITING, tank.discordId);
+      await events.transition(event.id, "start", owner);
+      const channelId = discord.created.at(-1)!.id;
+      const penetra = await newMember();
+      const at = new Date("2026-10-01T22:00:00.000Z");
+      await connectWithSession(channelId, tank.discordId, at);
+      await connectWithSession(channelId, penetra.discordId, at);
+      expect(await listOpenVoiceSessions(handle.db)).toHaveLength(2);
+
+      const cancelled = await events.transition(event.id, "cancel", owner, "não fechou grupo");
+      expect(cancelled.ok).toBe(true);
+
+      // Devolveu todo mundo (inclusive o penetra, Q7) e apagou o canal, igual ao finish.
+      expect(discord.deleted).toContain(channelId);
+      expect(discord.membersOf(WAITING)).toEqual([penetra.discordId, tank.discordId].sort());
+      const after = await reload(event);
+      expect(after).toMatchObject({ status: "cancelled", voiceChannelId: null, cancelReason: "não fechou grupo" });
+      // Nenhuma sessão órfã aberta no canal apagado (AC#2).
+      expect(await listOpenVoiceSessions(handle.db, tank.discordId)).toEqual([]);
+      expect((await listOpenVoiceSessions(handle.db)).some((s) => s.channelId === channelId)).toBe(false);
+      // E as inscrições caíram junto (AC#1).
+      expect(await listEventSignupMembers(handle.db, event.id)).toEqual([]);
+    });
+
+    it("cancelar antes do start não mexe em canal nenhum, mas cancela as inscrições (AC#1)", async () => {
+      const { event } = await openEvent("Cancelado antes de começar");
+      const cancelled = await events.transition(event.id, "cancel", owner);
+      expect(cancelled.ok).toBe(true);
+      expect(discord.created).toEqual([]);
+      expect(discord.deleted).toEqual([]);
+      expect(await reload(event).then((e) => e.status)).toBe("cancelled");
+      expect(await listEventSignupMembers(handle.db, event.id)).toEqual([]);
+    });
+
+    it("falha do Discord ao apagar o canal não desfaz o cancelamento nem as inscrições", async () => {
+      const { event, tank } = await openEvent("Canal teimoso no cancelamento");
+      discord.connect(WAITING, tank.discordId);
+      await events.transition(event.id, "start", owner);
+      const channelId = discord.created.at(-1)!.id;
+      await connectWithSession(channelId, tank.discordId, new Date("2026-10-01T22:00:00.000Z"));
+      discord.fail.delete = true;
+
+      const cancelled = await events.transition(event.id, "cancel", owner, "deu ruim");
+      expect(cancelled.ok).toBe(true);
+      const after = await reload(event);
+      expect(after.status).toBe("cancelled");
+      // O id fica no banco para o operador apagar na mão, mas a galera já voltou e a sessão fechou.
+      expect(after.voiceChannelId).toBe(channelId);
+      expect(discord.membersOf(WAITING)).toEqual([tank.discordId]);
+      expect((await listOpenVoiceSessions(handle.db)).some((s) => s.channelId === channelId)).toBe(false);
+      expect(await listEventSignupMembers(handle.db, event.id)).toEqual([]);
+    });
+
+    it("/evento cancelar faz o mesmo que o painel e publica o motivo", async () => {
+      const { event, tank } = await openEvent("Cancela pelo comando");
+      discord.connect(WAITING, tank.discordId);
+      await events.transition(event.id, "start", owner);
+      const channelId = discord.created.at(-1)!.id;
+
+      const interaction = fakeInteraction(ownerDiscordId);
+      await command.onCancel([interaction], { evento: event.id, motivo: "  chuva de flechas  " });
+
+      expect(answer(interaction)).toBe(EVENT_COMMAND_REPLIES.cancelled("Cancela pelo comando", "chuva de flechas"));
+      expect(discord.deleted).toContain(channelId);
+      expect(await reload(event)).toMatchObject({ status: "cancelled", cancelReason: "chuva de flechas" });
+      expect(await listEventSignupMembers(handle.db, event.id)).toEqual([]);
+    });
+
+    it("/evento cancelar recusa motivo longo demais e não cancela nada", async () => {
+      const { event } = await openEvent("Motivo comprido");
+      const interaction = fakeInteraction(ownerDiscordId);
+      await command.onCancel([interaction], { evento: event.id, motivo: "x".repeat(301) });
+      expect(answer(interaction)).toBe(EVENT_COMMAND_REPLIES.reasonTooLong);
+      expect(await reload(event).then((e) => e.status)).toBe("open");
+    });
+
+    it("/evento cancelar não acha evento finalizado e recusa quem não conduz o evento", async () => {
+      const { event, tank } = await openEvent("Já acabou");
+      discord.connect(WAITING, tank.discordId);
+      await events.transition(event.id, "start", owner);
+      await events.transition(event.id, "finish", owner);
+
+      const interaction = fakeInteraction(ownerDiscordId);
+      await command.onCancel([interaction], { evento: event.id });
+      expect(answer(interaction)).toBe(EVENT_COMMAND_REPLIES.noneToCancel);
+      expect(await reload(event).then((e) => e.status)).toBe("finished");
+
+      const outro = await openEvent("De outro caller");
+      const estranho = await newMember();
+      const dele = fakeInteraction(estranho.discordId);
+      await command.onCancel([dele], { evento: outro.event.id });
+      expect(answer(dele)).toBe(EVENT_COMMAND_REPLIES.noneToCancel);
+      expect(await reload(outro.event).then((e) => e.status)).toBe("open");
+    });
   });
 
   describe("comando do bot (AC#4)", () => {
