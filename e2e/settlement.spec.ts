@@ -56,7 +56,7 @@ test("caller acerta o evento finalizado: dados, taxa, split e confirmação (AC#
   await novo.getByRole("button", { name: new RegExp(templateName) }).click();
   await novo.getByLabel("Nome do evento").fill(eventName);
   await novo.getByRole("button", { name: "Criar evento" }).click();
-  await expect(page.getByText("Evento criado")).toBeVisible();
+  await expect(page.getByText("Evento criado").first()).toBeVisible();
 
   await selectEvent(page, eventName);
   const detail = page.getByRole("region", { name: eventName });
@@ -96,7 +96,7 @@ test("caller acerta o evento finalizado: dados, taxa, split e confirmação (AC#
   await dados.getByRole("button", { name: "Corrigir" }).click();
   await dados.getByLabel("Observações").fill("acerto conferido no painel");
   await dados.getByRole("button", { name: "Salvar dados" }).click();
-  await expect(page.getByText("Dados do evento salvos")).toBeVisible();
+  await expect(page.getByText("Dados do evento salvos").first()).toBeVisible();
   await expect(dados.getByText("acerto conferido no painel")).toBeVisible();
 
   // AC#3: taxa em porcentagem, com a frase do resultado e o destino do retido.
@@ -104,13 +104,14 @@ test("caller acerta o evento finalizado: dados, taxa, split e confirmação (AC#
   await expect(taxa.getByText("o valor retido vai para", { exact: false })).toBeVisible();
   await taxa.getByLabel("Percentual retido").fill("10");
   await taxa.getByRole("button", { name: "Salvar taxa" }).click();
-  await expect(page.getByText("Taxa do evento: 10%")).toBeVisible();
+  // `.first()`: a mesma taxa é salva duas vezes no teste, e o primeiro toast ainda pode estar na tela.
+  await expect(page.getByText("Taxa do evento: 10%").first()).toBeVisible();
 
   // AC#8: taxa fixa maior que o total é barrada aqui, sem chamar a API.
   await taxa.getByRole("button", { name: "Valor fixo" }).click();
   await taxa.getByLabel("Prata retida").fill("20.000.000");
   await taxa.getByRole("button", { name: "Salvar taxa" }).click();
-  await expect(page.getByText("Taxa do evento: 20.000.000 de prata")).toBeVisible();
+  await expect(page.getByText("Taxa do evento: 20.000.000 de prata").first()).toBeVisible();
   await acerto.getByLabel("Total arrecadado na leva").fill("10.000.000");
   // A frase inteira, a mesma do 409 da API, fica no bloco da taxa; o split só diz por que o botão não vai.
   await expect(taxa.getByText("A taxa do evento é maior que o total deste split", { exact: false })).toBeVisible();
@@ -123,14 +124,15 @@ test("caller acerta o evento finalizado: dados, taxa, split e confirmação (AC#
   await taxa.getByRole("button", { name: "Porcentagem" }).click();
   await taxa.getByLabel("Percentual retido").fill("10");
   await taxa.getByRole("button", { name: "Salvar taxa" }).click();
-  await expect(page.getByText("Taxa do evento: 10%")).toBeVisible();
+  // `.first()`: a mesma taxa é salva duas vezes no teste, e o primeiro toast ainda pode estar na tela.
+  await expect(page.getByText("Taxa do evento: 10%").first()).toBeVisible();
   await acerto.getByLabel("Total arrecadado na leva").fill("10.000.000");
   // AC#3: a frase da taxa responde ao total digitado, com os três números e o destino do retido.
   await expect(taxa.getByText("De 10.000.000, retém 1.000.000 (10%) para", { exact: false })).toBeVisible();
   await expect(taxa.getByText("sobram 9.000.000 para dividir", { exact: false })).toBeVisible();
   await snap(page, `acerto-taxa-${tag()}`);
   await acerto.getByRole("button", { name: "Calcular divisão" }).click();
-  await expect(page.getByText("Divisão calculada")).toBeVisible();
+  await expect(page.getByText("Divisão calculada").first()).toBeVisible();
 
   /*
    * Ninguém ficou na call neste ambiente (o bot está desligado no e2e), então o rateio por tempo
@@ -163,7 +165,7 @@ test("caller acerta o evento finalizado: dados, taxa, split e confirmação (AC#
   await expect(confirmar.getByText("Dividido entre 1 pessoa")).toBeVisible();
   await snap(page, `acerto-confirmacao-${tag()}`);
   await confirmar.getByRole("button", { name: "Confirmar e creditar" }).click();
-  await expect(page.getByText("Split confirmado")).toBeVisible();
+  await expect(page.getByText("Split confirmado").first()).toBeVisible();
 
   // AC#9: confirmado vira somente leitura, com o caminho do estorno escrito.
   await expect(acerto.getByText("Leva 1 confirmada")).toBeVisible();
@@ -218,7 +220,7 @@ test("membro e caller de outro evento não alcançam o acerto (AC#12)", async ({
   await novo.getByRole("button", { name: new RegExp(templateName) }).click();
   await novo.getByLabel("Nome do evento").fill(eventName);
   await novo.getByRole("button", { name: "Criar evento" }).click();
-  await expect(page.getByText("Evento criado")).toBeVisible();
+  await expect(page.getByText("Evento criado").first()).toBeVisible();
   await selectEvent(page, eventName);
   const detail = page.getByRole("region", { name: eventName });
   for (const action of ["Abrir inscrições", "Iniciar evento", "Finalizar evento"]) {
