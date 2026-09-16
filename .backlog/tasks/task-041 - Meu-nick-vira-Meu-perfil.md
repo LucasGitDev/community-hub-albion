@@ -4,11 +4,12 @@ title: Meu nick vira Meu perfil
 status: To Do
 assignee: []
 created_date: '2026-09-16 03:45'
+updated_date: '2026-09-16 14:20'
 labels:
   - frontend
   - backend
 dependencies: []
-priority: medium
+priority: low
 ordinal: 41000
 ---
 
