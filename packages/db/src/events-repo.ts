@@ -16,13 +16,14 @@ import { eventOwnerHistory, eventRoleSlots, eventSignups, eventTemplateRoles, ev
 const owner = alias(users, "event_owner");
 
 /** Coluna de carimbo que cada estado preenche ao ser alcançado (TASK-021, Q26). */
-const STAMP: Record<EventStatus, "openedAt" | "closedAt" | "startedAt" | "finishedAt" | "cancelledAt" | null> = {
+const STAMP: Record<EventStatus, "openedAt" | "closedAt" | "startedAt" | "finishedAt" | "cancelledAt" | "archivedAt" | null> = {
   draft: null,
   open: "openedAt",
   closed: "closedAt",
   running: "startedAt",
   finished: "finishedAt",
   cancelled: "cancelledAt",
+  archived: "archivedAt",
 };
 
 export interface CreateEventInput {
@@ -37,8 +38,27 @@ export interface CreateEventInput {
 }
 
 export type CreateEventResult = { ok: true; event: EventDto } | { ok: false; reason: "unknown_template" | "inactive_template" };
-export type EventTransitionResult = { ok: true; event: EventDto; from: EventStatus } | { ok: false; reason: "not_found" } | { ok: false; reason: "invalid"; from: EventStatus };
+export type EventTransitionResult =
+  | { ok: true; event: EventDto; from: EventStatus }
+  | { ok: false; reason: "not_found" }
+  | { ok: false; reason: "invalid"; from: EventStatus }
+  /** Uma precondição de negócio recusou a transição; `message` é a frase PT-BR que o usuário lê. */
+  | { ok: false; reason: "blocked"; from: EventStatus; message: string };
 export type TransferEventOwnerResult = { ok: true; event: EventDto; from: string } | { ok: false; reason: "not_found" | "unknown_user" | "same_owner" | "terminal" };
+
+/** Transação do drizzle, para quem precisa ler o banco dentro da mesma trava do evento. */
+export type EventTx = Parameters<Parameters<Database["transaction"]>[0]>[0];
+
+/**
+ * Regra de negócio consultada **dentro** da transação, depois do `for update` e depois da máquina de
+ * estados: devolve a frase PT-BR que recusa a transição, ou `null` para deixar passar.
+ *
+ * Existe para o arquivamento (TASK-044, AC#4): arquivar exige que não haja loot split em rascunho.
+ * Rodar aqui, com o evento travado, é o que impede a corrida "conferi que não havia split e, entre a
+ * conferência e o update, alguém criou um". Os splits só nascem na F5 (TASK-027/028), então o default
+ * do servidor é "não há split pendente" e a F5 pluga a consulta real sem tocar neste arquivo.
+ */
+export type EventTransitionPrecondition = (tx: EventTx, ctx: { eventId: string; from: EventStatus; to: EventStatus }) => Promise<string | null>;
 
 const iso = (d: Date | null) => (d ? d.toISOString() : null);
 
@@ -83,6 +103,7 @@ async function loadEvents(db: Database, ids?: string[], filters: EventListQuery 
       startedAt: iso(e.startedAt),
       finishedAt: iso(e.finishedAt),
       cancelledAt: iso(e.cancelledAt),
+      archivedAt: iso(e.archivedAt),
       cancelReason: e.cancelReason,
       roles: own,
       totalSlots: own.reduce((sum, r) => sum + r.slots, 0),
@@ -132,6 +153,8 @@ export interface ApplyEventTransitionOptions {
   at?: Date;
   /** Só faz sentido em `cancelled` (TASK-025): o texto que o inscrito lê no embed e no painel. */
   reason?: string | null;
+  /** Precondição de negócio avaliada dentro da transação, com o evento já travado (TASK-044, AC#4). */
+  precondition?: EventTransitionPrecondition;
 }
 
 /**
@@ -150,6 +173,8 @@ export async function applyEventTransition(db: Database, id: string, to: EventSt
     if (!current) return { ok: false as const, reason: "not_found" as const };
     const from = current.status;
     if (!canTransition(from, to)) return { ok: false as const, reason: "invalid" as const, from };
+    const blocked = options.precondition ? await options.precondition(tx, { eventId: id, from, to }) : null;
+    if (blocked) return { ok: false as const, reason: "blocked" as const, from, message: blocked };
     const stamp = STAMP[to];
     await tx
       .update(events)
@@ -187,12 +212,14 @@ export async function closeDueEvents(db: Database, now: Date): Promise<EventDto[
   return loadEvents(db, closed.map((e) => e.id));
 }
 
-/** Troca o owner (Q21, AC#4) gravando o histórico na mesma transação. Evento terminal não troca de dono. */
+/** Troca o owner (Q21, AC#4) gravando o histórico na mesma transação. Cancelado ou arquivado não troca de dono. */
 export async function transferEventOwner(db: Database, eventId: string, toUserId: string, changedBy: string): Promise<TransferEventOwnerResult> {
   const result = await db.transaction(async (tx) => {
     const [current] = await tx.select({ ownerUserId: events.ownerUserId, status: events.status }).from(events).where(eq(events.id, eventId)).for("update");
     if (!current) return { ok: false as const, reason: "not_found" as const };
-    if (current.status === "finished" || current.status === "cancelled") return { ok: false as const, reason: "terminal" as const };
+    // `finished` ficou de fora (TASK-044): a taxa e as sobras vão para o owner, e o acerto acontece
+    // depois do jogo — trocar o dono errado precisa continuar possível até o evento ser arquivado.
+    if (current.status === "cancelled" || current.status === "archived") return { ok: false as const, reason: "terminal" as const };
     if (current.ownerUserId === toUserId) return { ok: false as const, reason: "same_owner" as const };
     const [target] = await tx.select({ id: users.id }).from(users).where(eq(users.id, toUserId));
     if (!target) return { ok: false as const, reason: "unknown_user" as const };

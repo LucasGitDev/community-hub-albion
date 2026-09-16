@@ -651,7 +651,53 @@ describe.skipIf(!url)("@albion-hub/db (Postgres real)", () => {
       expect(final.startedAt).not.toBeNull();
       expect(final.finishedAt).not.toBeNull();
       expect(final.cancelledAt).toBeNull();
+      expect(final.archivedAt).toBeNull();
       expect(Date.parse(final.startedAt!)).toBeGreaterThanOrEqual(Date.parse(final.closedAt!));
+    });
+
+    it("arquiva depois de finalizado, carimba archived_at e trava qualquer saída (TASK-044 AC#1)", async () => {
+      const event = await created("Arquivado");
+      for (const to of ["open", "running", "finished"] as const) await applyEventTransition(handle.db, event.id, to);
+      const archived = await applyEventTransition(handle.db, event.id, "archived");
+      expect(archived).toMatchObject({ ok: true, from: "finished", event: { status: "archived" } });
+      const final = (await getEvent(handle.db, event.id))!;
+      expect(final.archivedAt).not.toBeNull();
+      // O carimbo de quando o jogo acabou continua lá: arquivar não apaga a história do evento.
+      expect(final.finishedAt).not.toBeNull();
+      for (const to of ["finished", "cancelled", "running", "open"] as const)
+        expect(await applyEventTransition(handle.db, event.id, to), to).toEqual({ ok: false, reason: "invalid", from: "archived" });
+    });
+
+    it("precondição recusa o arquivamento dentro da transação e não muda nada (TASK-044 AC#4)", async () => {
+      const event = await created("Com split pendente");
+      for (const to of ["open", "running", "finished"] as const) await applyEventTransition(handle.db, event.id, to);
+      const seen: { eventId: string; from: string; to: string }[] = [];
+      const blocked = await applyEventTransition(handle.db, event.id, "archived", {
+        precondition: (_tx, ctx) => {
+          seen.push(ctx);
+          return Promise.resolve("Esse evento ainda tem um loot split em rascunho.");
+        },
+      });
+      expect(blocked).toEqual({ ok: false, reason: "blocked", from: "finished", message: "Esse evento ainda tem um loot split em rascunho." });
+      expect(seen).toEqual([{ eventId: event.id, from: "finished", to: "archived" }]);
+      const still = (await getEvent(handle.db, event.id))!;
+      expect(still.status).toBe("finished");
+      expect(still.archivedAt).toBeNull();
+      // Precondição que libera deixa passar.
+      expect(await applyEventTransition(handle.db, event.id, "archived", { precondition: () => Promise.resolve(null) })).toMatchObject({ ok: true });
+    });
+
+    it("precondição não roda quando a máquina já recusou a transição (TASK-044)", async () => {
+      const event = await created("Precondição não chamada");
+      let calls = 0;
+      const result = await applyEventTransition(handle.db, event.id, "archived", {
+        precondition: () => {
+          calls += 1;
+          return Promise.resolve("não deveria ser consultada");
+        },
+      });
+      expect(result).toEqual({ ok: false, reason: "invalid", from: "draft" });
+      expect(calls).toBe(0);
     });
 
     it("start com inscrição aberta fecha a inscrição junto (Q26: start fecha)", async () => {
@@ -712,6 +758,16 @@ describe.skipIf(!url)("@albion-hub/db (Postgres real)", () => {
 
       await applyEventTransition(handle.db, event.id, "cancelled");
       expect(await transferEventOwner(handle.db, event.id, other, other)).toEqual({ ok: false, reason: "terminal" });
+    });
+
+    it("evento finalizado ainda troca de owner; arquivado não (TASK-044 AC#2)", async () => {
+      const event = await created("Acerto depois do jogo");
+      for (const to of ["open", "running", "finished"] as const) await applyEventTransition(handle.db, event.id, to);
+      // `finished` é o momento do acerto da prata (Q26 revisada): a taxa vai para o owner, então
+      // corrigir o dono errado precisa continuar possível aqui.
+      expect(await transferEventOwner(handle.db, event.id, other, other)).toMatchObject({ ok: true, event: { ownerUserId: other } });
+      await applyEventTransition(handle.db, event.id, "archived");
+      expect(await transferEventOwner(handle.db, event.id, owner, other)).toEqual({ ok: false, reason: "terminal" });
     });
 
     it("lista com filtros de estado, owner e template", async () => {

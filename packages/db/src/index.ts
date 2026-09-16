@@ -80,6 +80,8 @@ export {
   transferEventOwner,
   type ApplyEventTransitionOptions,
   type CreateEventInput,
+  type EventTransitionPrecondition,
+  type EventTx,
   type CreateEventResult,
   type EventTransitionResult,
   type TransferEventOwnerResult,
