@@ -106,6 +106,13 @@
       "when": 1789586397151,
       "tag": "0014_mixed_skaar",
       "breakpoints": true
+    },
+    {
+      "idx": 15,
+      "version": "7",
+      "when": 1789587277929,
+      "tag": "0015_lethal_vivisector",
+      "breakpoints": true
     }
   ]
 }

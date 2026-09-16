@@ -1,22 +1,33 @@
 import {
   ACTIVE_EVENT_SIGNUP_STATUSES,
   calculateSplitDraft,
+  checkSplitConfirm,
+  distributeByShare,
+  feeBreakdown,
   type EventFee,
   type EventStatus,
   type LootSplitDto,
   type LootSplitLineDto,
+  type LootSplitStatus,
+  type SplitConfirmRefusal,
   type SplitPresence,
 } from "@albion-hub/shared";
-import { and, asc, eq, gte, inArray, isNull, lte, or, type SQL } from "drizzle-orm";
+import { and, asc, eq, gte, inArray, isNull, lte, ne, or, type SQL } from "drizzle-orm";
 import type { Database } from "./client.js";
 import type { EventTx } from "./events-repo.js";
+import { listLedgerEntriesByReference, reverseLedgerEntry } from "./ledger-repo.js";
 import { memberNick } from "./member-nick.js";
-import { eventSignups, events, lootSplitLines, lootSplits, users, voiceSessions } from "./schema.js";
+import { eventSignups, events, ledgerEntries, lootSplitLines, lootSplits, users, voiceSessions } from "./schema.js";
 import { overlapMs } from "./voice-repo.js";
 
 /**
- * Loot split (TASK-027, Q5/Q6/Q7/Q23). Este módulo só monta o **rascunho**: mede presença, rateia e
- * grava. Nada aqui escreve no ledger — confirmar o split e creditar prata é da TASK-028.
+ * Loot split (TASK-027 e TASK-028, Q5/Q6/Q7/Q22/Q23). Monta o rascunho (mede presença e rateia),
+ * deixa editar total e percentuais enquanto é rascunho, e **confirma**: aí a prata vira lançamento no
+ * ledger, numa transação só.
+ *
+ * Ordem de travas, igual em todo caminho de escrita daqui: **evento primeiro, split depois**. A
+ * transição de arquivamento (TASK-044) trava o evento e depois só *lê* os splits, nunca os trava —
+ * então não existe ciclo, e a ordem acima é a única que precisa ser respeitada por quem vier depois.
  */
 
 /** Uma pessoa presente ou inscrita, antes do rateio. */
@@ -140,7 +151,9 @@ export async function createLootSplit(db: Database, input: CreateLootSplitInput)
     if (event.status !== "finished") return { ok: false as const, reason: "invalid_status" as const, status: event.status };
 
     const candidates = await listEventPresence(tx, input.eventId);
-    const { lines, residual } = calculateSplitDraft(candidates, input.totalSilver);
+    // A taxa sai antes da divisão (doc-005, "Taxa do split"): o que as linhas dividem é o líquido.
+    const { feeSilver, distributable } = feeBreakdown(input.totalSilver, input.fee);
+    const { lines, residual } = calculateSplitDraft(candidates, distributable);
 
     const [split] = await tx
       .insert(lootSplits)
@@ -149,6 +162,7 @@ export async function createLootSplit(db: Database, input: CreateLootSplitInput)
         totalSilver: input.totalSilver,
         feeType: input.fee.type,
         feeValue: input.fee.value,
+        feeSilver,
         residualSilver: residual,
         createdBy: input.createdBy,
       })
@@ -201,8 +215,14 @@ async function loadSplits(db: Database, where: SQL): Promise<LootSplitDto[]> {
     status: split.status,
     totalSilver: split.totalSilver.toString(),
     fee: { type: split.feeType, value: split.feeValue.toString() },
+    feeSilver: split.feeSilver.toString(),
+    // Recalculado da mesma fonte que a confirmação usa, então a tela nunca mostra um distribuível
+    // que a confirmação não reconheceria — inclusive o zero de quando a taxa não cabe no total.
+    distributableSilver: feeBreakdown(split.totalSilver, { type: split.feeType, value: split.feeValue }).distributable.toString(),
     residualSilver: split.residualSilver.toString(),
     createdByUserId: split.createdBy,
+    confirmedByUserId: split.confirmedBy,
+    confirmedAt: split.confirmedAt?.toISOString() ?? null,
     createdAt: split.createdAt.toISOString(),
     updatedAt: split.updatedAt.toISOString(),
     lines: lines
@@ -244,6 +264,234 @@ export async function hasDraftLootSplit(db: Database | EventTx, eventId: string)
     .select({ id: lootSplits.id })
     .from(lootSplits)
     .where(and(eq(lootSplits.eventId, eventId), eq(lootSplits.status, "draft")))
+    .limit(1);
+  return rows.length > 0;
+}
+
+/* ------------------------------------------------ edição e confirmação (TASK-028) */
+
+/** O que toda escrita precisa carregar antes de decidir qualquer coisa. */
+interface SplitContext {
+  status: LootSplitStatus;
+  eventStatus: EventStatus;
+  eventId: string;
+  ownerUserId: string;
+  totalSilver: bigint;
+  fee: EventFee;
+}
+
+/**
+ * Trava o evento e depois o split, nessa ordem (ver o comentário do topo), e devolve o estado já
+ * relido **dentro** da transação: quem decide se pode editar ou confirmar nunca decide sobre um
+ * retrato tirado antes da trava.
+ */
+async function lockSplit(tx: EventTx, splitId: string): Promise<SplitContext | null> {
+  const [head] = await tx.select({ eventId: lootSplits.eventId }).from(lootSplits).where(eq(lootSplits.id, splitId));
+  if (!head) return null;
+  const [event] = await tx.select({ status: events.status, ownerUserId: events.ownerUserId }).from(events).where(eq(events.id, head.eventId)).for("update");
+  if (!event) return null;
+  const [split] = await tx
+    .select({ status: lootSplits.status, totalSilver: lootSplits.totalSilver, feeType: lootSplits.feeType, feeValue: lootSplits.feeValue })
+    .from(lootSplits)
+    .where(eq(lootSplits.id, splitId))
+    .for("update");
+  if (!split) return null;
+  return {
+    status: split.status,
+    eventStatus: event.status,
+    eventId: head.eventId,
+    ownerUserId: event.ownerUserId,
+    totalSilver: split.totalSilver,
+    fee: { type: split.feeType, value: split.feeValue },
+  };
+}
+
+/** Linhas do split na ordem estável de sempre, com o que a conferência precisa. */
+async function splitLinesFor(tx: EventTx, splitId: string) {
+  return tx
+    .select({ id: lootSplitLines.id, userId: lootSplitLines.userId, signedUp: lootSplitLines.signedUp, shareBp: lootSplitLines.shareBp })
+    .from(lootSplitLines)
+    .where(eq(lootSplitLines.splitId, splitId))
+    .orderBy(asc(lootSplitLines.id));
+}
+
+export interface UpdateLootSplitInput {
+  /** Novo total bruto da leva. Ausente mantém o que está lá. */
+  totalSilver?: bigint;
+  /** Nova participação por linha. Quando vem, precisa cobrir **todas** as linhas do split. */
+  lines?: readonly { id: string; shareBp: number }[];
+}
+
+export type UpdateLootSplitResult =
+  | { ok: true; split: LootSplitDto }
+  | { ok: false; reason: "not_found" }
+  | { ok: false; reason: "not_draft"; status: LootSplitStatus }
+  | { ok: false; reason: "event_not_editable"; status: EventStatus }
+  | { ok: false; reason: "unknown_lines" }
+  | { ok: false; reason: "share_without_signup" };
+
+/**
+ * Edita o rascunho: total da leva e/ou percentuais (AC#1).
+ *
+ * A soma **não** é exigida aqui de propósito — durante a edição ela passa por estados intermediários
+ * o tempo todo, e travar cada passo tornaria a tela impossível de usar. Quem exige 100% é a
+ * confirmação (Q22), que é onde a prata de fato nasce.
+ *
+ * O que é exigido: o split ainda ser rascunho (confirmado é imutável — a trigger recusaria de
+ * qualquer jeito) e o evento ainda estar `finished` (arquivado não aceita nada, Q26). Se `lines` vem,
+ * ela precisa cobrir exatamente as linhas deste split: participação é bolo fechado, e aceitar uma
+ * lista parcial deixaria o resto num valor que ninguém escolheu.
+ */
+export async function updateLootSplitDraft(db: Database, splitId: string, input: UpdateLootSplitInput): Promise<UpdateLootSplitResult> {
+  const updated = await db.transaction(async (tx) => {
+    const ctx = await lockSplit(tx, splitId);
+    if (!ctx) return { ok: false as const, reason: "not_found" as const };
+    if (ctx.status !== "draft") return { ok: false as const, reason: "not_draft" as const, status: ctx.status };
+    if (ctx.eventStatus !== "finished") return { ok: false as const, reason: "event_not_editable" as const, status: ctx.eventStatus };
+
+    const lines = await splitLinesFor(tx, splitId);
+    if (input.lines) {
+      const wanted = new Map(input.lines.map((line) => [line.id, line.shareBp]));
+      if (wanted.size !== lines.length || lines.some((line) => !wanted.has(line.id))) return { ok: false as const, reason: "unknown_lines" as const };
+      for (const line of lines) line.shareBp = wanted.get(line.id)!;
+    }
+    // Mesma regra do CHECK do banco (Q7), só que com uma frase em vez de um erro de constraint.
+    if (lines.some((line) => !line.signedUp && line.shareBp > 0)) return { ok: false as const, reason: "share_without_signup" as const };
+
+    const totalSilver = input.totalSilver ?? ctx.totalSilver;
+    const { feeSilver, distributable } = feeBreakdown(totalSilver, ctx.fee);
+    const { amounts, residual } = distributeByShare(
+      lines.map((line) => line.shareBp),
+      distributable,
+    );
+    for (const [index, line] of lines.entries())
+      await tx
+        .update(lootSplitLines)
+        .set({ shareBp: line.shareBp, amountSilver: amounts[index]! })
+        .where(eq(lootSplitLines.id, line.id));
+    await tx.update(lootSplits).set({ totalSilver, feeSilver, residualSilver: residual, updatedAt: new Date() }).where(eq(lootSplits.id, splitId));
+    return { ok: true as const };
+  });
+  if (!updated.ok) return updated;
+  return { ok: true, split: (await getLootSplit(db, splitId))! };
+}
+
+export interface ConfirmLootSplitInput {
+  actorUserId: string | null;
+  at?: Date;
+}
+
+export type ConfirmLootSplitResult =
+  | { ok: true; split: LootSplitDto; alreadyConfirmed: boolean }
+  | { ok: false; reason: "not_found" }
+  | { ok: false; reason: "event_not_editable"; status: EventStatus }
+  | { ok: false; reason: "refused"; refusal: SplitConfirmRefusal };
+
+/**
+ * Confirma o split e **lança a prata no ledger**, numa transação só (AC#2, AC#4).
+ *
+ * O que entra no ledger, e nada além disso:
+ * - um `split_payout` por participante com prata > 0, creditado na conta dele;
+ * - um `split_fee` com **taxa + resíduo** para o caller/dono do evento (Q23, doc-005 "Taxa do split").
+ *   É um lançamento só porque os dois valores têm a mesma justificativa e o mesmo destino; separá-los
+ *   deixaria o extrato do dono com duas linhas para o mesmo split sem explicar nada a mais.
+ *
+ * A soma dos créditos é **exatamente** o total do split: o distribuível vai todo para as linhas, o que
+ * o truncamento deixa para trás é o resíduo, e resíduo + taxa é o crédito do dono.
+ *
+ * **Idempotência** (AC#4): a transação trava a linha do split com `for update` antes de olhar o
+ * status. Duas confirmações simultâneas não leem o mesmo estado — a segunda só roda depois que a
+ * primeira commitou, lê `confirmed` e volta `alreadyConfirmed`, sem lançar nada. É a mesma defesa que
+ * o saque usa, e é por isso que o teste de concorrência roda contra Postgres de verdade, não contra um
+ * mock: o que garante o resultado é o banco, não o JavaScript.
+ *
+ * Confirmado, o split vira imutável de verdade: triggers no Postgres recusam UPDATE e DELETE nele e
+ * nas linhas dele. Corrigir é estornar (`reverseLootSplit`), nunca reescrever.
+ */
+export async function confirmLootSplit(db: Database, splitId: string, input: ConfirmLootSplitInput): Promise<ConfirmLootSplitResult> {
+  const at = input.at ?? new Date();
+  const done = await db.transaction(async (tx) => {
+    const ctx = await lockSplit(tx, splitId);
+    if (!ctx) return { ok: false as const, reason: "not_found" as const };
+    if (ctx.status === "confirmed") return { ok: true as const, alreadyConfirmed: true };
+    if (ctx.eventStatus !== "finished") return { ok: false as const, reason: "event_not_editable" as const, status: ctx.eventStatus };
+
+    const lines = await splitLinesFor(tx, splitId);
+    const checked = checkSplitConfirm(lines, ctx.totalSilver, ctx.fee);
+    if (!checked.ok) return { ok: false as const, reason: "refused" as const, refusal: checked.reason };
+    const { fee, amounts, residual, ownerSilver } = checked.plan;
+
+    // Reescreve a prata das linhas com a conta final: é o que o extrato vai ter que bater depois.
+    for (const [index, line] of lines.entries())
+      await tx.update(lootSplitLines).set({ amountSilver: amounts[index]! }).where(eq(lootSplitLines.id, line.id));
+
+    const reference = { referenceType: "loot_split" as const, referenceId: splitId, createdBy: input.actorUserId };
+    const values: (typeof ledgerEntries.$inferInsert)[] = [];
+    for (const [index, line] of lines.entries()) {
+      const amount = amounts[index]!;
+      // Sem conta no painel não há para quem creditar, e o ledger recusa lançamento de zero.
+      if (line.userId === null || amount <= 0n) continue;
+      values.push({ userId: line.userId, amount, kind: "split_payout", ...reference, memo: "Loot split do evento" });
+    }
+    // Taxa retida + sobra do arredondamento, num lançamento só para o caller/dono (Q23).
+    if (ownerSilver > 0n) values.push({ userId: ctx.ownerUserId, amount: ownerSilver, kind: "split_fee", ...reference, memo: "Taxa e sobra do loot split" });
+    if (values.length > 0) await tx.insert(ledgerEntries).values(values);
+
+    await tx
+      .update(lootSplits)
+      .set({ status: "confirmed", feeSilver: fee.feeSilver, residualSilver: residual, confirmedBy: input.actorUserId, confirmedAt: at, updatedAt: at })
+      .where(eq(lootSplits.id, splitId));
+    return { ok: true as const, alreadyConfirmed: false };
+  });
+  if (!done.ok) return done;
+  return { ok: true, split: (await getLootSplit(db, splitId))!, alreadyConfirmed: done.alreadyConfirmed };
+}
+
+export type ReverseLootSplitResult =
+  | { ok: true; reversed: number }
+  | { ok: false; reason: "not_found" }
+  | { ok: false; reason: "not_confirmed"; status: LootSplitStatus }
+  | { ok: false; reason: "already_reversed" };
+
+/**
+ * Estorna um split confirmado: a **única** correção possível (Q24).
+ *
+ * Cada lançamento do split ganha o seu inverso via `reverseLedgerEntry`, que é quem sabe ligar o
+ * estorno ao original e recusar o segundo estorno do mesmo lançamento. Nada é editado nem apagado —
+ * nem no ledger, nem no split. Tudo numa transação: um split meio estornado seria pior do que um não
+ * estornado, porque o saldo de alguns participantes já teria voltado e o de outros não.
+ *
+ * O split continua `confirmed` depois do estorno: ele aconteceu, e o extrato mostra as duas metades.
+ */
+export async function reverseLootSplit(db: Database, splitId: string, options: { reason: string; actorUserId: string | null }): Promise<ReverseLootSplitResult> {
+  return db.transaction(async (tx) => {
+    const ctx = await lockSplit(tx, splitId);
+    if (!ctx) return { ok: false as const, reason: "not_found" as const };
+    if (ctx.status !== "confirmed") return { ok: false as const, reason: "not_confirmed" as const, status: ctx.status };
+    const all = await listLedgerEntriesByReference(tx, "loot_split", splitId);
+    // Quem já tem estorno fica de fora **antes** de tentar: no Postgres uma violação de unicidade
+    // aborta a transação inteira, então descobrir pelo erro custaria o estorno dos outros.
+    const reversedIds = new Set(all.filter((entry) => entry.reversalOf !== null).map((entry) => entry.reversalOf!));
+    const pending = all.filter((entry) => entry.kind !== "reversal" && !reversedIds.has(entry.id));
+    if (pending.length === 0) return { ok: false as const, reason: "already_reversed" as const };
+    for (const entry of pending) {
+      const result = await reverseLedgerEntry(tx, entry.id, { reason: options.reason, actorUserId: options.actorUserId });
+      if (!result.ok) throw new Error(`estorno do split ${splitId} falhou em ${entry.id}: ${result.reason}`);
+    }
+    return { ok: true as const, reversed: pending.length };
+  });
+}
+
+/**
+ * Existe split **confirmado** neste evento? A prova de AC#5 mora na máquina de estados (`finished` só
+ * vai para `archived`, nunca para `cancelled`), mas quem lê o evento quer saber disso sem refazer a
+ * consulta — e um dia a máquina pode mudar.
+ */
+export async function hasConfirmedLootSplit(db: Database | EventTx, eventId: string): Promise<boolean> {
+  const rows = await db
+    .select({ id: lootSplits.id })
+    .from(lootSplits)
+    .where(and(eq(lootSplits.eventId, eventId), ne(lootSplits.status, "draft")))
     .limit(1);
   return rows.length > 0;
 }

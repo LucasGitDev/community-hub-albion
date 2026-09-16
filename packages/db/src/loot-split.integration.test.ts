@@ -3,24 +3,31 @@ import { eq, sql } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import {
   applyEventTransition,
+  confirmLootSplit,
   createDb,
   createEvent,
   createLootSplit,
   getEvent,
+  getLedgerBalance,
   getLootSplit,
+  hasConfirmedLootSplit,
   hasDraftLootSplit,
   joinEventRole,
   listEventLootSplits,
   listEventPresence,
   listEventRoles,
+  listLedgerEntriesByReference,
   openVoiceSession,
   runMigrations,
+  reverseLootSplit,
   saveEventTemplate,
   schema,
   setEventFee,
   setEventVoiceChannelId,
+  updateLootSplitDraft,
   upsertUserByDiscordId,
   type DbHandle,
+  type EventTransitionPrecondition,
 } from "./index.js";
 
 const baseUrl = process.env.TEST_DATABASE_URL ?? process.env.DATABASE_URL;
@@ -129,10 +136,11 @@ describe.skipIf(!baseUrl)("rascunho de loot split (TASK-027, Postgres real)", ()
       const created = await createLootSplit(handle.db, { eventId: event.id, totalSilver: 3_000_000n, fee: NO_FEE, createdBy: owner.id });
       if (!created.ok) throw new Error(created.reason);
       const byNick = new Map(created.split.lines.map((l) => [l.discordUserId, l]));
-      expect(byNick.get(a.discordId)).toMatchObject({ shareBp: 6667, presenceMs: 120 * MIN, signedUp: true, amount: "2000000", roleName: tankSlotName });
-      expect(byNick.get(b.discordId)).toMatchObject({ shareBp: 3333, presenceMs: 60 * MIN, amount: "1000000" });
+      // A prata sai do percentual exibido (66,67% e 33,33%), não dos milissegundos: é o número que o
+      // caller confere na tela e é exatamente o que a confirmação credita (TASK-028).
+      expect(byNick.get(a.discordId)).toMatchObject({ shareBp: 6667, presenceMs: 120 * MIN, signedUp: true, amount: "2000100", roleName: tankSlotName });
+      expect(byNick.get(b.discordId)).toMatchObject({ shareBp: 3333, presenceMs: 60 * MIN, amount: "999900" });
       expect(created.split.lines.reduce((s, l) => s + l.shareBp, 0)).toBe(10_000);
-      // 3.000.000 em 2/3 e 1/3 não fecha: a sobra fica com o dono (Q23).
       expect(created.split.residualSilver).toBe("0");
       expect(created.split.status).toBe("draft");
       expect(created.split.createdByUserId).toBe(owner.id);
@@ -283,11 +291,14 @@ describe.skipIf(!baseUrl)("rascunho de loot split (TASK-027, Postgres real)", ()
       const splits = await listEventLootSplits(handle.db, event.id);
       expect(splits).toHaveLength(2);
       for (const split of splits) expect(split.lines.reduce((s, l) => s + l.shareBp, 0)).toBe(10_000);
-      // Cada leva fecha o próprio total: soma das linhas + sobra.
-      expect(splits[0]!.lines.reduce((s, l) => s + BigInt(l.amount), 0n) + BigInt(splits[0]!.residualSilver)).toBe(1_000_000n);
-      expect(splits[1]!.lines.reduce((s, l) => s + BigInt(l.amount), 0n) + BigInt(splits[1]!.residualSilver)).toBe(500_001n);
-      // 500.001 entre dois: sobra 1 de prata para o dono (Q23).
-      expect(splits[1]!.residualSilver).toBe("1");
+      // Cada leva fecha o próprio total: linhas + sobra + taxa retida, nem um tostão a mais ou a menos.
+      const closes = (split: (typeof splits)[number]) =>
+        split.lines.reduce((s, l) => s + BigInt(l.amount), 0n) + BigInt(split.residualSilver) + BigInt(split.feeSilver);
+      expect(closes(splits[0]!)).toBe(1_000_000n);
+      expect(closes(splits[1]!)).toBe(500_001n);
+      // A segunda leva tem taxa fixa de 25.000: sai antes da divisão (doc-005, "Taxa do split").
+      expect(splits[1]!.feeSilver).toBe("25000");
+      expect(splits[1]!.distributableSilver).toBe("475001");
       // A taxa é congelada por split: a segunda leva guardou a sua.
       expect(splits[1]!.fee).toEqual({ type: "fixed", value: "25000" });
     });
@@ -465,8 +476,11 @@ describe.skipIf(!baseUrl)("rascunho de loot split (TASK-027, Postgres real)", ()
       if (!created.ok) throw new Error(created.reason);
       await setEventFee(handle.db, event.id, { type: "fixed", value: 777n });
       expect((await getLootSplit(handle.db, created.split.id))!.fee).toEqual({ type: "percent", value: "1000" });
-      // E a taxa não foi aplicada aqui: a prévia ainda é sobre o total bruto (TASK-028 aplica).
-      expect((await getLootSplit(handle.db, created.split.id))!.lines[0]!.amount).toBe("1000");
+      // A taxa congelada é a que foi aplicada: 10% de 1000 retidos, 900 divididos (TASK-028).
+      const reread = (await getLootSplit(handle.db, created.split.id))!;
+      expect(reread.feeSilver).toBe("100");
+      expect(reread.distributableSilver).toBe("900");
+      expect(reread.lines[0]!.amount).toBe("900");
     });
   });
 
@@ -495,6 +509,305 @@ describe.skipIf(!baseUrl)("rascunho de loot split (TASK-027, Postgres real)", ()
 
     it("presença de evento inexistente é lista vazia", async () => {
       expect(await listEventPresence(handle.db, "00000000-0000-4000-8000-000000000000")).toEqual([]);
+    });
+  });
+
+  /**
+   * Confirmação e edição (TASK-028). Tudo aqui contra Postgres de verdade de propósito: o que garante
+   * a idempotência e a imutabilidade é o banco (trava de linha e triggers), não o JavaScript.
+   */
+  describe("edição e confirmação do split (TASK-028)", () => {
+    /** Evento finalizado com dois inscritos presentes em partes diferentes da janela. */
+    const twoPeopleEvent = async (fee: { type: "percent" | "fixed"; value: bigint }, total: bigint) => {
+      const owner = await nextUser();
+      const [a, b] = [await nextUser(), await nextUser()];
+      const channel = `ch-c${++seq}`;
+      const start = new Date("2026-04-01T20:00:00.000Z");
+      const middle = new Date("2026-04-01T21:00:00.000Z");
+      const finish = new Date("2026-04-01T22:00:00.000Z");
+      const event = await finishedEvent(owner.id, channel, start, finish, [a.id, b.id]);
+      await voice(a.discordId, channel, start, finish);
+      await voice(b.discordId, channel, middle, finish);
+      const created = await createLootSplit(handle.db, { eventId: event.id, totalSilver: total, fee, createdBy: owner.id });
+      if (!created.ok) throw new Error(created.reason);
+      return { owner, a, b, event, split: created.split };
+    };
+
+    const balances = async (...ids: string[]) => Promise.all(ids.map((id) => getLedgerBalance(handle.db, id)));
+
+    describe("edição do rascunho (AC#1)", () => {
+      it("mudar só o total recalcula a prata de todo mundo sem mexer nos percentuais", async () => {
+        const { split } = await twoPeopleEvent(NO_FEE, 3_000n);
+        expect(split.lines.map((l) => [l.shareBp, l.amount])).toEqual([
+          [6667, "2000"],
+          [3333, "999"],
+        ]);
+        const updated = await updateLootSplitDraft(handle.db, split.id, { totalSilver: 30_000n });
+        if (!updated.ok) throw new Error(updated.reason);
+        expect(updated.split.totalSilver).toBe("30000");
+        expect(updated.split.lines.map((l) => [l.shareBp, l.amount])).toEqual([
+          [6667, "20001"],
+          [3333, "9999"],
+        ]);
+      });
+
+      it("mudar os percentuais redistribui a prata, e a sobra continua fechando o total", async () => {
+        const { split } = await twoPeopleEvent(NO_FEE, 1_000n);
+        const [first, second] = split.lines;
+        const updated = await updateLootSplitDraft(handle.db, split.id, {
+          lines: [
+            { id: first!.id, shareBp: 5000 },
+            { id: second!.id, shareBp: 5000 },
+          ],
+        });
+        if (!updated.ok) throw new Error(updated.reason);
+        expect(updated.split.lines.map((l) => [l.shareBp, l.amount])).toEqual([
+          [5000, "500"],
+          [5000, "500"],
+        ]);
+        expect(updated.split.residualSilver).toBe("0");
+      });
+
+      it("a soma NÃO precisa fechar 100% durante a edição: ela é exigida só na confirmação (Q22)", async () => {
+        const { split } = await twoPeopleEvent(NO_FEE, 1_000n);
+        const updated = await updateLootSplitDraft(handle.db, split.id, {
+          lines: split.lines.map((line) => ({ id: line.id, shareBp: 1000 })),
+        });
+        expect(updated.ok).toBe(true);
+      });
+
+      it("lista parcial de linhas é recusada: participação é bolo fechado", async () => {
+        const { split } = await twoPeopleEvent(NO_FEE, 1_000n);
+        expect(await updateLootSplitDraft(handle.db, split.id, { lines: [{ id: split.lines[0]!.id, shareBp: 10_000 }] })).toEqual({ ok: false, reason: "unknown_lines" });
+      });
+
+      it("dar participação a quem não estava inscrito é recusado com frase, não com erro de constraint (Q7)", async () => {
+        const owner = await nextUser();
+        const a = await nextUser();
+        const intruso = await nextUser();
+        const channel = `ch-c${++seq}`;
+        const start = new Date("2026-04-02T20:00:00.000Z");
+        const finish = new Date("2026-04-02T22:00:00.000Z");
+        const event = await finishedEvent(owner.id, channel, start, finish, [a.id]);
+        await voice(a.discordId, channel, start, finish);
+        await voice(intruso.discordId, channel, start, finish);
+        const created = await createLootSplit(handle.db, { eventId: event.id, totalSilver: 1_000n, fee: NO_FEE, createdBy: owner.id });
+        if (!created.ok) throw new Error(created.reason);
+        const naoInscrito = created.split.lines.find((l) => !l.signedUp)!;
+        const inscrito = created.split.lines.find((l) => l.signedUp)!;
+        expect(
+          await updateLootSplitDraft(handle.db, created.split.id, {
+            lines: [
+              { id: inscrito.id, shareBp: 5000 },
+              { id: naoInscrito.id, shareBp: 5000 },
+            ],
+          }),
+        ).toEqual({ ok: false, reason: "share_without_signup" });
+      });
+
+      it("split inexistente é not_found", async () => {
+        expect(await updateLootSplitDraft(handle.db, "00000000-0000-4000-8000-000000000000", { totalSilver: 1n })).toEqual({ ok: false, reason: "not_found" });
+      });
+
+      it("evento arquivado não aceita edição (Q26)", async () => {
+        const { event, split } = await twoPeopleEvent(NO_FEE, 1_000n);
+        const confirmed = await confirmLootSplit(handle.db, split.id, { actorUserId: null });
+        expect(confirmed.ok).toBe(true);
+        const archived = await applyEventTransition(handle.db, event.id, "archived");
+        expect(archived.ok).toBe(true);
+        const created = await createLootSplit(handle.db, { eventId: event.id, totalSilver: 1n, fee: NO_FEE, createdBy: null });
+        expect(created).toMatchObject({ ok: false, reason: "invalid_status", status: "archived" });
+      });
+    });
+
+    describe("confirmação lança no ledger (AC#2)", () => {
+      it("soma ≠ 100% é recusada (AC#1, Q22)", async () => {
+        const { split } = await twoPeopleEvent(NO_FEE, 1_000n);
+        const torto = await updateLootSplitDraft(handle.db, split.id, { lines: split.lines.map((l) => ({ id: l.id, shareBp: 4000 })) });
+        expect(torto.ok).toBe(true);
+        expect(await confirmLootSplit(handle.db, split.id, { actorUserId: null })).toEqual({ ok: false, reason: "refused", refusal: "shares_not_100" });
+        // E nada foi lançado.
+        expect(await listLedgerEntriesByReference(handle.db, "loot_split", split.id)).toEqual([]);
+        expect((await getLootSplit(handle.db, split.id))!.status).toBe("draft");
+      });
+
+      it("taxa fixa maior que o total é recusada: sem isso o distribuível ficaria negativo", async () => {
+        const { split } = await twoPeopleEvent({ type: "fixed", value: 5_000n }, 1_000n);
+        expect((await getLootSplit(handle.db, split.id))!.distributableSilver).toBe("0");
+        expect(await confirmLootSplit(handle.db, split.id, { actorUserId: null })).toEqual({ ok: false, reason: "refused", refusal: "fee_exceeds_total" });
+        expect(await listLedgerEntriesByReference(handle.db, "loot_split", split.id)).toEqual([]);
+      });
+
+      it("a soma dos créditos é exatamente o total do split, com taxa e sobra no dono (AC#2, Q23)", async () => {
+        const { owner, a, b, split } = await twoPeopleEvent({ type: "percent", value: 1000n }, 1_000_000n);
+        expect(split.feeSilver).toBe("100000");
+        expect(split.distributableSilver).toBe("900000");
+
+        const confirmed = await confirmLootSplit(handle.db, split.id, { actorUserId: owner.id });
+        if (!confirmed.ok) throw new Error(JSON.stringify(confirmed));
+        expect(confirmed.alreadyConfirmed).toBe(false);
+        expect(confirmed.split).toMatchObject({ status: "confirmed", confirmedByUserId: owner.id });
+        expect(confirmed.split.confirmedAt).not.toBeNull();
+
+        const entries = await listLedgerEntriesByReference(handle.db, "loot_split", split.id);
+        expect(entries.map((e) => e.kind).sort()).toEqual(["split_fee", "split_payout", "split_payout"]);
+        // 100% da prata do split saiu em lançamento, nem um tostão a mais nem a menos.
+        expect(entries.reduce((sum, e) => sum + e.amount, 0n)).toBe(1_000_000n);
+        const [saldoA, saldoB, saldoOwner] = await balances(a.id, b.id, owner.id);
+        expect(saldoA).toBe(600_030n);
+        expect(saldoB).toBe(299_970n);
+        // Taxa (100.000) + sobra do arredondamento (0), tudo num lançamento só.
+        expect(saldoOwner).toBe(100_000n);
+        expect(saldoA + saldoB + saldoOwner).toBe(1_000_000n);
+      });
+
+      it("taxa em valor fixo e sobra de arredondamento vão juntas para o dono num lançamento só (Q23)", async () => {
+        const { owner, a, b, split } = await twoPeopleEvent({ type: "fixed", value: 7n }, 1_000n);
+        const confirmed = await confirmLootSplit(handle.db, split.id, { actorUserId: owner.id });
+        if (!confirmed.ok) throw new Error(JSON.stringify(confirmed));
+        const entries = await listLedgerEntriesByReference(handle.db, "loot_split", split.id);
+        expect(entries.reduce((sum, e) => sum + e.amount, 0n)).toBe(1_000n);
+        const fee = entries.find((e) => e.kind === "split_fee")!;
+        expect(fee.userId).toBe(owner.id);
+        expect(fee.amount).toBe(7n + BigInt(confirmed.split.residualSilver));
+        const [saldoA, saldoB] = await balances(a.id, b.id);
+        expect(saldoA + saldoB + fee.amount).toBe(1_000n);
+      });
+
+      it("split sem loot nenhum confirma sem lançar nada: o ledger recusa lançamento de zero", async () => {
+        const { split } = await twoPeopleEvent(NO_FEE, 0n);
+        const confirmed = await confirmLootSplit(handle.db, split.id, { actorUserId: null });
+        expect(confirmed.ok).toBe(true);
+        expect(await listLedgerEntriesByReference(handle.db, "loot_split", split.id)).toEqual([]);
+        expect((await getLootSplit(handle.db, split.id))!.status).toBe("confirmed");
+      });
+
+      it("prata acima de 2^53 chega inteira na carteira (Q20)", async () => {
+        const total = 9_007_199_254_740_993_000n;
+        const { owner, a, b, split } = await twoPeopleEvent(NO_FEE, total);
+        const confirmed = await confirmLootSplit(handle.db, split.id, { actorUserId: null });
+        if (!confirmed.ok) throw new Error(JSON.stringify(confirmed));
+        const [saldoA, saldoB, saldoOwner] = await balances(a.id, b.id, owner.id);
+        expect(saldoA + saldoB + saldoOwner).toBe(total);
+      });
+    });
+
+    describe("idempotência e concorrência (AC#4)", () => {
+      it("confirmar duas vezes em sequência não credita duas vezes", async () => {
+        const { a, split } = await twoPeopleEvent(NO_FEE, 1_000n);
+        const first = await confirmLootSplit(handle.db, split.id, { actorUserId: null });
+        const second = await confirmLootSplit(handle.db, split.id, { actorUserId: null });
+        expect(first).toMatchObject({ ok: true, alreadyConfirmed: false });
+        expect(second).toMatchObject({ ok: true, alreadyConfirmed: true });
+        // Dois pagamentos e o lançamento da sobra do arredondamento para o dono: um conjunto só.
+        expect(await listLedgerEntriesByReference(handle.db, "loot_split", split.id)).toHaveLength(3);
+        expect(await getLedgerBalance(handle.db, a.id)).toBe(666n);
+      });
+
+      it("duas confirmações SIMULTÂNEAS, em conexões diferentes, lançam um único conjunto (AC#4)", async () => {
+        const { owner, a, b, split } = await twoPeopleEvent({ type: "percent", value: 500n }, 1_000_000n);
+        const [first, second] = await Promise.all([
+          confirmLootSplit(handle.db, split.id, { actorUserId: owner.id }),
+          confirmLootSplit(handle.db, split.id, { actorUserId: owner.id }),
+        ]);
+        expect(first.ok && second.ok).toBe(true);
+        // Uma das duas fez o trabalho; a outra chegou depois da trava e não lançou nada.
+        expect([first, second].filter((r) => r.ok && r.alreadyConfirmed)).toHaveLength(1);
+        const entries = await listLedgerEntriesByReference(handle.db, "loot_split", split.id);
+        expect(entries).toHaveLength(3);
+        expect(entries.reduce((sum, e) => sum + e.amount, 0n)).toBe(1_000_000n);
+        const [saldoA, saldoB, saldoOwner] = await balances(a.id, b.id, owner.id);
+        expect(saldoA + saldoB + saldoOwner).toBe(1_000_000n);
+      });
+
+      it("dez confirmações simultâneas continuam dando um conjunto só", async () => {
+        const { split } = await twoPeopleEvent(NO_FEE, 1_000_000n);
+        const results = await Promise.all(Array.from({ length: 10 }, () => confirmLootSplit(handle.db, split.id, { actorUserId: null })));
+        expect(results.every((r) => r.ok)).toBe(true);
+        expect(results.filter((r) => r.ok && !r.alreadyConfirmed)).toHaveLength(1);
+        // 1.000.000 fecha exato entre os dois (66,67% + 33,33%): sem sobra, sem lançamento do dono.
+        expect(await listLedgerEntriesByReference(handle.db, "loot_split", split.id)).toHaveLength(2);
+      });
+    });
+
+    describe("split confirmado é imutável; correção é estorno", () => {
+      /** O driver embrulha o erro do Postgres; a frase da trigger está na causa. */
+      const expectBlockedByTrigger = async (query: Promise<unknown>) => {
+        const error = await query.then(
+          () => null,
+          (caught: unknown) => caught,
+        );
+        expect(error).not.toBeNull();
+        const messages: string[] = [];
+        for (let e: unknown = error; e && typeof e === "object"; e = (e as { cause?: unknown }).cause) messages.push(String((e as { message?: unknown }).message ?? ""));
+        expect(messages.join(" | ")).toMatch(/imutavel/);
+      };
+
+      it("o banco recusa UPDATE e DELETE num split confirmado e nas linhas dele", async () => {
+        const { split } = await twoPeopleEvent(NO_FEE, 1_000n);
+        expect((await confirmLootSplit(handle.db, split.id, { actorUserId: null })).ok).toBe(true);
+        await expectBlockedByTrigger(handle.db.update(schema.lootSplits).set({ totalSilver: 1n }).where(eq(schema.lootSplits.id, split.id)));
+        await expectBlockedByTrigger(handle.db.delete(schema.lootSplits).where(eq(schema.lootSplits.id, split.id)));
+        await expectBlockedByTrigger(handle.db.update(schema.lootSplitLines).set({ shareBp: 1 }).where(eq(schema.lootSplitLines.splitId, split.id)));
+        await expectBlockedByTrigger(handle.db.delete(schema.lootSplitLines).where(eq(schema.lootSplitLines.splitId, split.id)));
+      });
+
+      it("editar split confirmado pelo repo é recusado antes de tocar no banco", async () => {
+        const { split } = await twoPeopleEvent(NO_FEE, 1_000n);
+        expect((await confirmLootSplit(handle.db, split.id, { actorUserId: null })).ok).toBe(true);
+        expect(await updateLootSplitDraft(handle.db, split.id, { totalSilver: 5n })).toEqual({ ok: false, reason: "not_draft", status: "confirmed" });
+      });
+
+      it("estorno devolve o saldo de todo mundo a zero, sem apagar lançamento nenhum", async () => {
+        const { owner, a, b, split } = await twoPeopleEvent({ type: "percent", value: 1000n }, 1_000_000n);
+        expect((await confirmLootSplit(handle.db, split.id, { actorUserId: owner.id })).ok).toBe(true);
+        const estorno = await reverseLootSplit(handle.db, split.id, { reason: "loot contado errado", actorUserId: owner.id });
+        expect(estorno).toEqual({ ok: true, reversed: 3 });
+        const [saldoA, saldoB, saldoOwner] = await balances(a.id, b.id, owner.id);
+        expect([saldoA, saldoB, saldoOwner]).toEqual([0n, 0n, 0n]);
+        // Os originais continuam lá: o extrato mostra as duas metades (Q24).
+        const entries = await listLedgerEntriesByReference(handle.db, "loot_split", split.id);
+        expect(entries).toHaveLength(6);
+        expect(entries.filter((e) => e.kind === "reversal")).toHaveLength(3);
+        expect(entries.filter((e) => e.kind === "reversal").every((e) => e.memo === "loot contado errado")).toBe(true);
+        // E o split continua confirmado: ele aconteceu.
+        expect((await getLootSplit(handle.db, split.id))!.status).toBe("confirmed");
+      });
+
+      it("estornar duas vezes não duplica o estorno", async () => {
+        const { owner, split } = await twoPeopleEvent(NO_FEE, 1_000n);
+        expect((await confirmLootSplit(handle.db, split.id, { actorUserId: owner.id })).ok).toBe(true);
+        expect(await reverseLootSplit(handle.db, split.id, { reason: "errado", actorUserId: null })).toMatchObject({ ok: true });
+        expect(await reverseLootSplit(handle.db, split.id, { reason: "errado", actorUserId: null })).toEqual({ ok: false, reason: "already_reversed" });
+      });
+
+      it("rascunho não tem o que estornar", async () => {
+        const { split } = await twoPeopleEvent(NO_FEE, 1_000n);
+        expect(await reverseLootSplit(handle.db, split.id, { reason: "errado", actorUserId: null })).toEqual({ ok: false, reason: "not_confirmed", status: "draft" });
+      });
+    });
+
+    describe("evento com split confirmado (AC#5, Q26)", () => {
+      it("evento finalizado não pode ser cancelado, com ou sem split confirmado", async () => {
+        const { event, split } = await twoPeopleEvent(NO_FEE, 1_000n);
+        expect((await confirmLootSplit(handle.db, split.id, { actorUserId: null })).ok).toBe(true);
+        expect(await hasConfirmedLootSplit(handle.db, event.id)).toBe(true);
+        // A máquina de estados é quem garante: de `finished` só se vai para `archived`.
+        const cancelled = await applyEventTransition(handle.db, event.id, "cancelled");
+        expect(cancelled).toMatchObject({ ok: false, reason: "invalid", from: "finished" });
+        expect((await getEvent(handle.db, event.id))!.status).toBe("finished");
+        // E a prata continua lá.
+        expect(await listLedgerEntriesByReference(handle.db, "loot_split", split.id)).toHaveLength(3);
+      });
+
+      it("rascunho pendente barra o arquivamento; confirmar libera", async () => {
+        const { event, split } = await twoPeopleEvent(NO_FEE, 1_000n);
+        const precondition: EventTransitionPrecondition = async (tx, { eventId }) => ((await hasDraftLootSplit(tx, eventId)) ? "tem rascunho" : null);
+        expect(await applyEventTransition(handle.db, event.id, "archived", { precondition })).toMatchObject({ ok: false, reason: "blocked" });
+        expect((await confirmLootSplit(handle.db, split.id, { actorUserId: null })).ok).toBe(true);
+        expect(await hasDraftLootSplit(handle.db, event.id)).toBe(false);
+        expect(await applyEventTransition(handle.db, event.id, "archived", { precondition })).toMatchObject({ ok: true });
+      });
     });
   });
 });
