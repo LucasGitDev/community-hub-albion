@@ -63,9 +63,12 @@ const checks = {
   },
 
   e2e() {
+    // TASK-046: a porta do e2e vem do ambiente (E2E_PORT) e `sh` repassa process.env ao Playwright.
+    // Sem a variável o comportamento é o de sempre (4173); com ela, dois worktrees rodam em paralelo.
     const { code } = sh("pnpm exec playwright test");
     const stats = readJson(`${OUT}/playwright.json`)?.stats;
-    const value = stats ? `${stats.expected} ok, ${stats.unexpected} falha(s), ${stats.flaky} flaky` : "—";
+    const port = process.env.E2E_PORT ? ` na porta ${process.env.E2E_PORT}` : "";
+    const value = stats ? `${stats.expected} ok, ${stats.unexpected} falha(s), ${stats.flaky} flaky${port}` : "—";
     return { id: "e2e", label: "E2E + screenshots (desktop/mobile)", status: code === 0 ? "pass" : "fail", value, threshold: "0 falhas", blocking: true };
   },
 
