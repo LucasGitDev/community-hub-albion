@@ -82,7 +82,7 @@ export function resolveEventForCommand(candidates: readonly EventChoice[], query
 }
 
 /**
- * Slash command `/evento iniciar|encerrar|cancelar` (TASK-024 AC#4, TASK-025). Mesmo serviço do painel,
+ * Slash command `/evento iniciar|encerrar|cancelar|arquivar` (TASK-024 AC#4, TASK-025, TASK-044). Mesmo serviço do painel,
  * outra porta: o comando nunca aplica regra própria, só resolve de qual evento a pessoa está falando.
  */
 export const EVENT_COMMAND = {
@@ -91,6 +91,7 @@ export const EVENT_COMMAND = {
   start: { name: "iniciar", description: "Cria o canal de voz e arrasta os confirmados que estão em Aguardando Evento" },
   finish: { name: "encerrar", description: "Devolve todo mundo para Aguardando Evento e apaga o canal do evento" },
   cancel: { name: "cancelar", description: "Cancela o evento, avisa os inscritos e desfaz o canal de voz se já tiver começado" },
+  archive: { name: "arquivar", description: "Fecha o evento de vez: depois disso nem os dados, nem a taxa, nem os splits mudam" },
   option: { name: "evento", description: "Nome ou id do evento; deixe em branco se só houver um", maxLength: 120 },
   reason: { name: "motivo", description: "O que os inscritos vão ler no aviso de cancelamento", maxLength: EVENT_CANCEL_REASON_MAX },
 } as const;
@@ -104,12 +105,14 @@ export const EVENT_COMMAND_REPLIES = {
   noneToStart: "Não achei nenhum evento seu para iniciar. Ele precisa estar com as inscrições abertas ou fechadas, e você precisa ser o owner (ou staff).",
   noneToFinish: "Não achei nenhum evento seu em andamento para encerrar.",
   noneToCancel: "Não achei nenhum evento seu para cancelar. Evento já finalizado ou já cancelado não volta atrás.",
+  noneToArchive: "Não achei nenhum evento seu finalizado para arquivar. Só dá para arquivar depois de encerrar o evento.",
   ambiguous: (candidates: readonly EventChoice[]) => `Tem mais de um evento nesse estado. Repita o comando com o nome exato ou o id:\n${list(candidates)}`,
   invalidState: (from: EventStatus, message: string) => `${message} (o evento está ${eventStatusLabel(from)}).`,
   started: (name: string) => `Evento **${name}** iniciado. Estou criando o canal de voz e puxando os confirmados que estão em Aguardando Evento.`,
   finished: (name: string) => `Evento **${name}** encerrado. Estou devolvendo a galera para Aguardando Evento e apagando o canal.`,
   cancelled: (name: string, reason: string | null) =>
     `Evento **${name}** cancelado e todas as inscrições canceladas. ${reason ? `Motivo publicado: "${reason}".` : "Sem motivo publicado."}`,
+  archived: (name: string) => `Evento **${name}** arquivado. Os dados, a taxa e os splits dele não mudam mais.`,
   reasonTooLong: `O motivo tem no máximo ${EVENT_CANCEL_REASON_MAX} caracteres.`,
   failed: "Não consegui fazer isso agora. Tente de novo em instantes ou use o painel.",
 } as const;
