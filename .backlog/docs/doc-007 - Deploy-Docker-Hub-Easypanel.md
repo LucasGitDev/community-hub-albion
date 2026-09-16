@@ -3,7 +3,7 @@ id: doc-007
 title: Deploy (Docker Hub + Easypanel)
 type: guide
 created_date: '2026-09-15 12:56'
-updated_date: '2026-09-15 14:02'
+updated_date: '2026-09-16 01:36'
 ---
 Deploy de produção: **GitHub Actions → Docker Hub → Easypanel**.
 
@@ -42,6 +42,7 @@ Gate vermelho na `main` não publica nada.
 | `ALBION_REGION` | `americas` (TASK-016) |
 | `DISCORD_MEMBER_ROLE_ID` | `1547413631627698327` (TASK-014) |
 | `DISCORD_STAFF_CHANNEL_ID` | `1549401951924650025` (TASK-015) |
+| `DISCORD_EVENTS_CHANNEL_ID` | canal onde o bot publica o embed de inscrição dos eventos (TASK-022) |
 
 Nunca definir `AUTH_DEV_LOGIN` em produção (a app recusa subir).
 
