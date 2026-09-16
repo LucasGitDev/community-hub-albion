@@ -1,10 +1,10 @@
 ---
 id: TASK-042
 title: Importar membros já registrados do Discord
-status: In Progress
+status: Done
 assignee: []
 created_date: '2026-09-16 03:53'
-updated_date: '2026-09-16 12:45'
+updated_date: '2026-09-16 14:15'
 labels:
   - bot
   - backend
@@ -39,7 +39,7 @@ O servidor já tem 24 membros com o cargo Membro e apelido in-game definido (mui
 - [x] #5 Comportamento confere com decisões do doc-005 (Qs citadas) e nada fora do escopo da task
 - [x] #6 Toca auth, ledger, prata ou saque: security-review sem achado crítico
 - [x] #7 Notas e final summary com evidências; commits Conventional atômicos sem co-autor
-- [ ] #8 PR merged na main com quality gate verde; branch e worktree removidos
+- [x] #8 PR merged na main com quality gate verde; branch e worktree removidos
 <!-- DOD:END -->
 
 ## Implementation Plan
