@@ -23,11 +23,9 @@ const RUN = String(Date.now());
 /** Id único por rodada, teste e projeto. Discord ID tem 17 a 20 dígitos. */
 export const discordId = (index: string): string => `7${RUN}${index}${test.info().project.name === "mobile" ? "9" : "8"}`;
 
-/** Mesmos papéis de `ROLES` no shared; repetido aqui porque o e2e compila fora dos workspaces. */
-export type Role = "member" | "caller" | "staff" | "admin";
-
 export interface LoginOptions {
-  roles?: Role[];
+  /** Mesmos papéis de `ROLES` no shared; repetidos aqui porque o e2e compila fora dos workspaces. */
+  roles?: ("member" | "caller" | "staff" | "admin")[];
   silver?: Silver[];
 }
 

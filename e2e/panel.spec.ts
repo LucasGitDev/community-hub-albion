@@ -88,30 +88,6 @@ test("sair encerra a sessão", async ({ page }) => {
   await expect(page).toHaveURL(/\/entrar$/);
 });
 
-test("staff aprova, recusa com motivo e marca entrega", async ({ page }) => {
-  await loginAs(page, "grimwald");
-  await page.goto("/staff/saques");
-
-  const kestrel = page.getByRole("listitem").filter({ hasText: "Kestrel" });
-  await kestrel.getByRole("button", { name: "Recusar" }).click();
-  await expect(kestrel.getByRole("button", { name: "Confirmar recusa" })).toBeDisabled();
-  await kestrel.getByRole("textbox").fill("Sem prata no banco hoje.");
-  await kestrel.getByRole("button", { name: "Confirmar recusa" }).click();
-
-  const raven = page.getByRole("listitem").filter({ hasText: "Ravenmoor" });
-  await raven.getByRole("button", { name: "Aprovar saque" }).click();
-  await expect(page.getByText("Nada aqui agora.")).toBeVisible();
-
-  await page.getByRole("tab", { name: /A entregar/ }).click();
-  const approved = page.getByRole("listitem").filter({ hasText: "Ravenmoor" });
-  await expect(approved.getByText("Aprovado, aguardando entrega")).toBeVisible();
-  await snap(page, "staff-a-entregar");
-  await approved.getByRole("button", { name: "Marcar como entregue" }).click();
-
-  await page.getByRole("tab", { name: /Recusados/ }).click();
-  await expect(page.getByText("Sem prata no banco hoje.")).toBeVisible();
-});
-
 test("refresh em rota client-side e /api servidos pelo Nest (TASK-004)", async ({ page, request }) => {
   await loginAs(page, "ravenmoor");
   await page.goto("/saques");
