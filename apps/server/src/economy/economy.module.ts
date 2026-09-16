@@ -8,6 +8,7 @@ import { LedgerService } from "./ledger.service.js";
 import { LootSplitController } from "./loot-split.controller.js";
 import { LootSplitService } from "./loot-split.service.js";
 import { WithdrawalService } from "./withdrawal.service.js";
+import { MyLedgerController } from "./my-ledger.controller.js";
 import { MyWithdrawalsController, WithdrawalsController } from "./withdrawals.controller.js";
 
 /**
@@ -25,7 +26,7 @@ export class EconomyModule {
     return {
       module: EconomyModule,
       global: true,
-      controllers: [MyWithdrawalsController, WithdrawalsController, LootSplitController],
+      controllers: [MyLedgerController, MyWithdrawalsController, WithdrawalsController, LootSplitController],
       providers: [{ provide: AUTH_ENV, useValue: env }, SessionService, AuthorizeGuard, SameOriginGuard, LedgerService, WithdrawalService, LootSplitService],
       exports: [LedgerService, WithdrawalService, LootSplitService],
     };
