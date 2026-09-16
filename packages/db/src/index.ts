@@ -55,3 +55,16 @@ export {
   type EventRoleWriteResult,
   type EventTemplateWriteResult,
 } from "./event-templates-repo.js";
+export {
+  applyEventTransition,
+  closeDueEvents,
+  createEvent,
+  getEvent,
+  listEventOwnerHistory,
+  listEvents,
+  transferEventOwner,
+  type CreateEventInput,
+  type CreateEventResult,
+  type EventTransitionResult,
+  type TransferEventOwnerResult,
+} from "./events-repo.js";

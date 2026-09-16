@@ -1,4 +1,4 @@
-import { NICK_REQUEST_STATUSES, ROLES } from "@albion-hub/shared";
+import { EVENT_STATUSES, NICK_REQUEST_STATUSES, ROLES } from "@albion-hub/shared";
 import { sql } from "drizzle-orm";
 import { boolean, check, index, integer, pgEnum, pgTable, primaryKey, text, timestamp, uniqueIndex, uuid } from "drizzle-orm/pg-core";
 
@@ -178,4 +178,97 @@ export const eventTemplateRoles = pgTable(
     sortOrder: integer("sort_order").notNull().default(0),
   },
   (t) => [primaryKey({ columns: [t.templateId, t.roleId] }), index("event_template_roles_role_idx").on(t.roleId), check("event_template_roles_slots_positive", sql`${t.slots} > 0`)],
+);
+
+export const eventStatusEnum = pgEnum("event_status", EVENT_STATUSES);
+
+/**
+ * Evento (TASK-021, Q26). Estado atual + um timestamp por transição já ocorrida: o histórico do
+ * fluxo feliz cabe na própria linha (quem quiser auditar `open→cancelled` olha `cancelled_at`).
+ * `template_id` com `on delete restrict`: apagar template que já virou evento apagaria a origem do evento.
+ * `voice_channel_id` fica null até o start criar o canal (TASK-024, Q28).
+ */
+export const events = pgTable(
+  "events",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    templateId: uuid("template_id")
+      .notNull()
+      .references(() => eventTemplates.id, { onDelete: "restrict" }),
+    name: text("name").notNull(),
+    description: text("description"),
+    status: eventStatusEnum("status").notNull().default("draft"),
+    /** Owner único, transferível pela staff (Q21). Recebe as sobras da distribuição. */
+    ownerUserId: uuid("owner_user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "restrict" }),
+    createdBy: uuid("created_by").references(() => users.id, { onDelete: "set null" }),
+    startsAt: timestamp("starts_at", { withTimezone: true }),
+    /** Fechamento automático da inscrição (AC#5); null = só fecha na mão ou no start. */
+    signupsCloseAt: timestamp("signups_close_at", { withTimezone: true }),
+    voiceChannelId: text("voice_channel_id"),
+    openedAt: timestamp("opened_at", { withTimezone: true }),
+    closedAt: timestamp("closed_at", { withTimezone: true }),
+    startedAt: timestamp("started_at", { withTimezone: true }),
+    finishedAt: timestamp("finished_at", { withTimezone: true }),
+    cancelledAt: timestamp("cancelled_at", { withTimezone: true }),
+    createdAt: createdAt(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    index("events_status_starts_idx").on(t.status, t.startsAt),
+    index("events_owner_idx").on(t.ownerUserId),
+    index("events_template_idx").on(t.templateId),
+    // Fechamento automático varre só os abertos com prazo (AC#5).
+    index("events_signups_close_idx").on(t.signupsCloseAt).where(sql`${t.status} = 'open'`),
+    check("events_name_not_blank", sql`length(trim(${t.name})) > 0`),
+    // Estado e carimbo andam juntos: running só existe com started_at, finished com finished_at, cancelled com cancelled_at.
+    check("events_started_consistent", sql`(${t.status} in ('running', 'finished')) <= (${t.startedAt} is not null)`),
+    check("events_finished_consistent", sql`(${t.status} = 'finished') = (${t.finishedAt} is not null)`),
+    check("events_cancelled_consistent", sql`(${t.status} = 'cancelled') = (${t.cancelledAt} is not null)`),
+    check("events_signups_close_before_start", sql`${t.signupsCloseAt} is null or ${t.startsAt} is null or ${t.signupsCloseAt} <= ${t.startsAt}`),
+  ],
+);
+
+/**
+ * Cópia das roles e vagas do template no instante da criação (TASK-021 AC#1). É snapshot de propósito:
+ * editar o template depois (staff mexe no catálogo a qualquer hora, TASK-020) não pode mudar as vagas de
+ * um evento já publicado, senão inscrito perderia lugar sem ninguém tocar no evento. `name` é copiado pelo
+ * mesmo motivo; `role_id` é `set null` para não travar a limpeza do catálogo — o nome já está guardado.
+ */
+export const eventRoleSlots = pgTable(
+  "event_role_slots",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    eventId: uuid("event_id")
+      .notNull()
+      .references(() => events.id, { onDelete: "cascade" }),
+    roleId: uuid("role_id").references(() => eventRoles.id, { onDelete: "set null" }),
+    name: text("name").notNull(),
+    slots: integer("slots").notNull(),
+    sortOrder: integer("sort_order").notNull().default(0),
+  },
+  (t) => [
+    index("event_role_slots_event_idx").on(t.eventId, t.sortOrder),
+    uniqueIndex("event_role_slots_event_name_idx").on(t.eventId, t.name),
+    check("event_role_slots_slots_positive", sql`${t.slots} > 0`),
+  ],
+);
+
+/** Trocas de owner (Q21, AC#4): append-only, uma linha por transferência. A criação grava a primeira (from null). */
+export const eventOwnerHistory = pgTable(
+  "event_owner_history",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    eventId: uuid("event_id")
+      .notNull()
+      .references(() => events.id, { onDelete: "cascade" }),
+    fromUserId: uuid("from_user_id").references(() => users.id, { onDelete: "set null" }),
+    toUserId: uuid("to_user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "restrict" }),
+    changedBy: uuid("changed_by").references(() => users.id, { onDelete: "set null" }),
+    changedAt: timestamp("changed_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [index("event_owner_history_event_idx").on(t.eventId, t.changedAt)],
 );
