@@ -29,6 +29,16 @@ export const users = pgTable("users", {
   avatar: text("avatar"),
   /** Nick vigente do Albion (último aprovado pela staff, Q14/Q31). Troca pendente não altera. */
   gameNick: text("game_nick"),
+  /** Tag de guilda do apelido do Discord (`[GENEI] Erijj` → `GENEI`), guardada à parte do nick (TASK-042, AC#6). */
+  guildTag: text("guild_tag"),
+  /**
+   * Última conferência do nick na API do Albion (TASK-016/042, AC#7). `albion_status` guarda found/not_found/unavailable
+   * (consulta desligada não grava nada); os demais campos só têm valor quando found. Informativo: nunca bloqueia acesso.
+   */
+  albionStatus: text("albion_status"),
+  albionPlayerId: text("albion_player_id"),
+  albionGuildName: text("albion_guild_name"),
+  albionCheckedAt: timestamp("albion_checked_at", { withTimezone: true }),
   createdAt: createdAt(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
 });
