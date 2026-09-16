@@ -1,4 +1,4 @@
-import type { WithdrawalBalanceDto, WithdrawalDto, WithdrawalQueueResponse, WithdrawalStatus } from "@albion-hub/shared";
+import type { WithdrawalBalanceDto, WithdrawalDto, WithdrawalQueueResponse } from "@albion-hub/shared";
 import { api } from "./http";
 import type { Balance, Withdrawal } from "./wallet";
 
@@ -39,5 +39,3 @@ const decide = (id: string, action: "approve" | "reject" | "settle", note?: stri
 export const approveWithdrawal = (id: string): Promise<WithdrawalDto> => decide(id, "approve");
 export const rejectWithdrawal = (id: string, note: string): Promise<WithdrawalDto> => decide(id, "reject", note);
 export const settleWithdrawal = (id: string, note: string): Promise<WithdrawalDto> => decide(id, "settle", note);
-
-export type { WithdrawalStatus };
