@@ -7,7 +7,7 @@ import { cn } from "@/lib/utils";
 import { useAuth, useCurrentUser } from "@/auth/AuthProvider";
 import { Silver } from "@/components/display";
 import { useWallet } from "@/api/WalletProvider";
-import { useStore } from "@/mock/store";
+import { useWithdrawalQueue } from "@/api/QueueProvider";
 import { ThemeToggle } from "@/theme/theme";
 
 interface NavItem {
@@ -23,14 +23,15 @@ interface NavItem {
 export function AppShell() {
   const { user, ability } = useCurrentUser();
   const { logout } = useAuth();
-  // Saldo e meus saques vêm da API real (TASK-031); a fila da staff ainda é demonstração (TASK-032).
+  // Saldo e meus saques (TASK-031) e a fila da staff (TASK-032) vêm da API real, do mesmo provider que
+  // as telas leem: o contador do menu nunca diverge do número que a fila mostra.
   const { balance, withdrawals } = useWallet();
-  const { allWithdrawals } = useStore();
+  const { items: queueItems } = useWithdrawalQueue();
   const { pathname } = useLocation();
   const allowed = (item: NavItem) => !item.can || ability.can(item.can[0], item.can[1]);
 
   const myOpen = withdrawals.filter((w) => w.status === "pending" || w.status === "approved").length;
-  const queue = allWithdrawals.filter((w) => w.status === "pending").length;
+  const queue = queueItems.filter((w) => w.status === "pending").length;
 
   const personal: NavItem[] = [
     { to: "/carteira", label: "Carteira", icon: <Coins /> },
