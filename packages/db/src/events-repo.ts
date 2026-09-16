@@ -78,13 +78,19 @@ async function loadEvents(db: Database, ids?: string[], filters: EventListQuery 
     .where(where.length > 0 ? and(...where) : undefined)
     .orderBy(desc(events.createdAt));
   if (rows.length === 0) return [];
+  // A descrição vem do catálogo ao vivo (TASK-039), não da vaga: corrigir a descrição alcança evento
+  // já aberto. O join é `left` porque `role_id` vira null quando a role sai do catálogo — o nome
+  // congelado na vaga é que segura a exibição nesse caso.
   const slots = await db
-    .select()
+    .select({ slot: eventRoleSlots, description: eventRolesCatalog.description })
     .from(eventRoleSlots)
+    .leftJoin(eventRolesCatalog, eq(eventRolesCatalog.id, eventRoleSlots.roleId))
     .where(inArray(eventRoleSlots.eventId, rows.map((r) => r.event.id)))
     .orderBy(asc(eventRoleSlots.sortOrder));
   return rows.map(({ event: e, templateName, ownerNick }) => {
-    const own: EventRoleSlotDto[] = slots.filter((s) => s.eventId === e.id).map(({ id, roleId, name, slots: n }) => ({ id, roleId, name, slots: n }));
+    const own: EventRoleSlotDto[] = slots
+      .filter((s) => s.slot.eventId === e.id)
+      .map(({ slot, description }) => ({ id: slot.id, roleId: slot.roleId, name: slot.name, description, slots: slot.slots }));
     return {
       id: e.id,
       templateId: e.templateId,

@@ -96,13 +96,19 @@ async function loadTemplates(db: Database, ids?: string[]): Promise<EventTemplat
   const templates = await (ids ? base.where(inArray(eventTemplates.id, ids)) : base).orderBy(asc(eventTemplates.name));
   if (templates.length === 0) return [];
   const roles = await db
-    .select({ templateId: eventTemplateRoles.templateId, roleId: eventTemplateRoles.roleId, name: eventRoles.name, slots: eventTemplateRoles.slots })
+    .select({
+      templateId: eventTemplateRoles.templateId,
+      roleId: eventTemplateRoles.roleId,
+      name: eventRoles.name,
+      description: eventRoles.description,
+      slots: eventTemplateRoles.slots,
+    })
     .from(eventTemplateRoles)
     .innerJoin(eventRoles, eq(eventRoles.id, eventTemplateRoles.roleId))
     .where(inArray(eventTemplateRoles.templateId, templates.map((t) => t.id)))
     .orderBy(asc(eventTemplateRoles.sortOrder));
   return templates.map((t) => {
-    const own = roles.filter((r) => r.templateId === t.id).map(({ roleId, name, slots }) => ({ roleId, name, slots }));
+    const own = roles.filter((r) => r.templateId === t.id).map(({ roleId, name, description, slots }) => ({ roleId, name, description, slots }));
     return {
       id: t.id,
       name: t.name,

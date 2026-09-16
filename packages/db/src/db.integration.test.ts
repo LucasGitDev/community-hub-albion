@@ -601,8 +601,8 @@ describe.skipIf(!url)("@albion-hub/db (Postgres real)", () => {
       const event = await created("Roads das 21h");
       expect(event).toMatchObject({ status: "draft", ownerUserId: owner, createdByUserId: owner, templateName: "Template de eventos", totalSlots: 3, voiceChannelId: null });
       expect(event.roles).toEqual([
-        { id: expect.any(String), roleId: expect.any(String), name: "Tank", slots: 1 },
-        { id: expect.any(String), roleId: expect.any(String), name: "Healer", slots: 2 },
+        { id: expect.any(String), roleId: expect.any(String), name: "Tank", description: null, slots: 1 },
+        { id: expect.any(String), roleId: expect.any(String), name: "Healer", description: null, slots: 2 },
       ]);
       expect(await listEventOwnerHistory(handle.db, event.id)).toEqual([{ fromUserId: null, toUserId: owner, changedByUserId: owner, changedAt: expect.any(String) }]);
       expect(await getEvent(handle.db, MISSING)).toBeNull();
@@ -627,8 +627,26 @@ describe.skipIf(!url)("@albion-hub/db (Postgres real)", () => {
       const roles = await listEventRoles(handle.db);
       await saveEventTemplate(handle.db, { name: "Template descartável", description: null, minPartySize: 1, maxPartySize: null, active: true, roles: [{ roleId: roles.find((r) => r.name === "Tank")!.id, slots: 9 }] }, saved.template.id);
       expect(await deleteEventRole(handle.db, extra.role.id)).toBe("deleted");
-      expect((await getEvent(handle.db, result.event.id))!.roles).toEqual([{ id: expect.any(String), roleId: null, name: "Batedor do evento", slots: 3 }]);
+      // TASK-039: a descrição vem do catálogo, então some junto com a role; o nome congelado na vaga fica.
+      expect((await getEvent(handle.db, result.event.id))!.roles).toEqual([{ id: expect.any(String), roleId: null, name: "Batedor do evento", description: null, slots: 3 }]);
       expect((await getEvent(handle.db, result.event.id))!.totalSlots).toBe(3);
+    });
+
+    it("descrição da role é lida ao vivo do catálogo pela vaga do evento (TASK-039, AC#2)", async () => {
+      const created = await createEventRole(handle.db, { name: "Batedor de flanco", description: "Abre caminho e avisa o que vem." });
+      if (!created.ok) throw new Error("falhou");
+      const saved = await saveEventTemplate(handle.db, { name: "Flanco", description: null, minPartySize: 1, maxPartySize: null, active: true, roles: [{ roleId: created.role.id, slots: 2 }] });
+      if (!saved.ok) throw new Error(saved.reason);
+      expect(saved.template.roles).toEqual([{ roleId: created.role.id, name: "Batedor de flanco", description: "Abre caminho e avisa o que vem.", slots: 2 }]);
+
+      const result = await createEvent(handle.db, { templateId: saved.template.id, name: "Flanco das 21h", description: null, startsAt: null, signupsCloseAt: null, ownerUserId: owner, createdBy: owner });
+      if (!result.ok) throw new Error(result.reason);
+      expect(result.event.roles[0]!.description).toBe("Abre caminho e avisa o que vem.");
+
+      // Corrigir o texto depois alcança o evento que já existe — é o motivo de não congelar na vaga.
+      const patched = await updateEventRole(handle.db, created.role.id, { description: "Vai na frente, marca o inimigo e volta." });
+      expect(patched.ok).toBe(true);
+      expect((await getEvent(handle.db, result.event.id))!.roles[0]!.description).toBe("Vai na frente, marca o inimigo e volta.");
     });
 
     it("recusa template inexistente ou inativo", async () => {

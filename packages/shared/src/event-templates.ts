@@ -114,6 +114,14 @@ export interface EventRoleDto {
   templateCount: number;
 }
 
+/** Role dentro do template, com a descrição do catálogo (TASK-039) pra tela dizer o que se espera dela. */
+export interface EventTemplateRoleDto {
+  roleId: string;
+  name: string;
+  description: string | null;
+  slots: number;
+}
+
 export interface EventTemplateDto {
   id: string;
   name: string;
@@ -121,7 +129,7 @@ export interface EventTemplateDto {
   minPartySize: number;
   maxPartySize: number | null;
   active: boolean;
-  roles: { roleId: string; name: string; slots: number }[];
+  roles: EventTemplateRoleDto[];
   totalSlots: number;
   updatedAt: string;
 }
