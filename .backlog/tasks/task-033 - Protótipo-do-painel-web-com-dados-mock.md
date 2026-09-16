@@ -1,11 +1,11 @@
 ---
 id: TASK-033
 title: Protótipo do painel web com dados mock
-status: In Progress
+status: Done
 assignee:
   - '@claude'
 created_date: '2026-09-15 03:31'
-updated_date: '2026-09-15 03:50'
+updated_date: '2026-09-16 00:07'
 labels:
   - frontend
 milestone: m-0
@@ -39,7 +39,7 @@ MVP navegável do painel (PT-BR, dark, tema Albion sem assets do jogo) com login
 - [ ] #5 Comportamento confere com decisões do doc-005 (Qs citadas) e nada fora do escopo da task
 - [ ] #6 Toca auth, ledger, prata ou saque: security-review sem achado crítico
 - [ ] #7 Notas e final summary com evidências; commits Conventional atômicos sem co-autor
-- [ ] #8 PR merged na main com quality gate verde; branch e worktree removidos
+- [x] #8 PR merged na main com quality gate verde; branch e worktree removidos
 <!-- DOD:END -->
 
 ## Implementation Plan
@@ -52,4 +52,6 @@ MVP navegável do painel (PT-BR, dark, tema Albion sem assets do jogo) com login
 
 <!-- SECTION:NOTES:BEGIN -->
 Implementado em apps/web: login mock (4 usuários de papéis diferentes), carteira (saldo disponível/total/reservado + extrato por dia com estorno), meus saques, fila de saques staff (aprovar/recusar com motivo/entregar com nota), placeholders de eventos/membros/splits. Store mock em localStorage. Verificado: typecheck + build ok, screenshots desktop 1280 e mobile 400. Aguardando validação visual do usuário.
+
+Absorvida: login, permissões e telas reais (TASK-010 a 013) substituíram o protótipo; visual refeito na TASK-036. Carteira/saques seguem com dados de demonstração até a F5.
 <!-- SECTION:NOTES:END -->
