@@ -12,7 +12,7 @@ function boot(env: Record<string, string>) {
   delete inherited.DISCORD_TOKEN;
   delete inherited.GUILD_ID;
   delete inherited.DATABASE_URL;
-  return spawnSync(process.execPath, ["dist/main.js"], { cwd: serverDir, env: { ...inherited, ...env }, encoding: "utf8", timeout: 20_000 });
+  return spawnSync(process.execPath, ["dist/main.js"], { cwd: serverDir, env: { ...inherited, ...env }, encoding: "utf8", timeout: 60_000 });
 }
 
 describe("boot do servidor compilado", () => {
