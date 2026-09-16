@@ -155,33 +155,45 @@ export function StaffTemplates() {
             />
           </div>
 
-          <div className="grid items-start gap-4 lg:grid-cols-[1fr_22rem]">
-            <Panel title="Templates" titleId="templates-title" className="order-2 lg:order-1">
-              {templates.length === 0 ? (
-                <div className="p-4">
-                  <EmptyState
-                    icon={<LayoutTemplate />}
-                    title="Nenhum template ainda."
-                    description="Monte o primeiro (ex: DG de grupo, 4 a 9 pessoas) pra o caller poder abrir eventos."
-                    action={
-                      <Button onClick={() => setEditing({ template: null })} disabled={roles.length === 0}>
-                        <Plus />
-                        Criar primeiro template
-                      </Button>
-                    }
-                  />
-                </div>
-              ) : (
-                <ul className="divide-y">
-                  {templates.map((t) => (
-                    <TemplateRow key={t.id} template={t} onEdit={() => setEditing({ template: t })} onRemove={() => setRemoving(t)} />
-                  ))}
-                </ul>
-              )}
-            </Panel>
+          {/* Catálogo vazio: sem role não existe template. O próximo passo é a página de roles (TASK-040). */}
+          {roles.length === 0 && (
+            <div role="status" className="mb-4 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-dashed p-4 text-sm">
+              <p className="flex items-center gap-2 text-muted-foreground">
+                <Shield className="size-4 shrink-0" aria-hidden />
+                O catálogo de roles está vazio. Um template precisa de pelo menos uma role.
+              </p>
+              <Button variant="outline" size="sm" asChild>
+                <NavLink to="/staff/roles">
+                  <Shield />
+                  Criar a primeira role
+                </NavLink>
+              </Button>
+            </div>
+          )}
 
-            <RolesPanel roles={roles} setRoles={setRoles} className="order-1 lg:order-2" />
-          </div>
+          <Panel title="Templates" titleId="templates-title">
+            {templates.length === 0 ? (
+              <div className="p-4">
+                <EmptyState
+                  icon={<LayoutTemplate />}
+                  title="Nenhum template ainda."
+                  description="Monte o primeiro (ex: DG de grupo, 4 a 9 pessoas) pra o caller poder abrir eventos."
+                  action={
+                    <Button onClick={() => setEditing({ template: null })} disabled={roles.length === 0}>
+                      <Plus />
+                      Criar primeiro template
+                    </Button>
+                  }
+                />
+              </div>
+            ) : (
+              <ul className="divide-y">
+                {templates.map((t) => (
+                  <TemplateRow key={t.id} template={t} onEdit={() => setEditing({ template: t })} onRemove={() => setRemoving(t)} />
+                ))}
+              </ul>
+            )}
+          </Panel>
         </>
       )}
 

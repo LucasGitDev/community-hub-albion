@@ -17,6 +17,7 @@ import { Nick } from "./pages/Nick";
 import { Placeholder } from "./pages/Placeholder";
 import { StaffMembers } from "./pages/StaffMembers";
 import { StaffEvents } from "./pages/StaffEvents";
+import { StaffRoles } from "./pages/StaffRoles";
 import { StaffTemplates } from "./pages/StaffTemplates";
 import { StaffWithdrawals } from "./pages/StaffWithdrawals";
 import { Wallet } from "./pages/Wallet";
@@ -65,6 +66,15 @@ createRoot(document.getElementById("root")!).render(
               element={
                 <RequirePermission action="update" subject="EventTemplate">
                   <StaffTemplates />
+                </RequirePermission>
+              }
+            />
+            {/* Catálogo de roles (TASK-040): mesma permissão que tinha dentro de /staff/templates. */}
+            <Route
+              path="/staff/roles"
+              element={
+                <RequirePermission action="update" subject="EventTemplate">
+                  <StaffRoles />
                 </RequirePermission>
               }
             />
