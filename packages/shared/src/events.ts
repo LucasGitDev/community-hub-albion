@@ -154,6 +154,20 @@ export const eventCreateSchema = z
   });
 export type EventCreateInput = z.output<typeof eventCreateSchema>;
 
+/**
+ * Correção dos dados do evento depois que ele já existe (TASK-029, AC#2).
+ *
+ * Só nome e descrição: o template, as roles e os horários são a história do que aconteceu, e reescrevê-los
+ * depois do jogo inventaria um evento que ninguém viveu. O que o caller precisa mesmo corrigir no acerto é
+ * o nome que ficou errado e a observação que faltou. Vale enquanto `eventEditBlocked` deixar (Q26:
+ * `finished` ainda corrige, `archived` não).
+ */
+export const eventUpdateSchema = z.object({
+  name: requiredText("o nome do evento", EVENT_TEMPLATE_NAME_MAX),
+  description: optionalDescription,
+});
+export type EventUpdateInput = z.output<typeof eventUpdateSchema>;
+
 /** Motivo do cancelamento (TASK-025): opcional, mas é o que o inscrito lê no embed e no painel. */
 export const EVENT_CANCEL_REASON_MAX = 300;
 
