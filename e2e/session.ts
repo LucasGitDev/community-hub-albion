@@ -31,14 +31,16 @@ export interface LoginOptions {
   /** Mesmos papéis de `ROLES` no shared; repetidos aqui porque o e2e compila fora dos workspaces. */
   roles?: ("member" | "caller" | "staff" | "admin")[];
   silver?: Silver[];
+  /** Semeia o usuário já com nick aprovado, sem passar pela fila da staff. */
+  gameNick?: string;
 }
 
 /** Entra como um usuário novo e devolve o Discord ID usado, para quem precisar voltar a ele. */
 export async function login(page: Page, index: string, username: string, options: LoginOptions = {}): Promise<string> {
   const id = discordId(index);
-  const { roles = [], silver = [] } = options;
+  const { roles = [], silver = [], gameNick } = options;
   const res = await page.request.post("/api/auth/dev-login", {
-    data: { discordId: id, username, roles, ...(silver.length ? { silver } : {}) },
+    data: { discordId: id, username, roles, ...(silver.length ? { silver } : {}), ...(gameNick ? { gameNick } : {}) },
     headers: { Origin: ORIGIN },
   });
   expect(res.status()).toBe(204);
