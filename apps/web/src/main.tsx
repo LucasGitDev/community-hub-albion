@@ -14,7 +14,7 @@ import { WalletProvider } from "./api/WalletProvider";
 import { QueueProvider } from "./api/QueueProvider";
 import { Login } from "./pages/Login";
 import { MyWithdrawals } from "./pages/MyWithdrawals";
-import { Nick } from "./pages/Nick";
+import { Profile } from "./pages/Profile";
 import { Placeholder } from "./pages/Placeholder";
 import { StaffMembers } from "./pages/StaffMembers";
 import { StaffEvents } from "./pages/StaffEvents";
@@ -45,7 +45,9 @@ createRoot(document.getElementById("root")!).render(
           >
             <Route path="/carteira" element={<Wallet />} />
             <Route path="/saques" element={<MyWithdrawals />} />
-            <Route path="/nick" element={<Nick />} />
+            <Route path="/perfil" element={<Profile />} />
+            {/* TASK-041: "Meu nick" virou "Meu perfil"; link antigo (e o do bot) continua funcionando. */}
+            <Route path="/nick" element={<Navigate to="/perfil" replace />} />
             {/* Eventos: qualquer membro vê e se inscreve (TASK-023). */}
             <Route path="/eventos" element={<Events />} />
             {/* Gate de UI com as mesmas regras CASL da API; a API é a autoridade (TASK-009). */}
