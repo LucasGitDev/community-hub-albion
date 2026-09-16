@@ -1,7 +1,18 @@
 import "reflect-metadata";
 import type { INestApplication } from "@nestjs/common";
 import { Test } from "@nestjs/testing";
-import { createDb, createSession, grantRole, runMigrations, schema, setEventVoiceChannelId, upsertUserByDiscordId, type DbHandle } from "@albion-hub/db";
+import {
+  createDb,
+  createSession,
+  getLedgerBalance,
+  grantRole,
+  listLedgerEntriesByReference,
+  runMigrations,
+  schema,
+  setEventVoiceChannelId,
+  upsertUserByDiscordId,
+  type DbHandle,
+} from "@albion-hub/db";
 import type { EventDto, LootSplitDto, Role } from "@albion-hub/shared";
 import { eq, sql } from "drizzle-orm";
 import request from "supertest";
@@ -236,8 +247,9 @@ describe.skipIf(!baseUrl)("loot split HTTP (TASK-027)", () => {
       expect((await send("put", `/api/events/${event.id}/fee`, caller, { fee: { type: "percent", value: "1000" } })).status).toBe(200);
       const created = await send("post", `/api/events/${event.id}/splits`, caller, { totalSilver: "1000" });
       expect((created.body as LootSplitDto).fee).toEqual({ type: "percent", value: "1000" });
-      // A taxa não é aplicada aqui (TASK-028): a prévia é sobre o total bruto.
-      expect((created.body as LootSplitDto).lines[0]!.amount).toBe("1000");
+      // A taxa sai antes da divisão (TASK-028): 10% de 1000 retidos, 900 divididos.
+      expect((created.body as LootSplitDto).feeSilver).toBe("100");
+      expect((created.body as LootSplitDto).lines[0]!.amount).toBe("900");
 
       expect((await send("put", `/api/events/${event.id}/fee`, caller, { fee: { type: "fixed", value: "1" } })).status).toBe(200);
       const again = await http().get(`/api/events/${event.id}/splits/${(created.body as LootSplitDto).id}`).set("Cookie", caller);
@@ -262,6 +274,179 @@ describe.skipIf(!baseUrl)("loot split HTTP (TASK-027)", () => {
       const event = await finishedEvent();
       expect((await send("put", `/api/events/${event.id}/fee`, caller, {})).status).toBe(400);
       expect((await send("put", `/api/events/${event.id}/fee`, caller, { fee: { type: "percent", value: "-5" } })).status).toBe(400);
+    });
+  });
+
+  describe("edição, confirmação e estorno (TASK-028)", () => {
+    const patch = (cookie: string | null, eventId: string, splitId: string, body: object, origin = PUBLIC_URL) =>
+      send("patch", `/api/events/${eventId}/splits/${splitId}`, cookie, body, origin);
+    const confirm = (cookie: string | null, eventId: string, splitId: string, origin = PUBLIC_URL) =>
+      send("post", `/api/events/${eventId}/splits/${splitId}/confirm`, cookie, {}, origin);
+    const reverse = (cookie: string | null, eventId: string, splitId: string, body: object = { reason: "loot contado errado" }, origin = PUBLIC_URL) =>
+      send("post", `/api/events/${eventId}/splits/${splitId}/reversals`, cookie, body, origin);
+
+    /** Evento finalizado do `caller` com um rascunho já criado. */
+    const drafted = async (total = "1000000", fee?: object) => {
+      const event = await finishedEvent();
+      if (fee) expect((await send("put", `/api/events/${event.id}/fee`, caller, { fee })).status).toBe(200);
+      const created = await send("post", `/api/events/${event.id}/splits`, caller, { totalSilver: total });
+      expect(created.status).toBe(201);
+      return { event, split: created.body as LootSplitDto };
+    };
+
+    describe("autorização: o mesmo portão do rascunho vale para escrever", () => {
+      it("sem sessão é 401 e de outra origem é 403 (CSRF)", async () => {
+        const { event, split } = await drafted();
+        expect((await patch(null, event.id, split.id, { totalSilver: "1" })).status).toBe(401);
+        expect((await confirm(null, event.id, split.id)).status).toBe(401);
+        expect((await reverse(null, event.id, split.id)).status).toBe(401);
+        expect((await patch(caller, event.id, split.id, { totalSilver: "1" }, "http://evil.example")).status).toBe(403);
+        expect((await confirm(caller, event.id, split.id, "http://evil.example")).status).toBe(403);
+      });
+
+      it("membro comum não edita nem confirma: gatear por `read` em Event exporia o ganho de todo mundo", async () => {
+        const { event, split } = await drafted();
+        expect((await patch(member, event.id, split.id, { totalSilver: "1" })).status).toBe(403);
+        expect((await confirm(member, event.id, split.id)).status).toBe(403);
+        expect((await reverse(member, event.id, split.id)).status).toBe(403);
+      });
+
+      it("caller de outro evento não mexe neste; a staff mexe em qualquer um (AC#3)", async () => {
+        const { event, split } = await drafted();
+        expect((await patch(outroCaller, event.id, split.id, { totalSilver: "1" })).status).toBe(403);
+        expect((await confirm(outroCaller, event.id, split.id)).status).toBe(403);
+        expect((await confirm(staff, event.id, split.id)).status).toBe(200);
+      });
+
+      it("o dono do evento confirma o próprio split (AC#3, Q21)", async () => {
+        const { event, split } = await drafted();
+        const res = await confirm(caller, event.id, split.id);
+        expect(res.status).toBe(200);
+        expect(res.body).toMatchObject({ status: "confirmed", confirmedByUserId: callerId });
+      });
+
+      it("estorno é só da staff: desfazer prata alheia é intervenção, não condução do evento", async () => {
+        const { event, split } = await drafted();
+        expect((await confirm(caller, event.id, split.id)).status).toBe(200);
+        expect((await reverse(caller, event.id, split.id)).status).toBe(403);
+        const res = await reverse(staff, event.id, split.id);
+        expect(res.status).toBe(200);
+        expect(res.body.reversed).toBeGreaterThan(0);
+      });
+
+      it("split de outro evento não é editável nem confirmável pela rota de um evento que o caller manda", async () => {
+        const meu = await drafted();
+        const outro = await drafted();
+        expect((await patch(caller, meu.event.id, outro.split.id, { totalSilver: "1" })).status).toBe(404);
+        expect((await confirm(caller, meu.event.id, outro.split.id)).status).toBe(404);
+        expect((await confirm(caller, meu.event.id, MISSING)).status).toBe(404);
+        expect((await confirm(caller, meu.event.id, "nao-e-uuid")).status).toBe(400);
+      });
+    });
+
+    describe("edição do rascunho (AC#1)", () => {
+      it("muda o total e recalcula a prata", async () => {
+        const { event, split } = await drafted("1000000");
+        const res = await patch(caller, event.id, split.id, { totalSilver: "2000000" });
+        expect(res.status).toBe(200);
+        expect(res.body as LootSplitDto).toMatchObject({ totalSilver: "2000000", status: "draft" });
+        expect((res.body as LootSplitDto).lines[0]!.amount).toBe("2000000");
+      });
+
+      it("corpo vazio ou participação inválida é 400 em PT-BR", async () => {
+        const { event, split } = await drafted();
+        expect((await patch(caller, event.id, split.id, {})).status).toBe(400);
+        const ruim = await patch(caller, event.id, split.id, { lines: [{ id: split.lines[0]!.id, shareBp: 10_001 }] });
+        expect(ruim.status).toBe(400);
+        expect(ruim.body.message).toContain("100%");
+      });
+
+      it("split já confirmado não é editável: a correção é estorno", async () => {
+        const { event, split } = await drafted();
+        expect((await confirm(caller, event.id, split.id)).status).toBe(200);
+        const res = await patch(caller, event.id, split.id, { totalSilver: "5" });
+        expect(res.status).toBe(409);
+        expect(res.body.message).toBe("Este loot split já foi confirmado: ele não muda mais. Para corrigir, estorne os lançamentos.");
+      });
+    });
+
+    describe("confirmação (AC#1, AC#2, AC#4)", () => {
+      it("soma ≠ 100% é recusada com a frase do Q22 (AC#1)", async () => {
+        const { event, split } = await drafted();
+        expect((await patch(caller, event.id, split.id, { lines: split.lines.map((l) => ({ id: l.id, shareBp: 4000 })) })).status).toBe(200);
+        const res = await confirm(caller, event.id, split.id);
+        expect(res.status).toBe(409);
+        expect(res.body.message).toBe("A soma das participações precisa ser exatamente 100% para confirmar o split.");
+      });
+
+      it("taxa fixa maior que o total é recusada, com o caminho de saída na frase", async () => {
+        const { event, split } = await drafted("1000", { type: "fixed", value: "5000" });
+        expect((split as LootSplitDto).distributableSilver).toBe("0");
+        const res = await confirm(caller, event.id, split.id);
+        expect(res.status).toBe(409);
+        expect(res.body.message).toBe("A taxa do evento é maior que o total deste split: não sobra prata para dividir. Baixe a taxa ou aumente o total.");
+      });
+
+      it("confirmar credita o participante e a taxa vai para o dono do evento (AC#2, Q23)", async () => {
+        const { event, split } = await drafted("1000000", { type: "percent", value: "1000" });
+        expect((await confirm(caller, event.id, split.id)).status).toBe(200);
+        const entries = await listLedgerEntriesByReference(handle.db, "loot_split", split.id);
+        expect(entries.reduce((sum, e) => sum + e.amount, 0n)).toBe(1_000_000n);
+        expect(entries.find((e) => e.kind === "split_payout")).toMatchObject({ userId: membroId, amount: 900_000n });
+        expect(entries.find((e) => e.kind === "split_fee")).toMatchObject({ userId: callerId, amount: 100_000n });
+      });
+
+      it("confirmar duas vezes pelo endpoint devolve 200 e não credita de novo (AC#4)", async () => {
+        const { event, split } = await drafted("1000000");
+        const first = await confirm(caller, event.id, split.id);
+        const second = await confirm(caller, event.id, split.id);
+        expect([first.status, second.status]).toEqual([200, 200]);
+        expect((second.body as LootSplitDto).confirmedAt).toBe((first.body as LootSplitDto).confirmedAt);
+        expect(await listLedgerEntriesByReference(handle.db, "loot_split", split.id)).toHaveLength(1);
+      });
+
+      it("split confirmado libera o arquivamento do evento (TASK-044, AC#4)", async () => {
+        const { event, split } = await drafted();
+        expect((await go(caller, event.id, "archive")).status).toBe(409);
+        expect((await confirm(caller, event.id, split.id)).status).toBe(200);
+        expect((await go(caller, event.id, "archive")).status).toBe(200);
+      });
+
+      it("evento arquivado não confirma mais nada, com a frase do arquivamento", async () => {
+        const { event, split } = await drafted();
+        const outro = await send("post", `/api/events/${event.id}/splits`, caller, { totalSilver: "10" });
+        expect((await confirm(caller, event.id, (outro.body as LootSplitDto).id)).status).toBe(200);
+        expect((await confirm(caller, event.id, split.id)).status).toBe(200);
+        expect((await go(caller, event.id, "archive")).status).toBe(200);
+        const res = await patch(caller, event.id, split.id, { totalSilver: "5" });
+        expect(res.status).toBe(409);
+        expect(res.body.message).toBe("Evento arquivado não pode mais ser editado.");
+      });
+    });
+
+    describe("estorno (Q24)", () => {
+      it("estorno sem motivo é 400; com motivo zera os saldos e mantém o histórico", async () => {
+        const { event, split } = await drafted("1000000", { type: "percent", value: "1000" });
+        // Delta, e não saldo absoluto: o mesmo membro já recebeu de outros splits neste arquivo.
+        const antes = await getLedgerBalance(handle.db, membroId);
+        expect((await confirm(caller, event.id, split.id)).status).toBe(200);
+        expect(await getLedgerBalance(handle.db, membroId)).toBe(antes + 900_000n);
+        expect((await reverse(staff, event.id, split.id, { reason: " " })).status).toBe(400);
+        const res = await reverse(staff, event.id, split.id);
+        expect(res.status).toBe(200);
+        expect(res.body.reversed).toBe(2);
+        expect(await getLedgerBalance(handle.db, membroId)).toBe(antes);
+        expect(await listLedgerEntriesByReference(handle.db, "loot_split", split.id)).toHaveLength(4);
+        const denovo = await reverse(staff, event.id, split.id);
+        expect([denovo.status, denovo.body.message]).toEqual([409, "Os lançamentos deste loot split já foram estornados."]);
+      });
+
+      it("rascunho não tem o que estornar", async () => {
+        const { event, split } = await drafted();
+        const res = await reverse(staff, event.id, split.id);
+        expect(res.status).toBe(409);
+        expect(res.body.message).toBe("Este loot split ainda é rascunho: não há lançamento para estornar.");
+      });
     });
   });
 });
