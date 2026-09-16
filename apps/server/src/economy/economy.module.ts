@@ -5,13 +5,19 @@ import { AuthorizeGuard } from "../auth/authorize.js";
 import { SameOriginGuard } from "../auth/same-origin.guard.js";
 import { SessionService } from "../auth/session.service.js";
 import { LedgerService } from "./ledger.service.js";
+import { LootSplitController } from "./loot-split.controller.js";
+import { LootSplitService } from "./loot-split.service.js";
 import { WithdrawalService } from "./withdrawal.service.js";
 import { MyWithdrawalsController, WithdrawalsController } from "./withdrawals.controller.js";
 
 /**
- * Economia (doc-002): ledger de prata (TASK-026) e saque (TASK-030). Global e exportando os dois
- * serviços porque loot split, carteira do painel e os comandos do Discord vão depender deles sem que
- * este módulo precise mudar — e porque saque só pode existir por **um** caminho (`WithdrawalService`).
+ * Economia (doc-002): ledger de prata (TASK-026), saque (TASK-030) e loot split (TASK-027). Global e
+ * exportando os serviços porque a carteira do painel, os comandos do Discord e a confirmação do split
+ * (TASK-028) vão depender deles sem que este módulo precise mudar — e porque cada operação de dinheiro
+ * só pode existir por **um** caminho (`LedgerService`, `WithdrawalService`, `LootSplitService`).
+ *
+ * Os providers de auth se repetem aqui pelo mesmo motivo do `EventsModule`: `AuthorizeGuard` é usado
+ * por `UseGuards` nos controllers deste módulo e precisa ser resolvível no contexto dele.
  */
 @Module({})
 export class EconomyModule {
@@ -19,9 +25,9 @@ export class EconomyModule {
     return {
       module: EconomyModule,
       global: true,
-      controllers: [MyWithdrawalsController, WithdrawalsController],
-      providers: [{ provide: AUTH_ENV, useValue: env }, SessionService, AuthorizeGuard, SameOriginGuard, LedgerService, WithdrawalService],
-      exports: [LedgerService, WithdrawalService],
+      controllers: [MyWithdrawalsController, WithdrawalsController, LootSplitController],
+      providers: [{ provide: AUTH_ENV, useValue: env }, SessionService, AuthorizeGuard, SameOriginGuard, LedgerService, WithdrawalService, LootSplitService],
+      exports: [LedgerService, WithdrawalService, LootSplitService],
     };
   }
 }
