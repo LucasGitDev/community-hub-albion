@@ -74,7 +74,7 @@ const yamlRoleSchema = z
  * `strict()` nos dois níveis: chave desconhecida vira erro em vez de sumir calada — um typo
  * (`minparty`) não pode virar um template com tamanho errado.
  */
-export const eventTemplateYamlSchema = z
+const eventTemplateYamlSchema = z
   .object({
     version: z
       .number({ error: "Falta o campo version no arquivo." })

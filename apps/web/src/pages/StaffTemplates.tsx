@@ -7,11 +7,13 @@ import {
   eventTemplateInputSchema,
   firstIssue,
   formatPartySize,
+  parseEventTemplateYaml,
   totalSlots,
   type EventRoleDto,
   type EventTemplateDto,
+  type EventTemplateYaml,
 } from "@albion-hub/shared";
-import { Check, LayoutTemplate, Pencil, Plus, Shield, Trash2, Users, X } from "lucide-react";
+import { Check, Download, LayoutTemplate, Pencil, Plus, Shield, Sparkles, Trash2, Upload, Users, X } from "lucide-react";
 import { useCallback, useEffect, useId, useMemo, useState } from "react";
 import { toast } from "sonner";
 import { EmptyState, PageHeader, Panel, Pill, StatCard } from "@/components/display";
@@ -70,6 +72,7 @@ export function StaffTemplates() {
   const [error, setError] = useState<string | null>(null);
   const [editing, setEditing] = useState<{ template: EventTemplateDto | null } | null>(null);
   const [removing, setRemoving] = useState<EventTemplateDto | null>(null);
+  const [importing, setImporting] = useState(false);
 
   const load = useCallback(() => {
     Promise.all([api.fetchEventRoles(), api.fetchEventTemplates()])
@@ -103,10 +106,16 @@ export function StaffTemplates() {
         title="Templates de evento"
         description="Cada template define as roles do catálogo e quantas vagas cada uma tem. O caller escolhe um template ao criar o evento."
         action={
-          <Button onClick={() => setEditing({ template: null })} disabled={loading || roles.length === 0}>
-            <Plus />
-            Criar template
-          </Button>
+          <>
+            <Button variant="outline" onClick={() => setImporting(true)}>
+              <Upload />
+              Importar YAML
+            </Button>
+            <Button onClick={() => setEditing({ template: null })} disabled={loading || roles.length === 0}>
+              <Plus />
+              Criar template
+            </Button>
+          </>
         }
       />
 
@@ -192,6 +201,17 @@ export function StaffTemplates() {
         />
       )}
 
+      {importing && (
+        <ImportDialog
+          roles={roles ?? []}
+          onClose={() => setImporting(false)}
+          onImported={() => {
+            setImporting(false);
+            load();
+          }}
+        />
+      )}
+
       <Dialog open={removing !== null} onOpenChange={(open) => !open && setRemoving(null)}>
         <DialogContent>
           <DialogHeader>
@@ -214,6 +234,21 @@ export function StaffTemplates() {
 }
 
 function TemplateRow({ template, onEdit, onRemove }: { template: EventTemplateDto; onEdit: () => void; onRemove: () => void }) {
+  const [busy, setBusy] = useState(false);
+
+  async function exportTemplate() {
+    setBusy(true);
+    try {
+      const { yaml, filename } = await api.exportEventTemplateYaml(template.id);
+      downloadYaml(yaml, filename);
+      toast.success("Template exportado", { description: `${filename} baixado. Importe esse arquivo em outro servidor.` });
+    } catch (err) {
+      toast.error(errorText(err, "Não foi possível exportar o template."));
+    } finally {
+      setBusy(false);
+    }
+  }
+
   return (
     <li className="flex flex-wrap items-start gap-x-6 gap-y-3 px-4 py-(--row-py)">
       <div className="min-w-0 flex-1">
@@ -245,12 +280,32 @@ function TemplateRow({ template, onEdit, onRemove }: { template: EventTemplateDt
           <Pencil />
           Editar
         </Button>
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <Button variant="ghost" size="icon-sm" aria-label={`Exportar template ${template.name}`} disabled={busy} onClick={() => void exportTemplate()}>
+              <Download />
+            </Button>
+          </TooltipTrigger>
+          <TooltipContent>Baixar o .yaml para importar em outro servidor</TooltipContent>
+        </Tooltip>
         <Button variant="ghost" size="icon-sm" aria-label={`Apagar template ${template.name}`} onClick={onRemove}>
           <Trash2 />
         </Button>
       </div>
     </li>
   );
+}
+
+/** Baixa o YAML que a API gerou. O nome do arquivo vem do Content-Disposition, já saneado no servidor. */
+function downloadYaml(yaml: string, filename: string) {
+  const url = URL.createObjectURL(new Blob([yaml], { type: "text/yaml;charset=utf-8" }));
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = filename;
+  document.body.append(link);
+  link.click();
+  link.remove();
+  URL.revokeObjectURL(url);
 }
 
 /** Catálogo global: criar, renomear e apagar role. Role em uso não apaga (AC#3). */
@@ -545,5 +600,149 @@ function TemplateDialog({
         </form>
       </DialogContent>
     </Dialog>
+  );
+}
+
+/**
+ * Importar template de YAML (TASK-038, AC#2/#3/#4).
+ *
+ * A pré-visualização usa o mesmo parser da API (`parseEventTemplateYaml` em @albion-hub/shared), então
+ * a staff vê o erro e o que vai ser criado antes de gravar — inclusive as roles que ainda não existem
+ * no catálogo, que a importação cria automaticamente. A API valida de novo: a tela não é a autoridade.
+ */
+function ImportDialog({ roles, onClose, onImported }: { roles: EventRoleDto[]; onClose: () => void; onImported: () => void }) {
+  const ids = { file: useId(), yaml: useId() };
+  const [source, setSource] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [fileError, setFileError] = useState<string | null>(null);
+
+  const parsed = useMemo(() => (source.trim() === "" ? null : parseEventTemplateYaml(source)), [source]);
+  const preview = parsed?.ok ? parsed.template : null;
+  const problem = fileError ?? (parsed && !parsed.ok ? parsed.error : null);
+
+  const known = useMemo(() => new Set(roles.map((r) => r.name.toLowerCase())), [roles]);
+  const newRoles = preview ? preview.roles.filter((r) => !known.has(r.name.toLowerCase())).map((r) => r.name) : [];
+
+  async function pickFile(file: File | undefined) {
+    if (!file) return;
+    setFileError(null);
+    try {
+      setSource(await file.text());
+    } catch {
+      setFileError("Não foi possível ler o arquivo. Cole o conteúdo no campo abaixo.");
+    }
+  }
+
+  async function submit(e: React.FormEvent) {
+    e.preventDefault();
+    if (!preview) return;
+    setBusy(true);
+    try {
+      const result = await api.importEventTemplateYaml(source);
+      toast.success("Template importado", {
+        description:
+          result.createdRoles.length > 0
+            ? `${result.template.name}: ${result.template.totalSlots} vagas. Roles criadas no catálogo: ${result.createdRoles.join(", ")}.`
+            : `${result.template.name}: ${result.template.totalSlots} vagas.`,
+      });
+      onImported();
+    } catch (err) {
+      toast.error(errorText(err, "Não foi possível importar o template."));
+      setBusy(false);
+    }
+  }
+
+  return (
+    <Dialog open onOpenChange={(open) => !open && onClose()}>
+      <DialogContent className="max-h-[90dvh] overflow-y-auto sm:max-w-lg">
+        <DialogHeader>
+          <DialogTitle>Importar template de YAML</DialogTitle>
+          <DialogDescription>
+            Escolha o .yaml exportado de outro servidor (ou cole o conteúdo). As roles que não existirem aqui são criadas no catálogo junto com o template.
+          </DialogDescription>
+        </DialogHeader>
+        <form onSubmit={(e) => void submit(e)} className="space-y-4">
+          <div>
+            <Label htmlFor={ids.file}>Arquivo .yaml</Label>
+            <input
+              id={ids.file}
+              type="file"
+              accept=".yaml,.yml,text/yaml,text/plain"
+              onChange={(e) => void pickFile(e.target.files?.[0])}
+              className="mt-1.5 block w-full text-sm text-muted-foreground file:mr-3 file:rounded-md file:border file:bg-secondary file:px-3 file:py-1.5 file:text-sm file:font-medium file:text-secondary-foreground hover:file:bg-secondary/80"
+            />
+          </div>
+          <div>
+            <Label htmlFor={ids.yaml}>Conteúdo do YAML</Label>
+            <Textarea
+              id={ids.yaml}
+              value={source}
+              rows={8}
+              spellCheck={false}
+              onChange={(e) => {
+                setFileError(null);
+                setSource(e.target.value);
+              }}
+              placeholder={"version: 1\nname: DG de grupo\nminParty: 4\nmaxParty: 9\nroles:\n  - name: Tank\n    slots: 1"}
+              className="mt-1.5 min-h-40 font-mono text-xs"
+            />
+          </div>
+
+          {problem && (
+            <p role="alert" className="flex items-start gap-2 rounded-lg border border-destructive/40 bg-destructive/10 p-3 text-sm text-destructive">
+              <X className="mt-0.5 size-4 shrink-0" aria-hidden />
+              {problem}
+            </p>
+          )}
+
+          {preview && <ImportPreview template={preview} newRoles={newRoles} />}
+
+          <DialogFooter>
+            <Button type="button" variant="ghost" onClick={onClose}>
+              Cancelar
+            </Button>
+            <Button type="submit" disabled={busy || !preview}>
+              <Upload />
+              Importar template
+            </Button>
+          </DialogFooter>
+        </form>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+/** O que vai ser criado, antes de gravar: nada de importar às cegas. */
+function ImportPreview({ template, newRoles }: { template: EventTemplateYaml; newRoles: string[] }) {
+  const slots = totalSlots(template.roles);
+  return (
+    <section aria-label="Pré-visualização do template" className="rounded-xl border bg-muted/40 p-3">
+      <p className="font-medium">{template.name}</p>
+      {template.description && <p className="mt-0.5 text-sm text-muted-foreground">{template.description}</p>}
+      <p className="mt-1 text-sm text-muted-foreground">
+        <span className="num font-semibold text-foreground">{slots}</span> vagas para <span className="num">{formatPartySize(template.minParty, template.maxParty)}</span> pessoas
+        {!template.active && " · entra como inativo"}
+      </p>
+      <ul className="mt-2 flex flex-wrap gap-1.5">
+        {template.roles.map((r) => {
+          const isNew = newRoles.includes(r.name);
+          return (
+            <li key={r.name} className={`flex h-6 items-center gap-1.5 rounded-full border px-2 text-xs ${isNew ? "border-brand/50 text-brand" : ""}`}>
+              <span className="num font-semibold">{r.slots}</span>
+              {r.name}
+              {isNew && <Sparkles className="size-3" aria-hidden />}
+            </li>
+          );
+        })}
+      </ul>
+      {newRoles.length > 0 && (
+        <p className="mt-2 flex items-start gap-1.5 text-xs text-muted-foreground">
+          <Sparkles className="mt-0.5 size-3 shrink-0 text-brand" aria-hidden />
+          <span>
+            {newRoles.length === 1 ? "Esta role será criada" : `Estas ${newRoles.length} roles serão criadas`} no catálogo junto com o template: {newRoles.join(", ")}.
+          </span>
+        </p>
+      )}
+    </section>
   );
 }
