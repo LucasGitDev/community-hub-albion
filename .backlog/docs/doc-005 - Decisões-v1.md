@@ -3,7 +3,7 @@ id: doc-005
 title: Decisões v1
 type: specification
 created_date: '2026-09-15 03:22'
-updated_date: '2026-09-15 13:59'
+updated_date: '2026-09-16 14:29'
 ---
 Resultado do grill (R1–R3, 2026-09-15). Referência pra specs e tasks.
 
@@ -32,14 +32,18 @@ Resultado do grill (R1–R3, 2026-09-15). Referência pra specs e tasks.
 | Q30 | Heartbeat 1 min; boot fecha sessões abertas no último heartbeat e reabre pelo estado atual. |
 
 ## Prata e saque
+
+| # | Decisão |
+|---|---|
+| Taxa do split | Taxa configurável **por evento** (herda default do template, editável pelo caller/dono até confirmar o split). Aplicada antes da divisão entre participantes (2026-09-16). |
 | # | Decisão |
 |---|---|
 | Q10 | Tesouraria da comunidade guarda a prata in-game; saldo no sistema = dívida com o membro; saque = staff transfere in-game. |
 | Q11 | `settled` manual com `settled_by` + nota. |
-| Q12 | Saque mínimo configurável (default 1M, calibrar), sem taxa. |
+| Q12 | **Sem saque mínimo** e sem taxa de saque (revisado 2026-09-16; antes: mínimo 1M). |
 | Q20 | Prata inteira em `bigint`; UI formata. |
 | Q22 | Confirmar split bloqueado se soma ≠ 100%. |
-| Q23 | N splits por evento; cada um fecha 100% e manda sua sobra pro owner. |
+| Q23 | N splits por evento; cada um fecha 100%. Sobra é rara; quando houver, fica com o caller/dono do evento (confirmado 2026-09-16). |
 | Q24 | Saldo negativo permitido (estorno pós-saque); bloqueia novo saque; lançamento nunca editado/apagado. |
 | Q25 | `pending` reserva saldo; débito no ledger no `approved`; `rejected` libera. |
 
