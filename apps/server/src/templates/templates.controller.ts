@@ -4,6 +4,7 @@ import {
   deleteEventRole,
   deleteEventTemplate,
   getEventTemplate,
+  importEventTemplate,
   listEventRoles,
   listEventTemplates,
   saveEventTemplate,
@@ -17,9 +18,13 @@ import {
   eventRolePatchSchema,
   eventTemplateInputSchema,
   eventTemplatePatchSchema,
+  eventTemplateYamlFilename,
   firstIssue,
+  parseEventTemplateYaml,
+  serializeEventTemplateYaml,
   type EventRoleDto,
   type EventTemplateDto,
+  type EventTemplateImportResult,
 } from "@albion-hub/shared";
 import type { Response } from "express";
 import type { z } from "zod";
@@ -122,6 +127,44 @@ export class EventTemplatesController {
     const base = { name: current.name, description: current.description, minPartySize: current.minPartySize, maxPartySize: current.maxPartySize, active: current.active, roles: current.roles.map(({ roleId, slots }) => ({ roleId, slots })) };
     const merged = parseBody(eventTemplateInputSchema, { ...base, ...patch });
     return templateOrThrow(await saveEventTemplate(this.handle.db, merged, templateId));
+  }
+
+  /**
+   * Export em YAML (TASK-038, AC#1). doc-001: o DB é a verdade e o YAML é só transporte, então o
+   * arquivo não leva id nenhum — ele é feito pra ser importado em outro servidor.
+   */
+  @Get(":id/export")
+  @Authorize("update", "EventTemplate")
+  async export(@Param("id") id: string, @Res({ passthrough: true }) res: Response): Promise<string> {
+    const template = await getEventTemplate(this.handle.db, parseId(id, "Id do template"));
+    if (!template) throw new NotFoundException("Template não encontrado.");
+    const filename = eventTemplateYamlFilename(template.name);
+    res.setHeader("Content-Type", "text/yaml; charset=utf-8");
+    res.setHeader("Cache-Control", "no-store");
+    // `filename` já é slug ASCII (sem aspas, barra nem quebra de linha), então o header não pode ser injetado.
+    res.setHeader("Content-Disposition", `attachment; filename="${filename}"`);
+    return serializeEventTemplateYaml(template);
+  }
+
+  /**
+   * Import de YAML (TASK-038, AC#2/#3/#4). Corpo JSON `{ yaml }` em vez de upload multipart: o painel
+   * já fala JSON com a API e não precisa de mais uma dependência pra mandar texto.
+   * Roles fora do catálogo são criadas e voltam em `createdRoles` — é o ponto da feature (levar
+   * template entre servidores); nome de template repetido é 409, porque renomear é decisão da staff.
+   */
+  @Post("import")
+  @UseGuards(SameOriginGuard)
+  @Authorize("update", "EventTemplate")
+  async import(@Body() body: unknown): Promise<EventTemplateImportResult> {
+    const source = (body as { yaml?: unknown } | null)?.yaml;
+    const parsed = parseEventTemplateYaml(typeof source === "string" ? source : "");
+    if (!parsed.ok) throw new BadRequestException(parsed.error);
+    const result = await importEventTemplate(this.handle.db, parsed.template);
+    if (!result.ok) {
+      if (result.reason === "role_race") throw new ConflictException("Uma role com esse nome acabou de ser criada. Tente importar de novo.");
+      throw new ConflictException(`Já existe um template chamado "${parsed.template.name}". Renomeie no arquivo ou apague o template atual antes de importar.`);
+    }
+    return { template: result.template, createdRoles: result.createdRoles };
   }
 
   @Delete(":id")

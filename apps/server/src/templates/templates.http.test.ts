@@ -170,4 +170,124 @@ describe.skipIf(!baseUrl)("catálogo de roles e templates HTTP (TASK-020, Q8)", 
     expect((await send("delete", `/api/event-templates/${tpl.body.id}`, staff)).status).toBe(404);
     expect((await send("delete", "/api/event-templates/nao-uuid", staff)).status).toBe(400);
   });
+
+  describe("import e export em YAML (TASK-038)", () => {
+    const templateName = (suffix: string) => `YAML ${suffix}`;
+
+    async function exportYaml(cookie: string, id: string) {
+      return http().get(`/api/event-templates/${id}/export`).set("Cookie", cookie);
+    }
+
+    it("staff exporta o template como YAML com Content-Disposition e sem id (AC#1)", async () => {
+      const [tank, healer] = [await roleId("Tank"), await roleId("Healer")];
+      const created = await send("post", "/api/event-templates", staff, {
+        name: templateName("export"),
+        description: "levado pra outro servidor",
+        minPartySize: 3,
+        maxPartySize: 7,
+        roles: [{ roleId: tank, slots: 2 }, { roleId: healer, slots: 2 }],
+      });
+      expect(created.status).toBe(201);
+
+      const res = await exportYaml(staff, created.body.id);
+      expect(res.status).toBe(200);
+      expect(res.headers["content-type"]).toContain("text/yaml");
+      expect(res.headers["content-disposition"]).toBe('attachment; filename="yaml-export.yaml"');
+      expect(res.headers["cache-control"]).toBe("no-store");
+      expect(res.text).toContain("version: 1");
+      expect(res.text).toContain(`name: ${templateName("export")}`);
+      expect(res.text).toContain("minParty: 3");
+      expect(res.text).toContain("maxParty: 7");
+      expect(res.text).toContain("name: Tank");
+      expect(res.text).not.toContain(created.body.id);
+
+      expect((await exportYaml(staff, MISSING)).status).toBe(404);
+      expect((await exportYaml(staff, "nao-uuid")).status).toBe(400);
+    });
+
+    it("staff importa o YAML exportado e o template nasce com roles e vagas (AC#2)", async () => {
+      const [tank, scout] = [await roleId("Tank"), await roleId("Scout")];
+      const origin = await send("post", "/api/event-templates", staff, { name: templateName("ida"), minPartySize: 4, maxPartySize: 9, roles: [{ roleId: tank, slots: 1 }, { roleId: scout, slots: 4 }] });
+      const yaml = (await exportYaml(staff, origin.body.id)).text.replace(templateName("ida"), templateName("volta"));
+
+      const imported = await send("post", "/api/event-templates/import", staff, { yaml });
+      expect(imported.status).toBe(201);
+      expect(imported.body.createdRoles).toEqual([]);
+      expect(imported.body.template).toMatchObject({
+        name: templateName("volta"),
+        minPartySize: 4,
+        maxPartySize: 9,
+        totalSlots: 5,
+        roles: [{ name: "Tank", slots: 1 }, { name: "Scout", slots: 4 }],
+      });
+      expect(imported.body.template.id).not.toBe(origin.body.id);
+
+      // Reimportar o mesmo arquivo colide no nome: 409 com instrução, sem criar um segundo template.
+      const again = await send("post", "/api/event-templates/import", staff, { yaml });
+      expect(again.status).toBe(409);
+      expect(again.body.message).toContain(`Já existe um template chamado "${templateName("volta")}"`);
+      const list = (await http().get("/api/event-templates").set("Cookie", staff)).body.templates as EventTemplateDto[];
+      expect(list.filter((t) => t.name === templateName("volta"))).toHaveLength(1);
+    });
+
+    it("YAML inválido é 400 legível e não grava nada (AC#3)", async () => {
+      const before = (await http().get("/api/event-templates").set("Cookie", staff)).body.templates as EventTemplateDto[];
+      const cases: [unknown, string][] = [
+        ["name: [aberto\nroles:", "não é um YAML válido"],
+        ["version: 1\nname: Quebrado\nminParty: 1\nminparty: 2\nroles:\n  - name: Tank\n    slots: 1", "campo que o formato não conhece"],
+        ["version: 1\nname: Quebrado\nminParty: 1\nmaxParty: 4\nroles:\n  - name: Tank\n    slots: 9", "acima do máximo de 4"],
+        ["version: 1\nname: Quebrado\nminParty: 1\nroles:\n  - name: Tank\n    slots: 0", "Vagas precisa ser pelo menos 1"],
+        ["version: 9\nname: Quebrado\nminParty: 1\nroles:\n  - name: Tank\n    slots: 1", "formato mais novo"],
+        ["version: 1\nname: &a Bomba\nminParty: 1\nroles:\n  - name: *a\n    slots: 1", "não é um YAML válido"],
+        ["", "está vazio"],
+        [42, "está vazio"],
+        [undefined, "está vazio"],
+      ];
+      for (const [yaml, message] of cases) {
+        const res = await send("post", "/api/event-templates/import", staff, { yaml });
+        expect(res.status, JSON.stringify(yaml)).toBe(400);
+        expect(res.body.message).toContain(message);
+      }
+      const after = (await http().get("/api/event-templates").set("Cookie", staff)).body.templates as EventTemplateDto[];
+      expect(after.map((t) => t.id).sort()).toEqual(before.map((t) => t.id).sort());
+      expect(after.map((t) => t.name)).not.toContain("Quebrado");
+    });
+
+    it("arquivo acima de 64 KB é recusado sem gravar", async () => {
+      const yaml = `version: 1\nname: Gigante\nminParty: 1\nroles:\n  - name: Tank\n    slots: 1\n# ${"x".repeat(70_000)}`;
+      const res = await send("post", "/api/event-templates/import", staff, { yaml });
+      expect(res.status).toBe(400);
+      expect(res.body.message).toContain("o limite é 64 KB");
+      const list = (await http().get("/api/event-templates").set("Cookie", staff)).body.templates as EventTemplateDto[];
+      expect(list.map((t) => t.name)).not.toContain("Gigante");
+    });
+
+    it("roles fora do catálogo são criadas e reportadas em createdRoles (AC#4)", async () => {
+      const yaml = ["version: 1", `name: ${templateName("roles novas")}`, "minParty: 2", "maxParty: 6", "roles:", "  - name: Battlemount", "    slots: 2", "  - name: tank", "    slots: 2"].join("\n");
+      const res = await send("post", "/api/event-templates/import", staff, { yaml });
+      expect(res.status).toBe(201);
+      expect(res.body.createdRoles).toEqual(["Battlemount"]);
+      expect(res.body.template.roles).toEqual([{ roleId: expect.any(String), name: "Battlemount", slots: 2 }, { roleId: await roleId("Tank"), name: "Tank", slots: 2 }]);
+      const catalog = await roles();
+      expect(catalog.find((r) => r.name === "Battlemount")).toMatchObject({ templateCount: 1 });
+      // "tank" casou com a role existente em vez de criar uma duplicata de caixa diferente.
+      expect(catalog.filter((r) => r.name.toLowerCase() === "tank")).toHaveLength(1);
+    });
+
+    it("sem sessão 401; membro e caller 403; outra origem 403 no import", async () => {
+      const tank = await roleId("Tank");
+      const tpl = await send("post", "/api/event-templates", staff, { name: templateName("acesso"), minPartySize: 1, maxPartySize: 4, roles: [{ roleId: tank, slots: 2 }] });
+      const yaml = (await exportYaml(staff, tpl.body.id)).text.replace(templateName("acesso"), templateName("invasor"));
+
+      expect((await http().get(`/api/event-templates/${tpl.body.id}/export`)).status).toBe(401);
+      expect((await send("post", "/api/event-templates/import", null, { yaml })).status).toBe(401);
+      for (const cookie of [member, caller]) {
+        expect((await exportYaml(cookie, tpl.body.id)).status).toBe(403);
+        expect((await send("post", "/api/event-templates/import", cookie, { yaml })).status).toBe(403);
+      }
+      expect((await send("post", "/api/event-templates/import", staff, { yaml }, "https://evil.example")).status).toBe(403);
+      const list = (await http().get("/api/event-templates").set("Cookie", staff)).body.templates as EventTemplateDto[];
+      expect(list.map((t) => t.name)).not.toContain(templateName("invasor"));
+    });
+  });
 });
