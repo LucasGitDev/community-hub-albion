@@ -205,6 +205,41 @@ describe.skipIf(!baseUrl)("inscrição em evento HTTP (TASK-022, Q27)", () => {
     expect(full.body.message).toContain("lotada");
   });
 
+  /** TASK-023: o painel monta a tela com uma chamada só, então a listagem carrega ocupação e a minha inscrição. */
+  it("listagem devolve ocupação por vaga e a inscrição de quem pediu (TASK-023, AC#1/AC#4)", async () => {
+    const { event, tank } = await openEvent("Painel");
+    await join(membro, event.id, tank.id);
+    await join(outro, event.id, tank.id);
+
+    const doMembro = await http().get(`/api/events?status=open`).set("Cookie", membro);
+    expect(doMembro.status).toBe(200);
+    expect(doMembro.headers["cache-control"]).toBe("no-store");
+    const occupancy = (doMembro.body.occupancy as { eventId: string; slotId: string; confirmed: number; waitlist: number }[]).find(
+      (o) => o.eventId === event.id && o.slotId === tank.id,
+    );
+    expect(occupancy).toMatchObject({ confirmed: 1, waitlist: 1 });
+    const minhas = (doMembro.body.mySignups as EventSignupDto[]).filter((s) => s.eventId === event.id);
+    expect(minhas).toMatchObject([{ userId: membroId, slotId: tank.id, status: "confirmed" }]);
+
+    // `mySignups` é de quem pediu: a mesma listagem vista por outra pessoa traz a inscrição dela.
+    const doOutro = await http().get(`/api/events?status=open`).set("Cookie", outro);
+    expect((doOutro.body.mySignups as EventSignupDto[]).filter((s) => s.eventId === event.id)).toMatchObject([{ userId: outroId, status: "waitlist" }]);
+    // Quem não se inscreveu não recebe inscrição de ninguém.
+    expect((await http().get(`/api/events?status=open`).set("Cookie", staff)).body.mySignups).toEqual([]);
+  });
+
+  it("lista de inscritos vem com o nick de cada pessoa e o do owner (TASK-023)", async () => {
+    const { event, tank } = await openEvent("Nicks");
+    await join(membro, event.id, tank.id);
+    const res = await http().get(`/api/events/${event.id}/signups`).set("Cookie", caller);
+    expect(res.status).toBe(200);
+    const members = res.body.members as { userId: string; nick: string }[];
+    expect(members.find((m) => m.userId === membroId)?.nick).toBe("u003");
+    expect(members.some((m) => m.userId === event.ownerUserId)).toBe(true);
+    expect(res.body.events).toBeUndefined();
+    expect((await http().get(`/api/events/${event.id}`).set("Cookie", membro)).body.ownerNick).toBe("u001");
+  });
+
   it("caller de outro evento não mexe na lista alheia", async () => {
     const { event, tank } = await openEvent("Evento do outro caller");
     await join(membro, event.id, tank.id);

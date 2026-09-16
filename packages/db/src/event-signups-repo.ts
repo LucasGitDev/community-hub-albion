@@ -1,6 +1,7 @@
-import type { EventSignupDto, EventSignupStatus, EventStatus } from "@albion-hub/shared";
+import { ACTIVE_EVENT_SIGNUP_STATUSES, type EventMemberDto, type EventOccupancyDto, type EventSignupDto, type EventSignupStatus, type EventStatus } from "@albion-hub/shared";
 import { and, asc, count, eq, inArray, max, ne, sql } from "drizzle-orm";
 import type { Database } from "./client.js";
+import { memberNick } from "./member-nick.js";
 import { eventRoleSlots, eventSignups, events, users } from "./schema.js";
 
 /**
@@ -147,6 +148,42 @@ export async function listEventSignups(db: Database, eventId: string): Promise<E
     .where(eq(eventSignups.eventId, eventId))
     .orderBy(sql`case ${eventSignups.status} when 'confirmed' then 0 when 'waitlist' then 1 else 2 end`, asc(eventSignups.position), asc(eventSignups.createdAt));
   return rows.map(toDto);
+}
+
+/**
+ * Ocupação de cada vaga dos eventos pedidos, contada pelo banco (TASK-023). O painel lista dezenas de
+ * eventos e só precisa do número: baixar a lista de inscritos de cada um seria uma consulta por evento.
+ */
+export async function listEventsOccupancy(db: Database, eventIds: readonly string[]): Promise<EventOccupancyDto[]> {
+  if (eventIds.length === 0) return [];
+  return db
+    .select({
+      eventId: eventSignups.eventId,
+      slotId: eventSignups.slotId,
+      confirmed: count(sql`case when ${eventSignups.status} = 'confirmed' then 1 end`),
+      waitlist: count(sql`case when ${eventSignups.status} = 'waitlist' then 1 end`),
+    })
+    .from(eventSignups)
+    .where(inArray(eventSignups.eventId, [...eventIds]))
+    .groupBy(eventSignups.eventId, eventSignups.slotId);
+}
+
+/** Inscrições ativas de uma pessoa nos eventos pedidos: é o "minha inscrição" destacado no painel (AC#1). */
+export async function listUserEventSignups(db: Database, userId: string, eventIds: readonly string[]): Promise<EventSignupDto[]> {
+  if (eventIds.length === 0) return [];
+  const rows = await db
+    .select()
+    .from(eventSignups)
+    .where(and(eq(eventSignups.userId, userId), inArray(eventSignups.eventId, [...eventIds]), inArray(eventSignups.status, [...ACTIVE_EVENT_SIGNUP_STATUSES])));
+  return rows.map(toDto);
+}
+
+/** Nome de exibição dos usuários pedidos, para o painel mostrar gente e não uuid. */
+export async function listMemberNicks(db: Database, userIds: readonly string[]): Promise<EventMemberDto[]> {
+  const unique = [...new Set(userIds)];
+  if (unique.length === 0) return [];
+  const rows = await db.select({ userId: users.id, nick: memberNick(users) }).from(users).where(inArray(users.id, unique));
+  return rows.map((r) => ({ userId: r.userId, nick: r.nick ?? "Membro" }));
 }
 
 /** Vaga do evento pelo id do botão: descobre a que evento ela pertence sem confiar no custom id (TASK-022). */

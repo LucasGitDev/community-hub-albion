@@ -7,8 +7,13 @@ import {
   type EventStatus,
 } from "@albion-hub/shared";
 import { and, asc, desc, eq, inArray, isNotNull, lte } from "drizzle-orm";
+import { alias } from "drizzle-orm/pg-core";
 import type { Database } from "./client.js";
+import { memberNick } from "./member-nick.js";
 import { eventOwnerHistory, eventRoleSlots, eventTemplateRoles, eventTemplates, eventRoles as eventRolesCatalog, events, users } from "./schema.js";
+
+/** `users` entra duas vezes na mesma consulta (owner do evento e, no futuro, quem transferiu): precisa de apelido. */
+const owner = alias(users, "event_owner");
 
 /** Coluna de carimbo que cada estado preenche ao ser alcançado (TASK-021, Q26). */
 const STAMP: Record<EventStatus, "openedAt" | "closedAt" | "startedAt" | "finishedAt" | "cancelledAt" | null> = {
@@ -45,9 +50,10 @@ async function loadEvents(db: Database, ids?: string[], filters: EventListQuery 
     ...(filters.templateId ? [eq(events.templateId, filters.templateId)] : []),
   ];
   const rows = await db
-    .select({ event: events, templateName: eventTemplates.name })
+    .select({ event: events, templateName: eventTemplates.name, ownerNick: memberNick(owner) })
     .from(events)
     .leftJoin(eventTemplates, eq(eventTemplates.id, events.templateId))
+    .leftJoin(owner, eq(owner.id, events.ownerUserId))
     .where(where.length > 0 ? and(...where) : undefined)
     .orderBy(desc(events.createdAt));
   if (rows.length === 0) return [];
@@ -56,7 +62,7 @@ async function loadEvents(db: Database, ids?: string[], filters: EventListQuery 
     .from(eventRoleSlots)
     .where(inArray(eventRoleSlots.eventId, rows.map((r) => r.event.id)))
     .orderBy(asc(eventRoleSlots.sortOrder));
-  return rows.map(({ event: e, templateName }) => {
+  return rows.map(({ event: e, templateName, ownerNick }) => {
     const own: EventRoleSlotDto[] = slots.filter((s) => s.eventId === e.id).map(({ id, roleId, name, slots: n }) => ({ id, roleId, name, slots: n }));
     return {
       id: e.id,
@@ -66,6 +72,7 @@ async function loadEvents(db: Database, ids?: string[], filters: EventListQuery 
       description: e.description,
       status: e.status,
       ownerUserId: e.ownerUserId,
+      ownerNick,
       createdByUserId: e.createdBy,
       voiceChannelId: e.voiceChannelId,
       discordMessageId: e.discordMessageId,

@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { EVENT_TEMPLATE_DESCRIPTION_MAX, EVENT_TEMPLATE_NAME_MAX, firstIssue } from "./event-templates.js";
+import type { Action } from "./permissions.js";
 
 /**
  * Evento e sua máquina de estados (TASK-021, Q26). Máquina pura: mesma fonte para API, bot e painel.
@@ -46,6 +47,19 @@ export const EVENT_TRANSITIONS = {
 } as const satisfies Record<string, EventStatus>;
 
 export type EventTransition = keyof typeof EVENT_TRANSITIONS;
+
+/**
+ * Permissão exigida por cada transição (Q13): abrir e fechar inscrição é edição do evento; start,
+ * finish e cancel têm ação própria. A API decide com isso e o painel esconde o botão com o mesmo mapa,
+ * então um botão visível é sempre um botão que a API aceita.
+ */
+export const EVENT_TRANSITION_ACTIONS: Readonly<Record<EventTransition, Action>> = {
+  open: "update",
+  close: "update",
+  start: "start",
+  finish: "finish",
+  cancel: "cancel",
+};
 export const EVENT_TRANSITION_NAMES = Object.keys(EVENT_TRANSITIONS) as EventTransition[];
 
 export function isEventTransition(value: string): value is EventTransition {
@@ -145,6 +159,8 @@ export interface EventDto {
   description: string | null;
   status: EventStatus;
   ownerUserId: string;
+  /** Nick de quem manda no evento, pronto pro painel não ter que buscar usuário por id (TASK-023). */
+  ownerNick: string | null;
   createdByUserId: string | null;
   voiceChannelId: string | null;
   /** Mensagem do embed de inscrição no Discord (TASK-022); null enquanto o evento não foi publicado. */

@@ -8,15 +8,18 @@ import {
   parseEventListQuery,
   transitionError,
   EVENT_TRANSITIONS,
+  EVENT_TRANSITION_ACTIONS,
   type Action,
   type EventDto,
+  type EventOccupancyDto,
   type EventOwnerChangeDto,
-  type EventTransition,
+  type EventSignupDto,
 } from "@albion-hub/shared";
 import type { Response } from "express";
 import type { z } from "zod";
 import { Authorize, CurrentAuth, type AuthorizedRequest } from "../auth/authorize.js";
 import { SameOriginGuard } from "../auth/same-origin.guard.js";
+import { EventSignupsService } from "./event-signups.service.js";
 import { EventsService } from "./events.service.js";
 
 type Auth = AuthorizedRequest["auth"];
@@ -34,9 +37,6 @@ function parseBody<S extends z.ZodType>(schema: S, body: unknown): z.output<S> {
   return parsed.data;
 }
 
-/** Ação CASL de cada transição: abrir/fechar inscrição é edição; start/finish/cancel têm ação própria (Q13). */
-const TRANSITION_ACTION: Record<EventTransition, Action> = { open: "update", close: "update", start: "start", finish: "finish", cancel: "cancel" };
-
 /**
  * Eventos e máquina de estados (TASK-021, Q9/Q21/Q26).
  * Criar: caller e staff. Transições: owner do evento ou staff (regra CASL com condição `ownerId`).
@@ -44,7 +44,10 @@ const TRANSITION_ACTION: Record<EventTransition, Action> = { open: "update", clo
  */
 @Controller("events")
 export class EventsController {
-  constructor(@Inject(EventsService) private readonly events: EventsService) {}
+  constructor(
+    @Inject(EventsService) private readonly events: EventsService,
+    @Inject(EventSignupsService) private readonly signups: EventSignupsService,
+  ) {}
 
   /** 404 em vez de 403 quando o evento não existe: não vaza a existência de ids. */
   private async load(id: string): Promise<EventDto> {
@@ -58,13 +61,25 @@ export class EventsController {
       throw new ForbiddenException("Só o owner do evento ou a staff pode fazer isso.");
   }
 
+  /**
+   * Tudo que o painel desenha numa tela numa chamada só (TASK-023, AC#4): os eventos, quantas vagas de
+   * cada role já foram ocupadas e a inscrição de quem está olhando. É este endpoint que o polling repete,
+   * então ele evita de propósito uma chamada por evento.
+   */
   @Get()
   @Authorize("read", "Event")
-  async list(@Query() query: Record<string, unknown>, @Res({ passthrough: true }) res: Response): Promise<{ events: EventDto[] }> {
+  async list(
+    @Query() query: Record<string, unknown>,
+    @CurrentAuth() auth: Auth,
+    @Res({ passthrough: true }) res: Response,
+  ): Promise<{ events: EventDto[]; occupancy: EventOccupancyDto[]; mySignups: EventSignupDto[] }> {
     const parsed = parseEventListQuery(query);
     if (!parsed.ok) throw new BadRequestException(parsed.error);
     res.setHeader("Cache-Control", "no-store");
-    return { events: await this.events.list(parsed.filters) };
+    const events = await this.events.list(parsed.filters);
+    const ids = events.map((e) => e.id);
+    const [occupancy, mySignups] = await Promise.all([this.signups.occupancy(ids), this.signups.mine(auth.user.id, ids)]);
+    return { events, occupancy, mySignups };
   }
 
   @Get(":id")
@@ -100,7 +115,7 @@ export class EventsController {
   async transition(@Param("id") id: string, @Param("transition") transition: string, @CurrentAuth() auth: Auth): Promise<EventDto> {
     if (!isEventTransition(transition)) throw new BadRequestException("Ação de evento desconhecida.");
     const event = await this.load(id);
-    this.assertCan(auth, TRANSITION_ACTION[transition], event);
+    this.assertCan(auth, EVENT_TRANSITION_ACTIONS[transition], event);
     const result = await this.events.transition(event.id, transition, auth.user.id);
     if (result.ok) return result.event;
     if (result.reason === "not_found") throw new NotFoundException("Evento não encontrado.");
