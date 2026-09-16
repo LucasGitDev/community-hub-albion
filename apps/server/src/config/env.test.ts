@@ -6,7 +6,8 @@ const DB = "postgres://albion:albion@localhost:5432/albion_hub";
 const OAUTH = { DISCORD_CLIENT_ID: "223456789012345678", DISCORD_CLIENT_SECRET: "client-secret", PUBLIC_URL: "http://localhost:3000" };
 const ROLE = "323456789012345678";
 const CHANNEL = "423456789012345678";
-const valid = { DISCORD_TOKEN: TOKEN, GUILD_ID: "123456789012345678", DATABASE_URL: DB, DISCORD_MEMBER_ROLE_ID: ROLE, DISCORD_STAFF_CHANNEL_ID: CHANNEL, ...OAUTH };
+const EVENTS_CHANNEL = "523456789012345678";
+const valid = { DISCORD_TOKEN: TOKEN, GUILD_ID: "123456789012345678", DATABASE_URL: DB, DISCORD_MEMBER_ROLE_ID: ROLE, DISCORD_STAFF_CHANNEL_ID: CHANNEL, DISCORD_EVENTS_CHANNEL_ID: EVENTS_CHANNEL, ...OAUTH };
 
 describe("parseEnv", () => {
   it("aceita config válida e aplica defaults", () => {
@@ -19,6 +20,7 @@ describe("parseEnv", () => {
         DATABASE_URL: DB,
         DISCORD_MEMBER_ROLE_ID: ROLE,
         DISCORD_STAFF_CHANNEL_ID: CHANNEL,
+        DISCORD_EVENTS_CHANNEL_ID: EVENTS_CHANNEL,
         ...OAUTH,
         SESSION_TTL_DAYS: 30,
         BOOTSTRAP_ADMIN_DISCORD_IDS: [],
@@ -162,6 +164,24 @@ describe("parseEnv", () => {
       expect(off.ok).toBe(true);
       const bad = parseEnv({ ...valid, DISCORD_STAFF_CHANNEL_ID: "staff" });
       expect(!bad.ok && bad.message).toContain("DISCORD_STAFF_CHANNEL_ID: formato inválido");
+    });
+  });
+
+  describe("canal de eventos (TASK-022)", () => {
+    it("obrigatório com o bot ligado", () => {
+      const rest: Record<string, string | undefined> = { ...valid, DISCORD_EVENTS_CHANNEL_ID: undefined };
+      for (const source of [rest, { ...valid, DISCORD_EVENTS_CHANNEL_ID: "" }]) {
+        const result = parseEnv(source);
+        expect(!result.ok && result.message).toContain("DISCORD_EVENTS_CHANNEL_ID: obrigatória com DISCORD_BOT_ENABLED=true");
+      }
+    });
+
+    it("opcional com o bot desligado e validado como snowflake", () => {
+      const off = parseEnv({ ...valid, DISCORD_EVENTS_CHANNEL_ID: undefined, DISCORD_BOT_ENABLED: "false" });
+      expect(off.ok && off.env.DISCORD_EVENTS_CHANNEL_ID).toBeUndefined();
+      expect(off.ok).toBe(true);
+      const bad = parseEnv({ ...valid, DISCORD_EVENTS_CHANNEL_ID: "eventos" });
+      expect(!bad.ok && bad.message).toContain("DISCORD_EVENTS_CHANNEL_ID: formato inválido");
     });
   });
 });
