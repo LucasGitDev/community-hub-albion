@@ -54,6 +54,20 @@ const envSchema = z.object({
     .regex(SNOWFLAKE, { error: "formato inválido (esperado snowflake numérico de 17 a 20 dígitos)" })
     .optional()
     .or(z.literal("").transform(() => undefined)),
+  // Canal de voz fixo "Aguardando Evento": o start só arrasta quem está aqui (TASK-024, Q28/Q29). Obrigatório com o bot ligado.
+  DISCORD_WAITING_VOICE_CHANNEL_ID: z
+    .string()
+    .trim()
+    .regex(SNOWFLAKE, { error: "formato inválido (esperado snowflake numérico de 17 a 20 dígitos)" })
+    .optional()
+    .or(z.literal("").transform(() => undefined)),
+  // Categoria onde o canal de voz de cada evento é criado no start e apagado no finish (TASK-024, Q28). Obrigatório com o bot ligado.
+  DISCORD_EVENT_CATEGORY_ID: z
+    .string()
+    .trim()
+    .regex(SNOWFLAKE, { error: "formato inválido (esperado snowflake numérico de 17 a 20 dígitos)" })
+    .optional()
+    .or(z.literal("").transform(() => undefined)),
   // Build da SPA servida na raiz. Default: apps/web/dist relativo ao dist do server (monorepo). Docker define explícito.
   WEB_DIST_DIR: z
     .string()
@@ -115,6 +129,12 @@ const envSchema = z.object({
 }).refine((env) => !env.DISCORD_BOT_ENABLED || env.DISCORD_EVENTS_CHANNEL_ID !== undefined, {
   error: "obrigatória com DISCORD_BOT_ENABLED=true",
   path: ["DISCORD_EVENTS_CHANNEL_ID"],
+}).refine((env) => !env.DISCORD_BOT_ENABLED || env.DISCORD_WAITING_VOICE_CHANNEL_ID !== undefined, {
+  error: "obrigatória com DISCORD_BOT_ENABLED=true",
+  path: ["DISCORD_WAITING_VOICE_CHANNEL_ID"],
+}).refine((env) => !env.DISCORD_BOT_ENABLED || env.DISCORD_EVENT_CATEGORY_ID !== undefined, {
+  error: "obrigatória com DISCORD_BOT_ENABLED=true",
+  path: ["DISCORD_EVENT_CATEGORY_ID"],
 }).refine((env) => env.NODE_ENV !== "production" || !env.AUTH_DEV_LOGIN, {
   error: "não pode ser true em produção",
   path: ["AUTH_DEV_LOGIN"],
