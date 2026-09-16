@@ -68,3 +68,73 @@ test("membro sem permissão não abre a tela nem a API (AC#5)", async ({ page })
   const imported = await page.request.post("/api/admin/members/import", { headers: { Origin: ORIGIN } });
   expect(imported.status()).toBe(403);
 });
+
+test("admin confere o nick no Albion, edita o membro e escreve nota (AC#1, AC#2, AC#3)", async ({ page }) => {
+  const admin = await login(page, "77000000000000201", "adm-gestao", ["admin"]);
+  // Nick é único entre membros e os dois projetos rodam no mesmo banco: cada um edita para o seu próprio nick.
+  const nick = test.info().project.name === "mobile" ? "NickEditadoM" : "NickEditadoD";
+  await page.goto("/admin/membros");
+
+  const row = page.getByRole("row").filter({ hasText: `@${admin}` });
+  await expect(row).toBeVisible();
+
+  // AC#2: editar nick e tag muda a linha na hora, sem recarregar a página.
+  await row.getByRole("button", { name: /^Gerenciar / }).click();
+  const dialog = page.getByRole("dialog");
+  await expect(dialog.getByRole("tab", { name: "Editar" })).toBeVisible();
+  await snap(page, "admin-membros-editar");
+  await dialog.getByLabel("Nick no Albion").fill(nick);
+  await dialog.getByLabel("Tag da guilda").fill("GENEI");
+  await dialog.getByRole("button", { name: "Salvar" }).click();
+  await expect(dialog).toBeHidden();
+
+  const edited = page.getByRole("row").filter({ hasText: `@${admin}` });
+  await expect(edited.getByText(nick)).toBeVisible();
+  await expect(edited.getByText("[GENEI]").filter({ visible: true }).first()).toBeVisible();
+  await snap(page, "admin-membros-linha-editada");
+
+  // AC#3: a edição vira nota de sistema com autor e data, e a nota escrita à mão entra depois dela.
+  await edited.getByRole("button", { name: /^Gerenciar / }).click();
+  await dialog.getByRole("tab", { name: /Notas/ }).click();
+  await expect(dialog.getByText(new RegExp(`Editou nick .+ → ${nick}`))).toBeVisible();
+  // Corpo único por execução: o banco do e2e não é limpo entre rodadas e a nota nunca é apagada.
+  const nota = `avisei no privado sobre o nick ${Date.now()}`;
+  const antes = await dialog.getByRole("listitem").count();
+  await dialog.getByLabel(/Nova nota/).fill(nota);
+  await dialog.getByRole("button", { name: "Adicionar nota" }).click();
+  await expect(dialog.getByRole("listitem")).toHaveCount(antes + 1);
+  const itens = dialog.getByRole("listitem");
+  // Append-only e cronológico: o registro da edição abre a lista e a nota nova entra no fim, sem mexer nas outras.
+  await expect(itens.first()).toContainText("Editou nick");
+  await expect(itens.last()).toContainText(nota);
+  // Autor da nota é quem escreveu, pelo nick vigente (o admin acabou de editar o próprio).
+  await expect(itens.last()).toContainText(nick);
+
+  // Append-only na interface: nada de editar nem apagar nota.
+  await expect(dialog.getByRole("button", { name: /Apagar|Excluir|Editar nota/ })).toHaveCount(0);
+  await snap(page, "admin-membros-notas");
+
+  // AC#1: a conferência está desligada no e2e (sem ALBION_REGION) e a tela diz isso em PT-BR, sem quebrar.
+  await page.getByRole("button", { name: "Fechar" }).first().click();
+  await expect(dialog).toBeHidden();
+  await edited.getByRole("button", { name: /^Conferir / }).click();
+  await expect(page.getByText("Conferência no Albion desligada", { exact: false })).toBeVisible();
+  await expect(edited.getByRole("button", { name: /^Conferir / })).toBeEnabled();
+  await snap(page, "admin-membros-conferir-desligado");
+});
+
+test("membro sem permissão não usa edição, notas nem conferência (AC#4)", async ({ page }) => {
+  await login(page, "77000000000000203", "adm-sem-acesso");
+  await page.goto("/admin/membros");
+  await expect(page.getByRole("heading", { name: "Acesso negado" })).toBeVisible();
+  // Nem o botão existe na tela, nem a API responde.
+  await expect(page.getByRole("button", { name: /Gerenciar/ })).toHaveCount(0);
+  await expect(page.getByRole("button", { name: /Conferir/ })).toHaveCount(0);
+
+  // O guard decide antes de olhar se o usuário existe: qualquer id devolve 403 para quem não tem permissão.
+  const alvo = "00000000-0000-4000-8000-000000000000";
+  expect((await page.request.get(`/api/admin/members/${alvo}/notes`)).status()).toBe(403);
+  expect((await page.request.post(`/api/admin/members/${alvo}/notes`, { data: { body: "oi" }, headers: { Origin: ORIGIN } })).status()).toBe(403);
+  expect((await page.request.post(`/api/admin/members/${alvo}/albion-check`, { headers: { Origin: ORIGIN } })).status()).toBe(403);
+  expect((await page.request.patch(`/api/admin/members/${alvo}`, { data: { nick: "Invadido" }, headers: { Origin: ORIGIN } })).status()).toBe(403);
+});
