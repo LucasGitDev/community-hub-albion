@@ -4,6 +4,7 @@ title: Importar membros já registrados do Discord
 status: To Do
 assignee: []
 created_date: '2026-09-16 03:53'
+updated_date: '2026-09-16 03:56'
 labels:
   - bot
   - backend
@@ -25,6 +26,8 @@ O servidor já tem 24 membros com o cargo Membro e apelido in-game definido (mui
 - [ ] #3 Tag de guilda no apelido (ex: '[GENEI] ') é removida antes de virar nick; nick inválido entra em conflitos sem quebrar a importação
 - [ ] #4 Reexecutar não duplica conta nem sobrescreve nick já aprovado no painel
 - [ ] #5 Membro sem apelido ou sem cargo Membro é ignorado e listado no resumo
+- [ ] #6 Apelido é separado em tag de guilda (opcional) e nick; ambos ficam guardados
+- [ ] #7 Nick importado é validado na API do Albion (região configurada) e o resultado fica registrado com data
 <!-- AC:END -->
 
 ## Definition of Done
