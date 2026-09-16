@@ -1,6 +1,6 @@
 import { ROLE_LABELS, type Action, type SubjectType } from "@albion-hub/shared";
 import { NavLink, Outlet, useLocation } from "react-router";
-import { CalendarPlus, CalendarRange, Coins, LayoutTemplate, HandCoins, KeyRound, LogOut, ScrollText, Shield, Swords, UserPen, Users, UsersRound, Vault } from "lucide-react";
+import { CalendarPlus, CalendarRange, Coins, LayoutTemplate, HandCoins, CircleUser, KeyRound, LogOut, ScrollText, Shield, Swords, Users, UsersRound, Vault } from "lucide-react";
 import type { ReactNode } from "react";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
@@ -37,7 +37,7 @@ export function AppShell() {
     { to: "/carteira", label: "Carteira", icon: <Coins /> },
     { to: "/eventos", label: "Eventos", icon: <CalendarRange /> },
     { to: "/saques", label: "Meus saques", icon: <HandCoins />, count: myOpen },
-    { to: "/nick", label: "Meu nick", icon: <UserPen /> },
+    { to: "/perfil", label: "Meu perfil", icon: <CircleUser /> },
   ];
   const management = (
     [

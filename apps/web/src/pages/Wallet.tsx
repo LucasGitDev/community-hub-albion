@@ -324,8 +324,8 @@ function FirstSteps() {
   const nickStep = nick?.gameNick
     ? { done: true, title: "Nick aprovado", detail: `A staff aprovou ${nick.gameNick}.` }
     : nick?.pending
-      ? { done: false, title: "Nick aguardando a staff", detail: `${nick.pending.nick} está em análise.`, link: { to: "/nick", label: "Ver solicitação" } }
-      : { done: false, title: "Registre seu nick do Albion", detail: "A staff confere o nick do personagem pra liberar sua entrada.", link: { to: "/nick", label: "Registrar nick" } };
+      ? { done: false, title: "Nick aguardando a staff", detail: `${nick.pending.nick} está em análise.`, link: { to: "/perfil", label: "Ver solicitação" } }
+      : { done: false, title: "Registre seu nick do Albion", detail: "A staff confere o nick do personagem pra liberar sua entrada.", link: { to: "/perfil", label: "Registrar nick" } };
   const steps: { done: boolean; title: string; detail: string; link?: { to: string; label: string } }[] = [
     { done: true, title: "Conta ativada", detail: "Você entrou com o Discord e já pode receber prata." },
     nickStep,
