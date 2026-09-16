@@ -1,11 +1,11 @@
 ---
 id: TASK-045
 title: 'Gestão de usuários: busca por nick na API, edição e notas'
-status: In Progress
+status: Done
 assignee:
   - '@claude'
 created_date: '2026-09-16 16:34'
-updated_date: '2026-09-16 16:54'
+updated_date: '2026-09-16 20:32'
 labels:
   - admin
   - web
@@ -39,7 +39,7 @@ Melhorias de qualidade de vida na lista de membros do admin (TASK-043): buscar/r
 - [x] #5 Comportamento confere com decisões do doc-005 (Qs citadas) e nada fora do escopo da task
 - [x] #6 Toca auth, ledger, prata ou saque: security-review sem achado crítico
 - [x] #7 Notas e final summary com evidências; commits Conventional atômicos sem co-autor
-- [ ] #8 PR merged na main com quality gate verde; branch e worktree removidos
+- [x] #8 PR merged na main com quality gate verde; branch e worktree removidos
 <!-- DOD:END -->
 
 ## Implementation Plan
