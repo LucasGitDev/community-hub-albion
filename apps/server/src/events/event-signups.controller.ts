@@ -9,7 +9,7 @@ import { EventsService } from "./events.service.js";
 type Auth = AuthorizedRequest["auth"];
 
 /** Mensagens PT-BR das recusas; as mesmas regras aparecem no botão do Discord com outra roupa. */
-export const SIGNUP_ERRORS = {
+const SIGNUP_ERRORS = {
   unknownRole: "Essa role não é desse evento. Atualize a página e escolha de novo.",
   alreadyInRole: "Você já está nessa role.",
   notSignedUp: "Essa pessoa não está inscrita neste evento.",
