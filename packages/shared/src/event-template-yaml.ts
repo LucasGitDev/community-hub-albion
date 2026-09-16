@@ -126,7 +126,9 @@ export function serializeEventTemplateYaml(template: Pick<EventTemplateDto, "nam
       minParty: template.minPartySize,
       maxParty: template.maxPartySize,
       active: template.active,
-      roles: template.roles.map((r) => ({ name: r.name, slots: r.slots })),
+      // A descrição da role já entra no import (cria a role do catálogo com ela); exportar fecha o
+      // round-trip, senão mandar o template pra outro servidor perde o que a staff escreveu (TASK-039).
+      roles: template.roles.map((r) => ({ name: r.name, slots: r.slots, ...(r.description ? { description: r.description } : {}) })),
     },
     { lineWidth: 0, nullStr: "null" },
   );
