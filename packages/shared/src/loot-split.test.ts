@@ -4,6 +4,7 @@ import {
   checkSplitConfirm,
   distributeByShare,
   feeBreakdown,
+  parsePercentBp,
   lootSplitReversalSchema,
   lootSplitUpdateSchema,
   splitConfirmRefusalMessage,
@@ -392,5 +393,24 @@ describe("corpo da edição e do estorno (TASK-028)", () => {
   it("estorno exige motivo com conteúdo", () => {
     expect(lootSplitReversalSchema.safeParse({ reason: "  " }).success).toBe(false);
     expect(lootSplitReversalSchema.safeParse({ reason: "loot contado errado" }).success).toBe(true);
+  });
+});
+
+describe("parsePercentBp (TASK-029: o percentual que o caller digita)", () => {
+  it("aceita inteiro, vírgula e ponto, sempre em basis points", () => {
+    expect(parsePercentBp("7")).toBe(700);
+    expect(parsePercentBp("12,5")).toBe(1250);
+    expect(parsePercentBp("12.5")).toBe(1250);
+    expect(parsePercentBp(" 0,01 ")).toBe(1);
+    expect(parsePercentBp("100")).toBe(10_000);
+    expect(parsePercentBp("33%")).toBe(3300);
+  });
+
+  it("trunca no basis point em vez de arredondar para um float que não fecha a soma", () => {
+    expect(parsePercentBp("12,349")).toBe(1234);
+  });
+
+  it("recusa o que não é percentual válido, inclusive acima de 100%", () => {
+    for (const bad of ["", "abc", "-5", "100,01", "1e3", "1,2,3"]) expect(parsePercentBp(bad)).toBeNull();
   });
 });

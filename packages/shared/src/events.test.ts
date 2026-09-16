@@ -8,6 +8,7 @@ import {
   EVENT_ARCHIVED_EDIT_ERROR,
   TERMINAL_EVENT_STATUSES,
   canCancel,
+  eventUpdateSchema,
   canTransition,
   eventCancelSchema,
   eventCancelledText,
@@ -178,5 +179,18 @@ describe("schemas de evento (TASK-021)", () => {
     expect(parseEventListQuery({})).toEqual({ ok: true, filters: {} });
     expect(parseEventListQuery({ status: "aberto" }).ok).toBe(false);
     expect(parseEventListQuery({ ownerUserId: "eu" })).toEqual({ ok: false, error: "Owner inválido." });
+  });
+});
+
+describe("eventUpdateSchema (TASK-029, AC#2: corrigir os dados do evento no acerto)", () => {
+  it("aceita nome novo com descrição opcional, normalizando vazio para null", () => {
+    expect(eventUpdateSchema.parse({ name: "  Roads das 21h  ", description: "" })).toEqual({ name: "Roads das 21h", description: null });
+    expect(eventUpdateSchema.parse({ name: "Roads", description: " ponto em Martlock " })).toEqual({ name: "Roads", description: "ponto em Martlock" });
+    expect(eventUpdateSchema.parse({ name: "Roads" }).description).toBeNull();
+  });
+
+  it("recusa nome vazio: o evento sem nome some da lista de quem precisa acertar", () => {
+    expect(eventUpdateSchema.safeParse({ name: "   " }).success).toBe(false);
+    expect(eventUpdateSchema.safeParse({ name: "x".repeat(61) }).success).toBe(false);
   });
 });

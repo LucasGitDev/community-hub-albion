@@ -230,6 +230,37 @@ export function formatPresence(presenceMs: number): string {
   return hours > 0 ? `${hours}h ${minutes % 60}min` : `${minutes}min`;
 }
 
+/**
+ * Presença medida do evento, antes de existir qualquer rascunho (TASK-029).
+ *
+ * É o mesmo dado que vira as linhas do rascunho, servido sozinho para a tela de acerto não abrir
+ * vazia: quem esteve na call e por quanto tempo existe desde o finish, e esconder isso até o caller
+ * digitar o total transformaria a tela num formulário em branco.
+ */
+export interface SplitPresenceDto {
+  discordUserId: string;
+  userId: string | null;
+  nick: string | null;
+  signedUp: boolean;
+  roleName: string | null;
+  presenceMs: number;
+}
+
+/**
+ * Percentual digitado ("12,5", "12.5", "7") em basis points. `null` quando não é número, é negativo
+ * ou passa de 100% — a granularidade é o basis point (0,01%), que é exatamente a que o caller edita.
+ *
+ * O arredondamento é explícito: "12,345" vira 1234 bp (truncado), nunca um float que a soma depois
+ * não fecha. Prata nenhuma passa por aqui: isto converte percentual, não dinheiro.
+ */
+export function parsePercentBp(input: string): number | null {
+  const raw = input.trim().replace("%", "").replace(",", ".");
+  if (!/^\d+(\.\d+)?$/.test(raw)) return null;
+  const [whole, decimals = ""] = raw.split(".");
+  const bp = Number(whole) * 100 + Number((decimals + "00").slice(0, 2));
+  return bp > SHARE_SCALE ? null : bp;
+}
+
 /* ------------------------------------------------- taxa aplicada (TASK-028) */
 
 /**
