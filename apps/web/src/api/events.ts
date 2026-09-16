@@ -15,8 +15,9 @@ export const fetchEventRoster = (eventId: string): Promise<{ signups: EventSignu
 export const createEvent = (body: Omit<EventCreateInput, "startsAt" | "signupsCloseAt"> & { startsAt: string | null; signupsCloseAt: string | null }): Promise<EventDto> =>
   api("/api/events", { method: "POST", body: JSON.stringify(body) });
 
-export const transitionEvent = (eventId: string, transition: EventTransition): Promise<EventDto> =>
-  api(`/api/events/${eventId}/transitions/${transition}`, { method: "POST" });
+/** `reason` só é guardado no cancelamento (TASK-025); as outras transições ignoram o corpo. */
+export const transitionEvent = (eventId: string, transition: EventTransition, reason?: string): Promise<EventDto> =>
+  api(`/api/events/${eventId}/transitions/${transition}`, { method: "POST", body: JSON.stringify({ reason: reason || null }) });
 
 export const transferEventOwner = (eventId: string, ownerUserId: string): Promise<EventDto> =>
   api(`/api/events/${eventId}/owner`, { method: "POST", body: JSON.stringify({ ownerUserId }) });

@@ -1,5 +1,6 @@
 import {
   eventCreateSchema,
+  EVENT_CANCEL_REASON_MAX,
   EVENT_TEMPLATE_NAME_MAX,
   firstIssue,
   type EventDto,
@@ -14,7 +15,7 @@ import { toast } from "sonner";
 import * as api from "@/api/events";
 import { errorText } from "@/api/http";
 import { usePoll } from "@/api/use-poll";
-import { EventMeta, EventStatusPill, FillMeter, Freshness, eventStatusText } from "@/components/events";
+import { EventCancelledNote, EventMeta, EventStatusPill, FillMeter, Freshness, eventStatusText } from "@/components/events";
 import { EmptyState, PageHeader, Panel, Pill, StatCard } from "@/components/display";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
@@ -67,12 +68,17 @@ export function StaffEvents() {
   // Sem escolha ainda, abre um evento seu: é nele que o caller vai mexer, não no do vizinho.
   const selected = board.events.find((e) => e.id === selectedId) ?? live.find((e) => e.ownerUserId === user.id) ?? live[0] ?? board.events[0] ?? null;
 
-  async function transition(event: EventDto, action: EventTransition) {
+  async function transition(event: EventDto, action: EventTransition, reason?: string) {
     setBusy(true);
     try {
-      const updated = await api.transitionEvent(event.id, action);
+      const updated = await api.transitionEvent(event.id, action, reason);
       toast.success(`${event.name}: ${eventStatusText(updated.status).toLowerCase()}`, {
-        description: action === "open" ? "O embed foi publicado no canal de eventos." : undefined,
+        description:
+          action === "open"
+            ? "O embed foi publicado no canal de eventos."
+            : action === "cancel"
+              ? "As inscrições foram canceladas e o aviso foi para o canal de eventos."
+              : undefined,
       });
       setCancelling(null);
       refresh();
@@ -204,25 +210,9 @@ export function StaffEvents() {
         />
       )}
 
-      <Dialog open={cancelling !== null} onOpenChange={(open) => !open && setCancelling(null)}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Cancelar {cancelling?.name}?</DialogTitle>
-            <DialogDescription>
-              O evento sai do ar para quem estava inscrito e não volta atrás: um evento cancelado não aceita inscrição nem distribuição de loot.
-            </DialogDescription>
-          </DialogHeader>
-          <DialogFooter>
-            <Button variant="ghost" onClick={() => setCancelling(null)}>
-              Voltar
-            </Button>
-            <Button variant="destructive" disabled={busy} onClick={() => cancelling && void transition(cancelling, "cancel")}>
-              <X />
-              Cancelar evento
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      {cancelling && (
+        <CancelEventDialog event={cancelling} busy={busy} onClose={() => setCancelling(null)} onConfirm={(reason) => void transition(cancelling, "cancel", reason)} />
+      )}
     </>
   );
 }
@@ -291,6 +281,7 @@ function EventDetail({
           <div className="min-w-0">
             <EventMeta event={event} />
             {event.description && <p className="mt-1 text-sm text-muted-foreground">{event.description}</p>}
+            <EventCancelledNote event={event} className="mt-2" />
           </div>
           <div className="w-full sm:w-56">
             <FillMeter {...fill} />
@@ -350,7 +341,11 @@ function EventDetail({
           {roles.length === 0 && <p className="px-4 py-3 text-sm text-muted-foreground">O template deste evento não tinha nenhuma role.</p>}
           {active.length === 0 && roles.length > 0 && (
             <p className="px-4 py-3 text-sm text-muted-foreground">
-              {event.status === "draft" ? "Abra as inscrições para o pessoal entrar." : "Ninguém se inscreveu ainda."}
+              {event.status === "draft"
+                ? "Abra as inscrições para o pessoal entrar."
+                : event.status === "cancelled"
+                  ? "As inscrições caíram junto com o evento."
+                  : "Ninguém se inscreveu ainda."}
             </p>
           )}
         </div>
@@ -494,6 +489,54 @@ function SignupRow({
         </span>
       )}
     </li>
+  );
+}
+
+/**
+ * Cancelamento (TASK-025, Q26). Confirmação com motivo opcional: quem cancela escreve uma frase e ela
+ * vira o aviso que o inscrito lê no embed do Discord e no painel — sem isso o evento só some da lista
+ * e cada um inventa uma explicação. O botão destrutivo diz exatamente o que vai acontecer.
+ */
+function CancelEventDialog({ event, busy, onClose, onConfirm }: { event: EventDto; busy: boolean; onClose: () => void; onConfirm: (reason: string) => void }) {
+  const id = useId();
+  const [reason, setReason] = useState("");
+  const confirmed = event.status === "running";
+
+  return (
+    <Dialog open onOpenChange={(open) => !open && onClose()}>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>Cancelar {event.name}?</DialogTitle>
+          <DialogDescription>
+            Não volta atrás: todas as inscrições são canceladas e o evento não aceita mais inscrição nem distribuição de loot.
+            {confirmed && " O evento já começou, então a galera volta para Aguardando Evento e o canal de voz é apagado."}
+          </DialogDescription>
+        </DialogHeader>
+        <div>
+          <Label htmlFor={id}>Motivo (opcional)</Label>
+          <Textarea
+            id={id}
+            autoFocus
+            value={reason}
+            rows={2}
+            maxLength={EVENT_CANCEL_REASON_MAX}
+            onChange={(e) => setReason(e.target.value)}
+            placeholder="Ex: não fechamos grupo, remarcado para amanhã 21h"
+            className="mt-1.5 min-h-16"
+          />
+          <p className="mt-1.5 text-xs text-muted-foreground">Os inscritos leem isso no canal de eventos e no painel.</p>
+        </div>
+        <DialogFooter>
+          <Button variant="ghost" onClick={onClose}>
+            Voltar
+          </Button>
+          <Button variant="destructive" disabled={busy} onClick={() => onConfirm(reason.trim())}>
+            <X />
+            Cancelar evento
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 }
 

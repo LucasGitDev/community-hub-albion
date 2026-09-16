@@ -1,4 +1,4 @@
-import type { EventDto, EventStatus } from "@albion-hub/shared";
+import { eventCancelledText, type EventDto, type EventStatus } from "@albion-hub/shared";
 import { CalendarClock, CheckCircle2, CircleDot, DoorOpen, FileEdit, Lock, XCircle } from "lucide-react";
 import type { ReactNode } from "react";
 import { Pill, type Tone } from "@/components/display";
@@ -28,6 +28,23 @@ export function EventStatusPill({ status }: { status: EventStatus }) {
 }
 
 export const eventStatusText = (status: EventStatus) => STATUS_META[status].label;
+
+/**
+ * Aviso de evento cancelado (TASK-025, AC#4). Fica junto do nome do evento nas duas telas, com ícone,
+ * texto e cor (nunca só cor): quem esperava jogar precisa ler o motivo, não deduzir de um pill cinza.
+ */
+export function EventCancelledNote({ event, className }: { event: EventDto; className?: string }) {
+  if (event.status !== "cancelled") return null;
+  return (
+    <p className={cn("flex items-start gap-2 rounded-lg border border-destructive/40 bg-destructive/10 px-3 py-2 text-sm", className)}>
+      <XCircle className="mt-0.5 size-4 shrink-0 text-destructive" aria-hidden />
+      <span className="min-w-0">
+        {eventCancelledText(event.cancelReason)}
+        <span className="text-muted-foreground"> Todas as inscrições foram canceladas.</span>
+      </span>
+    </p>
+  );
+}
 
 /** Linha de contexto do evento: template, quem manda e quando começa. */
 export function EventMeta({ event, className }: { event: EventDto; className?: string }) {

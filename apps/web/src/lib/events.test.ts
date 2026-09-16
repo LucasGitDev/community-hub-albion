@@ -36,6 +36,7 @@ const event = (id: string, status: EventStatus, ownerUserId = CALLER): EventDto 
   startedAt: null,
   finishedAt: null,
   cancelledAt: null,
+  cancelReason: null,
   roles: [
     { id: "tank", roleId: null, name: "Tank", slots: 1 },
     { id: "healer", roleId: null, name: "Healer", slots: 2 },
