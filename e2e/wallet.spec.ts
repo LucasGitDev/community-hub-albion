@@ -1,35 +1,12 @@
-import { expect, test, type Page } from "@playwright/test";
+import { expect, test } from "@playwright/test";
+import { login as signIn, snap, type Silver } from "./session";
 
 /**
  * Carteira do membro contra a API real (TASK-031, Q3/Q10/Q12/Q20/Q24/Q25): saldo, reserva, extrato do
  * ledger e pedido de saque. Nada de dados de demonstração aqui — a prata é semeada no ledger pelo
- * dev-login (só com AUTH_DEV_LOGIN).
- *
- * Discord ID por teste **e** por projeto: desktop e mobile rodam em paralelo contra o mesmo banco.
+ * dev-login (só com AUTH_DEV_LOGIN). O login e o id por rodada vivem em `./session`.
  */
-const ORIGIN = "http://localhost:4173";
-
-type Silver = { amount: string; kind?: "split_payout" | "split_fee" | "withdrawal" | "adjustment"; memo?: string };
-
-/**
- * Membro novo a cada execução. O id carrega o timestamp do processo porque a prata semeada fica no
- * ledger append-only: reusar o mesmo Discord ID somaria os lançamentos da rodada anterior e mudaria o
- * saldo esperado. O índice separa os testes e o sufixo separa desktop de mobile, que rodam em paralelo.
- */
-const RUN = String(Date.now());
-
-async function login(page: Page, index: string, username: string, silver: Silver[] = []) {
-  const suffix = test.info().project.name === "mobile" ? "9" : "8";
-  const res = await page.request.post("/api/auth/dev-login", {
-    data: { discordId: `7${RUN}${index}${suffix}`, username, roles: [], ...(silver.length ? { silver } : {}) },
-    headers: { Origin: ORIGIN },
-  });
-  expect(res.status()).toBe(204);
-}
-
-async function snap(page: Page, name: string) {
-  await test.info().attach(name, { body: await page.screenshot({ fullPage: true }), contentType: "image/png" });
-}
+const login = (page: Parameters<typeof signIn>[0], index: string, username: string, silver: Silver[] = []) => signIn(page, index, username, { silver });
 
 test("membro vê saldo, reserva e extrato do ledger com a origem de cada lançamento (AC#1)", async ({ page }) => {
   await login(page, "001", "carteira", [
