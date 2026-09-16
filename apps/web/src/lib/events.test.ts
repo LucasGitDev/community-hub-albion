@@ -36,6 +36,7 @@ const event = (id: string, status: EventStatus, ownerUserId = CALLER): EventDto 
   startedAt: null,
   finishedAt: null,
   cancelledAt: null,
+  archivedAt: null,
   cancelReason: null,
   roles: [
     { id: "tank", roleId: null, name: "Tank", slots: 1 },
@@ -71,11 +72,12 @@ describe("groupEvents", () => {
       event("d", "closed"),
       event("e", "finished"),
       event("f", "cancelled"),
+      event("g", "archived"),
     ]);
     expect(groups.running.map((e) => e.id)).toEqual(["a"]);
     expect(groups.open.map((e) => e.id)).toEqual(["b"]);
     expect(groups.upcoming.map((e) => e.id)).toEqual(["c", "d"]);
-    expect(groups.done.map((e) => e.id)).toEqual(["e", "f"]);
+    expect(groups.done.map((e) => e.id)).toEqual(["e", "f", "g"]);
   });
 
   it("mantém a ordem que a API mandou dentro de cada faixa", () => {
@@ -174,10 +176,15 @@ describe("ações permitidas (AC#3)", () => {
     expect(availableTransitions(event("e1", "running"), a)).toEqual(["finish", "cancel"]);
   });
 
-  it("estado final não oferece nada", () => {
+  it("finalizado oferece só arquivar; cancelado e arquivado não oferecem nada (TASK-044 AC#3)", () => {
     const a = ability(["member", "caller", "staff"]);
-    expect(availableTransitions(event("e1", "finished"), a)).toEqual([]);
+    expect(availableTransitions(event("e1", "finished"), a)).toEqual(["archive"]);
     expect(availableTransitions(event("e1", "cancelled"), a)).toEqual([]);
+    expect(availableTransitions(event("e1", "archived"), a)).toEqual([]);
+    // Arquivar é de quem conduz: o owner caller e a staff veem; o membro não.
+    expect(availableTransitions(event("e1", "finished"), ability(["member", "caller"]))).toEqual(["archive"]);
+    expect(availableTransitions(event("e1", "finished", OTHER), ability(["member", "staff"]))).toEqual(["archive"]);
+    expect(availableTransitions(event("e1", "finished"), ability(["member"], OTHER))).toEqual([]);
   });
 
   it("caller não vê ação no evento de outro caller; staff vê em qualquer um (Q9/Q21)", () => {
@@ -195,15 +202,19 @@ describe("ações permitidas (AC#3)", () => {
     expect(canManageRoster(event("e1", "open"), caller)).toBe(true);
     expect(canManageRoster(event("e1", "closed"), caller)).toBe(true);
     expect(canManageRoster(event("e1", "running"), caller)).toBe(false);
+    expect(canManageRoster(event("e1", "finished"), caller)).toBe(false);
+    expect(canManageRoster(event("e1", "archived"), caller)).toBe(false);
     expect(canManageRoster(event("e1", "open"), ability(["member"], OTHER))).toBe(false);
     expect(canManageRoster(event("e1", "open", OTHER), ability(["member", "staff"]))).toBe(true);
   });
 
-  it("trocar o dono é só da staff e só enquanto o evento não acabou (Q21)", () => {
+  it("trocar o dono é só da staff e só enquanto o evento não foi arquivado nem cancelado (Q21)", () => {
     expect(canTransferOwner(event("e1", "open"), ability(["member", "caller"]))).toBe(false);
     expect(canTransferOwner(event("e1", "open"), ability(["member", "staff"]))).toBe(true);
-    expect(canTransferOwner(event("e1", "finished"), ability(["member", "staff"]))).toBe(false);
+    // `finished` ainda troca: a taxa vai para o owner e o acerto acontece depois do jogo (TASK-044 AC#2).
+    expect(canTransferOwner(event("e1", "finished"), ability(["member", "staff"]))).toBe(true);
     expect(canTransferOwner(event("e1", "cancelled"), ability(["member", "staff"]))).toBe(false);
+    expect(canTransferOwner(event("e1", "archived"), ability(["member", "staff"]))).toBe(false);
   });
 
   it("entrar e sair só com a inscrição aberta (Q26)", () => {
