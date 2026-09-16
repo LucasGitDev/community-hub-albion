@@ -301,6 +301,10 @@ function EventDetail({
         </div>
 
         {/* AC#3: só aparece a ação que a máquina de estados permite agora e que o papel autoriza. */}
+        {/* Finalizado tem uma ação só e ela é irreversível: a frase explica por que ainda não acabou. */}
+        {event.status === "finished" && (
+          <p className="text-sm text-muted-foreground">Evento finalizado. Quem conduz ainda acerta a taxa e os splits, e arquiva quando terminar.</p>
+        )}
         {actions.length > 0 ? (
           <div className="flex flex-wrap gap-2">
             {actions.map((action) => {
@@ -321,7 +325,7 @@ function EventDetail({
               : event.status === "cancelled"
                 ? "Evento cancelado: não há mais ação a tomar."
                 : event.status === "finished"
-                  ? "Evento finalizado. Quem conduz ainda acerta a taxa e os splits, e arquiva quando terminar."
+                  ? "Evento finalizado, mas você não conduz este evento: quem acerta a taxa e arquiva é o caller dono ou a staff."
                   : "Você não conduz este evento. Fale com o caller dono ou com a staff."}
           </p>
         )}
