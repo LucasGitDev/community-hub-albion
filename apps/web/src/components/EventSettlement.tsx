@@ -1,5 +1,6 @@
 import {
   EVENT_TEMPLATE_NAME_MAX,
+  feeBreakdown,
   feeFromDto,
   formatEventFee,
   formatPresence,
@@ -31,6 +32,7 @@ import { formatDateTime } from "@/lib/format";
 import {
   confirmBlockedReason,
   eventFee,
+  feePreviewText,
   isSettlementOpen,
   rowsFromPresence,
   rowsFromSplit,
@@ -80,6 +82,11 @@ export function EventSettlement({ event, onChanged, onDraftChange }: { event: Ev
   const [data, setData] = useState<SettlementData | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [nonce, setNonce] = useState(0);
+  /**
+   * O total da leva mora aqui, e não dentro do passo 3, porque a frase da taxa (passo 2) é feita dele:
+   * é digitando o total que o caller descobre quanto a taxa retém de verdade.
+   */
+  const [totalText, setTotalText] = useState("");
   const open = isSettlementOpen(event);
 
   const reload = useCallback(() => setNonce((n) => n + 1), []);
@@ -125,13 +132,22 @@ export function EventSettlement({ event, onChanged, onDraftChange }: { event: Ev
   return (
     <div className="divide-y">
       <EventDetailsStep event={event} open={open} onChanged={onChanged} />
-      <FeeStep event={event} open={open && draft === null} hasDraft={draft !== null} onChanged={onChanged} />
+      <FeeStep
+        event={event}
+        open={open && draft === null}
+        hasDraft={draft !== null}
+        total={draft ? BigInt(draft.totalSilver) : (parseSilver(totalText) ?? 0n)}
+        onChanged={onChanged}
+      />
       <SplitStep
         event={event}
         open={open}
         present={data.present}
         draft={draft}
         confirmed={confirmed}
+        totalText={totalText}
+        onTotalText={setTotalText}
+        onConfirmed={() => setTotalText("")}
         onChanged={() => {
           reload();
           onChanged();
@@ -236,7 +252,7 @@ function EventDetailsStep({ event, open, onChanged }: { event: EventDto; open: b
  * números que importam (retém, para quem, sobra) enquanto o caller digita, em vez de um preview
  * separado que ele teria que ir procurar.
  */
-function FeeStep({ event, open, hasDraft, onChanged }: { event: EventDto; open: boolean; hasDraft: boolean; onChanged: () => void }) {
+function FeeStep({ event, open, hasDraft, total, onChanged }: { event: EventDto; open: boolean; hasDraft: boolean; total: bigint; onChanged: () => void }) {
   const fieldId = useId();
   const fee = eventFee(event);
   const [type, setType] = useState<EventFee["type"]>(fee.type);
@@ -314,6 +330,16 @@ function FeeStep({ event, open, hasDraft, onChanged }: { event: EventDto; open: 
         <p className="text-lg font-semibold">{formatEventFee(fee)}</p>
       )}
 
+      {/* O feedback é esta frase, não um preview separado: ela responde a cada tecla do campo acima. */}
+      {open && (
+        <p
+        aria-live="polite"
+        className={cn("mt-3 text-sm", pending && feeBreakdown(total, pending).exceedsTotal ? "font-medium text-destructive" : "text-muted-foreground")}
+      >
+          {feePreviewText(total, pending ?? fee, event.ownerNick ?? "o caller do evento")}
+        </p>
+      )}
+
       {parsed === null && value.trim() !== "" && (
         <p role="alert" className="mt-3 text-sm text-destructive">
           {type === "percent" ? "Percentual inválido: use de 0 a 100, com até duas casas (ex: 12,5)." : "Valor inválido: use prata inteira (ex: 1.000.000 ou 1,5M)."}
@@ -336,6 +362,9 @@ function SplitStep({
   present,
   draft,
   confirmed,
+  totalText,
+  onTotalText,
+  onConfirmed,
   onChanged,
 }: {
   event: EventDto;
@@ -343,6 +372,10 @@ function SplitStep({
   present: SplitPresenceDto[];
   draft: LootSplitDto | null;
   confirmed: LootSplitDto[];
+  totalText: string;
+  onTotalText: (text: string) => void;
+  /** O total digitado é da leva que acabou de fechar: a próxima começa em branco. */
+  onConfirmed: () => void;
   onChanged: () => void;
 }) {
   return (
@@ -350,9 +383,11 @@ function SplitStep({
       n={3}
       title="Loot split"
       hint={
-        draft
-          ? "Ajuste o total e os percentuais. Confirmar credita a prata na carteira de cada um e não volta atrás."
-          : "O tempo de call de cada um já está medido desde o fim do evento. Informe o total da leva para dividir."
+        !open
+          ? "Arquivado: as levas abaixo são o registro final do que foi dividido."
+          : draft
+            ? "Ajuste o total e os percentuais. Confirmar credita a prata na carteira de cada um e não volta atrás."
+            : "O tempo de call de cada um já está medido desde o fim do evento. Informe o total da leva para dividir."
       }
     >
       <div className="space-y-6">
@@ -360,9 +395,17 @@ function SplitStep({
           <ConfirmedSplit key={split.id} split={split} index={i + 1} ownerNick={event.ownerNick} />
         ))}
         {draft ? (
-          <DraftEditor event={event} split={draft} open={open} onChanged={onChanged} />
+          <DraftEditor
+            event={event}
+            split={draft}
+            open={open}
+            onChanged={() => {
+              onConfirmed();
+              onChanged();
+            }}
+          />
         ) : (
-          <NewSplit event={event} open={open} present={present} hasConfirmed={confirmed.length > 0} onChanged={onChanged} />
+          <NewSplit event={event} open={open} present={present} hasConfirmed={confirmed.length > 0} text={totalText} onText={onTotalText} onChanged={onChanged} />
         )}
       </div>
     </Step>
@@ -375,23 +418,29 @@ function NewSplit({
   open,
   present,
   hasConfirmed,
+  text,
+  onText,
   onChanged,
 }: {
   event: EventDto;
   open: boolean;
   present: SplitPresenceDto[];
   hasConfirmed: boolean;
+  text: string;
+  onText: (text: string) => void;
   onChanged: () => void;
 }) {
   const fieldId = useId();
-  const [text, setText] = useState("");
   const [busy, setBusy] = useState(false);
   const fee = eventFee(event);
   const rows = useMemo(() => rowsFromPresence(present), [present]);
   const total = parseSilver(text) ?? 0n;
   const totals = settlementTotals(total, fee, rows);
-  // AC#8: taxa fixa maior que o total não chega na API — a frase é a mesma que ela devolveria.
-  const blocked = total > 0n && totals.exceedsTotal ? confirmBlockedReason(total, fee, rows) : null;
+  /*
+   * AC#8: taxa maior que o total não chega na API. A frase inteira (a mesma do 409) fica no passo 2,
+   * que é onde se conserta; aqui basta dizer por que o botão não vai, sem repetir o parágrafo colado.
+   */
+  const blocked = total > 0n && totals.exceedsTotal;
 
   async function create() {
     setBusy(true);
@@ -405,6 +454,9 @@ function NewSplit({
       setBusy(false);
     }
   }
+
+  // Arquivado e já dividido: a leva confirmada acima é o registro. Uma prévia de 0% aqui não é oferta nenhuma.
+  if (!open && hasConfirmed) return null;
 
   if (present.length === 0)
     return (
@@ -427,31 +479,28 @@ function NewSplit({
               id={fieldId}
               inputMode="numeric"
               value={text}
-              onChange={(e) => setText(e.target.value)}
+              onChange={(e) => onText(e.target.value)}
               placeholder="10.000.000"
               className="num mt-1.5 w-48 text-lg"
             />
           </div>
-          <Button disabled={busy || total <= 0n || blocked !== null} onClick={() => void create()}>
+          <Button disabled={busy || total <= 0n || blocked} onClick={() => void create()}>
             <Calculator />
             Calcular divisão
           </Button>
-          {total > 0n && !blocked && (
-            <p className="text-sm text-muted-foreground">
-              Retém <Silver value={totals.feeSilver} className="font-medium text-foreground" /> de taxa, divide{" "}
-              <Silver value={totals.distributable} className="font-medium text-foreground" />.
-            </p>
-          )}
         </div>
       )}
 
       {blocked && (
-        <p role="alert" className="flex items-start gap-2 rounded-lg border border-destructive/40 bg-destructive/10 px-3 py-2 text-sm">
+        <p role="alert" className="flex items-start gap-2 text-sm">
           <AlertTriangle className="mt-0.5 size-4 shrink-0 text-destructive" aria-hidden />
-          <span>{blocked}</span>
+          <span>A taxa do evento não cabe neste total. Baixe a taxa no passo 2 ou aumente o total.</span>
         </p>
       )}
 
+      {!open && (
+        <p className="text-sm text-muted-foreground">Este evento foi arquivado sem nenhuma divisão de loot. Ficou registrado quem esteve na call:</p>
+      )}
       <SettlementTable rows={rows} caption={open ? "Quem esteve na call — a divisão nasce desta lista" : "Quem esteve na call"} />
     </div>
   );
@@ -536,8 +585,8 @@ function DraftEditor({ event, split, open, onChanged }: { event: EventDto; split
         caption="Participação de cada um nesta leva"
       />
 
-      {/* Rodapé do dinheiro: a soma é o número-chave da tela, e o botão fica do lado dela. */}
-      <div className="sticky bottom-0 -mx-4 flex flex-wrap items-center justify-between gap-x-6 gap-y-3 border-t bg-card/95 px-4 pt-3 backdrop-blur">
+      {/* Rodapé do dinheiro: a soma é o número-chave da tela, e o botão de confirmar fica do lado dela. */}
+      <div className="flex flex-wrap items-center justify-between gap-x-6 gap-y-3 rounded-xl border bg-muted/40 px-4 py-3">
         <p className="flex items-baseline gap-2">
           <span className={cn("num text-3xl font-semibold", sum.ok ? "text-brand" : "text-foreground")}>{formatShare(sum.sumBp)}</span>
           <span className="text-sm text-muted-foreground">{sum.ok ? "a divisão fecha" : shareSumText(sum)}</span>
@@ -603,7 +652,7 @@ function ConfirmedSplit({ split, index, ownerNick }: { split: LootSplitDto; inde
         </p>
         <Silver value={totals.total} className="text-lg font-semibold" />
       </div>
-      <div className="px-3 pb-3">
+      <div className="px-2 pb-3 sm:px-3">
         <SettlementTable rows={rows} totals={totals} fee={fee} ownerNick={ownerNick} caption={`Leva ${index}: o que cada um recebeu`} />
         <p className="mt-3 flex items-start gap-2 rounded-lg border bg-muted px-3 py-2 text-sm">
           <RotateCcw className="mt-0.5 size-4 shrink-0 text-muted-foreground" aria-hidden />
@@ -645,7 +694,9 @@ function SettlementTable({
         <TableHeader>
           <TableRow className="bg-muted/40 hover:bg-muted/40">
             <TableHead className="w-full">Participante</TableHead>
-            <TableHead className="text-right">Tempo na call</TableHead>
+            {/* Em 400px de largura não cabem quatro colunas sem empurrar a prata para fora da tela,
+                e a prata é o número que se confere. O tempo vira uma linha abaixo do nome. */}
+            <TableHead className="hidden text-right sm:table-cell">Tempo na call</TableHead>
             <TableHead className="text-right">Participação</TableHead>
             <TableHead className="text-right">Prata</TableHead>
           </TableRow>
@@ -660,8 +711,11 @@ function SettlementTable({
                   {!row.signedUp && <Pill tone="warning">apareceu sem inscrição</Pill>}
                   {!row.hasAccount && <Pill tone="neutral">sem conta no painel</Pill>}
                 </span>
+                <span className="num block text-xs text-muted-foreground sm:hidden">
+                  {row.presenceMs > 0 ? `${formatPresence(row.presenceMs)} na call` : "não entrou na call"}
+                </span>
               </TableCell>
-              <TableCell className="num text-right text-muted-foreground">{formatPresence(row.presenceMs)}</TableCell>
+              <TableCell className="num hidden text-right text-muted-foreground sm:table-cell">{formatPresence(row.presenceMs)}</TableCell>
               <TableCell className="text-right">
                 {onShareChange && row.lineId ? (
                   <ShareInput nick={row.nick} shareBp={row.shareBp} onChange={(bp) => onShareChange(row.lineId!, bp)} />
@@ -669,7 +723,7 @@ function SettlementTable({
                   <span className="num font-medium">{formatShare(row.shareBp)}</span>
                 )}
               </TableCell>
-              <TableCell className="text-right">
+              <TableCell className="px-2 text-right sm:px-3">
                 <Silver value={row.amount} className={cn("font-semibold", row.amount === 0n && "text-muted-foreground")} />
               </TableCell>
             </TableRow>
@@ -685,7 +739,7 @@ function SettlementTable({
                   </span>
                   <span className="text-xs text-muted-foreground">{formatEventFee(fee)} retidos antes da divisão, para {owner}</span>
                 </TableCell>
-                <TableCell />
+                <TableCell className="hidden sm:table-cell" />
                 <TableCell />
                 <TableCell className="text-right">
                   <Silver value={totals.feeSilver} className="font-semibold" />
@@ -697,9 +751,9 @@ function SettlementTable({
                     <Crown className="size-3.5 text-brand" aria-hidden />
                     Sobra do arredondamento
                   </span>
-                  <span className="text-xs text-muted-foreground">prata que não coube em nenhuma divisão exata, também para {owner}</span>
+                  <span className="text-xs text-muted-foreground">sobra que não coube na divisão, também para {owner}</span>
                 </TableCell>
-                <TableCell />
+                <TableCell className="hidden sm:table-cell" />
                 <TableCell />
                 <TableCell className="text-right">
                   <Silver value={totals.residual} className="font-semibold" />
@@ -707,7 +761,7 @@ function SettlementTable({
               </TableRow>
               <TableRow className="bg-muted/60 hover:bg-muted/60">
                 <TableCell className="font-semibold">Total da leva</TableCell>
-                <TableCell />
+                <TableCell className="hidden sm:table-cell" />
                 <TableCell />
                 <TableCell className="text-right">
                   <Silver value={totals.total} className="text-lg font-semibold" />
@@ -787,13 +841,13 @@ function ConfirmSplitDialog({
           </dd>
           <dt className="text-muted-foreground">Taxa do evento ({formatEventFee(fee)})</dt>
           <dd className="text-muted-foreground">
-            <Silver value={-totals.feeSilver} signed />
+            <Silver value={-totals.feeSilver} />
           </dd>
           <dt className="text-muted-foreground">Sobra do arredondamento</dt>
           <dd className="text-muted-foreground">
-            <Silver value={-totals.residual} signed />
+            <Silver value={-totals.residual} />
           </dd>
-          <dt className="border-t pt-2">Dividido entre {paid.length} pessoas</dt>
+          <dt className="border-t pt-2">Dividido entre {paid.length === 1 ? "1 pessoa" : `${paid.length} pessoas`}</dt>
           <dd className="border-t pt-2">
             <Silver value={totals.paid} className="font-semibold" />
           </dd>
