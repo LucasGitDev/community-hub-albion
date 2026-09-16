@@ -23,6 +23,7 @@ const countLabel: Record<WithdrawalStatus, string> = {
 export function MyWithdrawals() {
   const { withdrawals, balance, loading, error, refresh } = useWallet();
   const negative = (balance?.balance ?? 0n) < 0n;
+  const canRequest = !!balance && !negative && balance.available > 0n;
   const counts = WITHDRAWAL_STATUSES.map((status) => ({ status, n: withdrawals.filter((w) => w.status === status).length })).filter((c) => c.n > 0);
   const total = withdrawals.filter((w) => w.status === "settled").reduce((s, w) => s + w.amount, 0n);
 
@@ -38,15 +39,9 @@ export function MyWithdrawals() {
             </span>
           )
         }
-        action={
-          <>
-            <Button variant="outline" onClick={refresh} aria-label="Atualizar">
-              <RefreshCw />
-              Atualizar
-            </Button>
-            <WithdrawDialog trigger={<Button disabled={!balance || balance.available <= 0n || negative}>Pedir saque</Button>} />
-          </>
-        }
+        // Um CTA só na tela (marclou #22): o polling atualiza a lista sozinho, o erro tem o próprio "Tentar
+        // de novo", e com a lista vazia o botão vive dentro do estado vazio, onde a explicação está.
+        action={withdrawals.length > 0 && <WithdrawDialog trigger={<Button disabled={!canRequest}>Pedir saque</Button>} />}
       />
 
       {counts.length > 0 && (
@@ -80,7 +75,7 @@ export function MyWithdrawals() {
           icon={<HandCoins />}
           title="Você ainda não pediu nenhum saque."
           description="Não existe valor mínimo: peça qualquer quantia até o seu disponível e a staff entrega a prata in-game."
-          action={<WithdrawDialog trigger={<Button disabled={!balance || balance.available <= 0n || negative}>Pedir saque</Button>} />}
+          action={<WithdrawDialog trigger={<Button disabled={!canRequest}>Pedir saque</Button>} />}
         />
       ) : (
         <ul className="divide-y overflow-hidden rounded-xl border bg-card">

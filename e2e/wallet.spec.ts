@@ -11,10 +11,17 @@ const ORIGIN = "http://localhost:4173";
 
 type Silver = { amount: string; kind?: "split_payout" | "split_fee" | "withdrawal" | "adjustment"; memo?: string };
 
-async function login(page: Page, base: string, username: string, silver: Silver[] = []) {
+/**
+ * Membro novo a cada execução. O id carrega o timestamp do processo porque a prata semeada fica no
+ * ledger append-only: reusar o mesmo Discord ID somaria os lançamentos da rodada anterior e mudaria o
+ * saldo esperado. O índice separa os testes e o sufixo separa desktop de mobile, que rodam em paralelo.
+ */
+const RUN = String(Date.now());
+
+async function login(page: Page, index: string, username: string, silver: Silver[] = []) {
   const suffix = test.info().project.name === "mobile" ? "9" : "8";
   const res = await page.request.post("/api/auth/dev-login", {
-    data: { discordId: `${base}${suffix}`, username, roles: [], ...(silver.length ? { silver } : {}) },
+    data: { discordId: `7${RUN}${index}${suffix}`, username, roles: [], ...(silver.length ? { silver } : {}) },
     headers: { Origin: ORIGIN },
   });
   expect(res.status()).toBe(204);
@@ -25,7 +32,7 @@ async function snap(page: Page, name: string) {
 }
 
 test("membro vê saldo, reserva e extrato do ledger com a origem de cada lançamento (AC#1)", async ({ page }) => {
-  await login(page, "71000000000000001", "carteira", [
+  await login(page, "001", "carteira", [
     { amount: "2000000", kind: "split_payout", memo: "Raid do Dragão — Martlock" },
     { amount: "-100000", kind: "split_fee", memo: "Taxa do evento (5%)" },
     { amount: "1318750", kind: "split_payout", memo: "DG de grupo — Roads" },
@@ -46,7 +53,7 @@ test("membro vê saldo, reserva e extrato do ledger com a origem de cada lançam
 });
 
 test("pedido de saque sem mínimo: recusa acima do disponível e reserva o valor pedido (AC#3, Q12/Q25)", async ({ page }) => {
-  await login(page, "71000000000000002", "saque", [{ amount: "1500000", kind: "split_payout", memo: "Loot split" }]);
+  await login(page, "002", "saque", [{ amount: "1500000", kind: "split_payout", memo: "Loot split" }]);
   await page.goto("/carteira");
   await expect(page.getByText("1.500.000").first()).toBeVisible();
 
@@ -77,7 +84,7 @@ test("pedido de saque sem mínimo: recusa acima do disponível e reserva o valor
 });
 
 test("saldo negativo bloqueia novo saque (Q24)", async ({ page }) => {
-  await login(page, "71000000000000003", "negativo", [
+  await login(page, "003", "negativo", [
     { amount: "500000", kind: "split_payout", memo: "Loot split" },
     { amount: "-800000", kind: "adjustment", memo: "Acerto: saque pago a mais" },
   ]);
@@ -90,7 +97,7 @@ test("saldo negativo bloqueia novo saque (Q24)", async ({ page }) => {
 });
 
 test("membro sem prata vê os próximos passos, não uma tela vazia", async ({ page }) => {
-  await login(page, "71000000000000004", "novo");
+  await login(page, "004", "novo");
   await page.goto("/carteira");
   await expect(page.getByText("Seu extrato ainda não tem lançamento nenhum.")).toBeVisible();
   await expect(page.getByRole("heading", { name: "Extrato" })).toBeVisible();
@@ -104,11 +111,11 @@ test("membro sem prata vê os próximos passos, não uma tela vazia", async ({ p
 });
 
 test("membro só enxerga a própria prata: o dono vem da sessão (AC#2)", async ({ page }) => {
-  await login(page, "71000000000000005", "outro", [{ amount: "9876543", kind: "split_payout", memo: "Prata do outro" }]);
+  await login(page, "005", "outro", [{ amount: "9876543", kind: "split_payout", memo: "Prata do outro" }]);
   const outro = await page.request.get("/api/me/ledger");
   const outroId = ((await outro.json()) as { entries: { id: string }[] }).entries[0]!.id;
 
-  await login(page, "71000000000000006", "eu", [{ amount: "1234", kind: "split_payout", memo: "Minha prata" }]);
+  await login(page, "006", "eu", [{ amount: "1234", kind: "split_payout", memo: "Minha prata" }]);
   await page.goto("/carteira");
   await expect(page.getByText("1.234").first()).toBeVisible();
   await expect(page.getByText("9.876.543")).toHaveCount(0);
