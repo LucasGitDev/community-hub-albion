@@ -5,12 +5,14 @@ import {
   EVENT_TRANSITIONS,
   EVENT_CANCEL_REASON_MAX,
   EVENT_TRANSITION_NAMES,
+  EVENT_ARCHIVED_EDIT_ERROR,
   TERMINAL_EVENT_STATUSES,
   canCancel,
   canTransition,
   eventCancelSchema,
   eventCancelledText,
   eventCreateSchema,
+  eventEditBlocked,
   eventStatusLabel,
   eventTransferOwnerSchema,
   isEventTransition,
@@ -30,10 +32,11 @@ const VALID = new Set<`${EventStatus}->${EventStatus}`>([
   "closed->cancelled",
   "running->finished",
   "running->cancelled",
+  "finished->archived",
 ]);
 
 describe("máquina de estados do evento (TASK-021, Q26)", () => {
-  it("cobre todos os 36 pares de estados: só as 9 arestas da tabela são permitidas", () => {
+  it("cobre todos os 49 pares de estados: só as 10 arestas da tabela são permitidas", () => {
     const allowed: string[] = [];
     for (const from of EVENT_STATUSES)
       for (const to of EVENT_STATUSES) {
@@ -41,32 +44,51 @@ describe("máquina de estados do evento (TASK-021, Q26)", () => {
         expect(canTransition(from, to), pair).toBe(VALID.has(pair));
         if (canTransition(from, to)) allowed.push(pair);
       }
-    expect(allowed).toHaveLength(9);
-    expect(EVENT_STATUSES.length ** 2).toBe(36);
+    expect(allowed).toHaveLength(10);
+    expect(EVENT_STATUSES.length ** 2).toBe(49);
   });
 
   it("nenhum estado transita para si mesmo", () => {
     for (const status of EVENT_STATUSES) expect(canTransition(status, status), status).toBe(false);
   });
 
-  it("finished e cancelled são finais: nada sai deles (Q26)", () => {
-    expect(TERMINAL_EVENT_STATUSES).toEqual(["finished", "cancelled"]);
+  it("cancelled e archived são finais: nada sai deles (Q26 revisada, TASK-044 AC#1)", () => {
+    expect(TERMINAL_EVENT_STATUSES).toEqual(["cancelled", "archived"]);
     for (const status of TERMINAL_EVENT_STATUSES) {
       expect(ALLOWED_EVENT_TRANSITIONS[status]).toEqual([]);
       for (const to of EVENT_STATUSES) expect(canTransition(status, to)).toBe(false);
     }
   });
 
-  it("cancelled é alcançável de todo estado antes de finished, e só deles (Q26)", () => {
-    for (const status of EVENT_STATUSES) expect(canCancel(status), status).toBe(!TERMINAL_EVENT_STATUSES.includes(status));
+  it("cancelled é alcançável só de draft, open, closed e running (Q26)", () => {
+    const cancellable: EventStatus[] = ["draft", "open", "closed", "running"];
+    for (const status of EVENT_STATUSES) expect(canCancel(status), status).toBe(cancellable.includes(status));
   });
 
   it("evento finalizado não pode ser cancelado, e a mensagem do 409 diz por quê (TASK-025 AC#3)", () => {
     expect(canCancel("finished")).toBe(false);
     expect(canTransition("finished", "cancelled")).toBe(false);
-    expect(transitionError("finished", "cancelled")).toBe("O evento está finalizado e não pode ir para cancelado. Esse é um estado final.");
+    expect(transitionError("finished", "cancelled")).toBe("O evento está finalizado e não pode ir para cancelado. Daqui só dá para ir para: arquivado.");
     // Cancelar duas vezes também não: cancelado é terminal.
     expect(canCancel("cancelled")).toBe(false);
+  });
+
+  it("finished vai só para archived; archived não vai para lugar nenhum (TASK-044 AC#1)", () => {
+    expect(ALLOWED_EVENT_TRANSITIONS.finished).toEqual(["archived"]);
+    expect(ALLOWED_EVENT_TRANSITIONS.archived).toEqual([]);
+    expect(canTransition("finished", "archived")).toBe(true);
+    for (const to of EVENT_STATUSES) expect(canTransition("archived", to), `archived->${to}`).toBe(false);
+    expect(transitionError("archived", "finished")).toBe("O evento está arquivado e não pode ir para finalizado. Esse é um estado final.");
+  });
+
+  it("cancelled não vai para archived: cancelado já é um fim e não tem split para fechar (TASK-044)", () => {
+    expect(canTransition("cancelled", "archived")).toBe(false);
+    expect(transitionError("cancelled", "archived")).toBe("O evento está cancelado e não pode ir para arquivado. Esse é um estado final.");
+  });
+
+  it("só archived bloqueia edição; finished ainda aceita dados, taxa e splits (Q26 revisada, AC#2)", () => {
+    for (const status of EVENT_STATUSES) expect(eventEditBlocked(status), status).toBe(status === "archived" ? EVENT_ARCHIVED_EDIT_ERROR : null);
+    expect(EVENT_ARCHIVED_EDIT_ERROR).toBe("Evento arquivado não pode mais ser editado.");
   });
 
   it("start com inscrição aberta é válido: open→running sem passar por closed (Q26, start fecha)", () => {
@@ -75,7 +97,7 @@ describe("máquina de estados do evento (TASK-021, Q26)", () => {
   });
 
   it("não há volta: nenhuma aresta anda para trás na ordem draft→open→closed→running→finished", () => {
-    const order = ["draft", "open", "closed", "running", "finished"] as const;
+    const order = ["draft", "open", "closed", "running", "finished", "archived"] as const;
     for (const [i, from] of order.entries())
       for (const to of ALLOWED_EVENT_TRANSITIONS[from]) {
         if (to === "cancelled") continue;
@@ -84,8 +106,8 @@ describe("máquina de estados do evento (TASK-021, Q26)", () => {
   });
 
   it("ações da API mapeiam para estados e são reconhecidas", () => {
-    expect(EVENT_TRANSITIONS).toEqual({ open: "open", close: "closed", start: "running", finish: "finished", cancel: "cancelled" });
-    expect(EVENT_TRANSITION_NAMES).toEqual(["open", "close", "start", "finish", "cancel"]);
+    expect(EVENT_TRANSITIONS).toEqual({ open: "open", close: "closed", start: "running", finish: "finished", cancel: "cancelled", archive: "archived" });
+    expect(EVENT_TRANSITION_NAMES).toEqual(["open", "close", "start", "finish", "cancel", "archive"]);
     for (const name of EVENT_TRANSITION_NAMES) expect(isEventTransition(name)).toBe(true);
     expect(isEventTransition("destroy")).toBe(false);
     expect(isEventTransition("toString")).toBe(false);
@@ -93,7 +115,8 @@ describe("máquina de estados do evento (TASK-021, Q26)", () => {
 
   it("erro PT-BR diz o estado atual e as saídas possíveis", () => {
     expect(transitionError("draft", "running")).toBe("O evento está rascunho e não pode ir para em andamento. Daqui só dá para ir para: com inscrições abertas, cancelado.");
-    expect(transitionError("finished", "cancelled")).toBe("O evento está finalizado e não pode ir para cancelado. Esse é um estado final.");
+    expect(transitionError("finished", "cancelled")).toBe("O evento está finalizado e não pode ir para cancelado. Daqui só dá para ir para: arquivado.");
+    expect(transitionError("archived", "running")).toBe("O evento está arquivado e não pode ir para em andamento. Esse é um estado final.");
     for (const status of EVENT_STATUSES) expect(eventStatusLabel(status)).toBeTruthy();
   });
 });

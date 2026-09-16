@@ -16,6 +16,8 @@ export type Action =
   | "start"
   | "finish"
   | "cancel"
+  /** Fechar o evento de vez depois de finalizado (TASK-044, Q26): nada mais é editável. */
+  | "archive"
   | "distribute"
   | "approve"
   | "reject"
@@ -62,7 +64,7 @@ export function defineAbilityFor(user: AbilityUser): AppAbility {
   if (roles.has("caller")) {
     // Só callers criam evento (Q9); conduzem e distribuem os próprios (owner, Q21).
     can("create", "Event");
-    can(["update", "start", "finish", "cancel", "distribute"], "Event", { ownerId: user.id });
+    can(["update", "start", "finish", "cancel", "archive", "distribute"], "Event", { ownerId: user.id });
     can("read", ["EventTemplate", "LootSplit"]);
   }
 
