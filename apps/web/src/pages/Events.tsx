@@ -5,7 +5,7 @@ import { toast } from "sonner";
 import * as api from "@/api/events";
 import { errorText } from "@/api/http";
 import { usePoll } from "@/api/use-poll";
-import { EventMeta, EventStatusPill, FillMeter, Freshness } from "@/components/events";
+import { EventCancelledNote, EventMeta, EventStatusPill, FillMeter, Freshness } from "@/components/events";
 import { EmptyState, PageHeader, Panel, Pill, StatCard } from "@/components/display";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -125,15 +125,19 @@ export function Events() {
             )}
 
             {groups.done.length > 0 && (
-              <Panel title="Encerrados" titleId="events-done">
+              <Panel title="Encerrados e cancelados" titleId="events-done">
                 <ul className="divide-y">
                   {groups.done.slice(0, 5).map((event) => (
-                    <li key={event.id} className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2 px-4 py-3">
-                      <div className="min-w-0">
-                        <p className="truncate font-medium">{event.name}</p>
-                        <EventMeta event={event} />
+                    <li key={event.id} className="px-4 py-3">
+                      <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2">
+                        <div className="min-w-0">
+                          <p className="truncate font-medium">{event.name}</p>
+                          <EventMeta event={event} />
+                        </div>
+                        <EventStatusPill status={event.status} />
                       </div>
-                      <EventStatusPill status={event.status} />
+                      {/* AC#4: quem estava inscrito descobre aqui que o evento caiu, e por quê. */}
+                      <EventCancelledNote event={event} className="mt-2" />
                     </li>
                   ))}
                 </ul>
@@ -180,6 +184,7 @@ function EventRow({
           </div>
           <EventMeta event={event} className="mt-0.5" />
           {event.description && <p className="mt-1 text-sm text-muted-foreground">{event.description}</p>}
+          <EventCancelledNote event={event} className="mt-2" />
         </div>
         <div className="w-full sm:w-52">
           <FillMeter {...fill} />
