@@ -1,5 +1,3 @@
-import { expect, test, type Page } from "@playwright/test";
-
 /**
  * Login de e2e sem Discord, compartilhado pelas specs que precisam de prata de verdade (carteira do
  * membro na TASK-031, fila da staff na TASK-032).
@@ -9,7 +7,13 @@ import { expect, test, type Page } from "@playwright/test";
  * diante. O id carrega o timestamp do processo; o `index` separa os testes e o sufixo separa desktop de
  * mobile, que rodam em paralelo contra o mesmo banco.
  */
-export const ORIGIN = "http://localhost:4173";
+
+import { expect, test, type Page } from "@playwright/test";
+
+import { ORIGIN } from "./origin";
+
+/** Origem do e2e (TASK-046): ponto único, as specs importam daqui. */
+export { ORIGIN };
 
 export interface Silver {
   /** Prata inteira em string (Q20): positivo credita, negativo debita. */
