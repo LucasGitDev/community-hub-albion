@@ -6,6 +6,7 @@ import { DISCORD_GUILD_GATEWAY, DISCORD_GUILD_ID, DiscordJsGuildGateway } from "
 import { DISCORD_GUILD_MEMBERS_GATEWAY, DiscordJsGuildMembersGateway } from "./discord-guild-members.gateway.js";
 import { DISCORD_MEMBER_ROLE_ID, DiscordMemberSync } from "./discord-member-sync.service.js";
 import { DiscordMemberImportService } from "../members/discord-member-import.service.js";
+import { MEMBER_IMPORTER } from "../members/member-importer.token.js";
 import { EventEmbedService } from "./event-embed.service.js";
 import { EventSignupInteractions } from "./event-signup.interactions.js";
 import { DISCORD_EVENT_CATEGORY_ID, DISCORD_WAITING_VOICE_CHANNEL_ID, DiscordJsEventVoiceGateway, EVENT_VOICE_GATEWAY } from "./event-voice.gateway.js";
@@ -34,6 +35,8 @@ export class BotModule {
     if (!env.DISCORD_EVENT_CATEGORY_ID) throw new Error("DISCORD_EVENT_CATEGORY_ID obrigatória com o bot ligado");
     return {
       module: BotModule,
+      // Global só por causa do MEMBER_IMPORTER: o controller de admin (AuthModule) usa o mesmo serviço do comando.
+      global: true,
       imports: [
         NecordModule.forRoot({
           token: env.DISCORD_TOKEN,
@@ -68,6 +71,7 @@ export class BotModule {
         // TASK-042: import dos membros já regularizados no Discord (leitura da guild por REST + /importar-membros).
         { provide: DISCORD_GUILD_MEMBERS_GATEWAY, useClass: DiscordJsGuildMembersGateway },
         DiscordMemberImportService,
+        { provide: MEMBER_IMPORTER, useExisting: DiscordMemberImportService },
         ImportMembersCommand,
         // TASK-022: embed de inscrição do evento com botão por role e lista de espera.
         { provide: DISCORD_EVENTS_CHANNEL_ID, useValue: env.DISCORD_EVENTS_CHANNEL_ID },
@@ -81,7 +85,7 @@ export class BotModule {
         EventVoiceService,
         EventCommand,
       ],
-      exports: [DiscordMemberImportService],
+      exports: [DiscordMemberImportService, MEMBER_IMPORTER],
     };
   }
 }
