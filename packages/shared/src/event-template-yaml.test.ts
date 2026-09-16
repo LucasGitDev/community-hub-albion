@@ -16,9 +16,9 @@ const dgDeGrupo = {
   maxPartySize: 9,
   active: true,
   roles: [
-    { roleId: "a", name: "Tank", slots: 1 },
-    { roleId: "b", name: "Healer", slots: 1 },
-    { roleId: "c", name: "DPS Melee", slots: 5 },
+    { roleId: "a", name: "Tank", description: null, slots: 1 },
+    { roleId: "b", name: "Healer", description: null, slots: 1 },
+    { roleId: "c", name: "DPS Melee", description: null, slots: 5 },
   ],
 };
 
@@ -49,10 +49,19 @@ describe("serializeEventTemplateYaml", () => {
   });
 
   it("omite descrição vazia e escreve maxParty null quando não há teto", () => {
-    const yaml = serializeEventTemplateYaml({ name: "PvP Roaming", description: null, minPartySize: 2, maxPartySize: null, active: false, roles: [{ roleId: "a", name: "DPS Range", slots: 5 }] });
+    const yaml = serializeEventTemplateYaml({ name: "PvP Roaming", description: null, minPartySize: 2, maxPartySize: null, active: false, roles: [{ roleId: "a", name: "DPS Range", description: null, slots: 5 }] });
     expect(yaml).not.toContain("description");
     expect(yaml).toContain("maxParty: null");
     expect(yaml).toContain("active: false");
+  });
+
+  it("descrição da role faz round-trip: o import cria a role do catálogo com ela (TASK-039)", () => {
+    const yaml = serializeEventTemplateYaml({
+      ...dgDeGrupo,
+      roles: [{ roleId: "a", name: "Tank", description: "Segura a frente e chama o engage.", slots: 1 }, { roleId: "b", name: "Healer", description: null, slots: 3 }],
+    });
+    expect(yaml).toContain("description: Segura a frente e chama o engage.");
+    expect(ok(yaml).roles).toEqual([{ name: "Tank", slots: 1, description: "Segura a frente e chama o engage." }, { name: "Healer", slots: 3, description: null }]);
   });
 
   it("round-trip: o que sai do banco volta igual depois de reler", () => {
@@ -69,7 +78,7 @@ describe("serializeEventTemplateYaml", () => {
   });
 
   it("round-trip aguenta nome com dois-pontos, acento e emoji sem quebrar o YAML", () => {
-    const tricky = { name: "Raid: Dragão #1 🐉", description: "linha 1\nlinha 2", minPartySize: 15, maxPartySize: 20, active: true, roles: [{ roleId: "a", name: "Tank: frente", slots: 20 }] };
+    const tricky = { name: "Raid: Dragão #1 🐉", description: "linha 1\nlinha 2", minPartySize: 15, maxPartySize: 20, active: true, roles: [{ roleId: "a", name: "Tank: frente", description: null, slots: 20 }] };
     const parsed = ok(serializeEventTemplateYaml(tricky));
     expect(parsed.name).toBe("Raid: Dragão #1 🐉");
     expect(parsed.description).toBe("linha 1\nlinha 2");
