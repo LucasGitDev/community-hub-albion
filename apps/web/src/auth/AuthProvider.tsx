@@ -5,7 +5,12 @@ import { fetchMe, logoutRequest, type Me } from "./api";
 export interface CurrentUser {
   id: string;
   discordId: string;
+  /** Nome exibido: displayName do Discord, com o username como fallback. */
   nick: string;
+  /** Username do Discord (`@`), estável e diferente do nome exibido. */
+  username: string;
+  /** Hash do avatar no Discord; a URL do CDN é montada na tela que mostra. */
+  avatar: string | null;
   initials: string;
   roles: Me["roles"];
 }
@@ -26,7 +31,7 @@ const AuthContext = createContext<AuthContextValue | null>(null);
 
 function toCurrentUser(me: Me): CurrentUser {
   const nick = me.user.displayName || me.user.username;
-  return { id: me.user.id, discordId: me.user.discordId, nick, initials: nick.slice(0, 2).toUpperCase(), roles: me.roles };
+  return { id: me.user.id, discordId: me.user.discordId, nick, username: me.user.username, avatar: me.user.avatar, initials: nick.slice(0, 2).toUpperCase(), roles: me.roles };
 }
 
 export function AuthProvider({ children }: { children: ReactNode }) {
