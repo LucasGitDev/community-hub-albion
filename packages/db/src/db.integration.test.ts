@@ -1,4 +1,4 @@
-import { DEFAULT_EVENT_ROLES } from "@albion-hub/shared";
+import { DEFAULT_EVENT_ROLES, type EventTemplateYaml } from "@albion-hub/shared";
 import { eq, sql } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import {
@@ -11,6 +11,7 @@ import {
   deleteEventRole,
   deleteEventTemplate,
   getEventTemplate,
+  importEventTemplate,
   listEventRoles,
   listEventTemplates,
   saveEventTemplate,
@@ -505,6 +506,60 @@ describe.skipIf(!url)("@albion-hub/db (Postgres real)", () => {
       expect(await deleteEventTemplate(handle.db, saved.template.id)).toBe(true);
       expect(await deleteEventTemplate(handle.db, saved.template.id)).toBe(false);
       expect(await getEventTemplate(handle.db, saved.template.id)).toBeNull();
+    });
+  });
+
+  describe("import de template em YAML (TASK-038)", () => {
+    const yaml = (over: Partial<EventTemplateYaml> = {}): EventTemplateYaml => ({
+      version: 1,
+      name: "Importado",
+      description: null,
+      minParty: 3,
+      maxParty: 7,
+      active: true,
+      roles: [{ name: "Tank", slots: 1, description: null }],
+      ...over,
+    });
+
+    it("casa role pelo nome sem diferenciar maiúsculas e não duplica o catálogo (AC#2, AC#4)", async () => {
+      const before = await listEventRoles(handle.db);
+      const result = await importEventTemplate(handle.db, yaml({ name: "Import casa role", roles: [{ name: "tAnK", slots: 2, description: null }, { name: "healer", slots: 2, description: null }] }));
+      if (!result.ok) throw new Error(result.reason);
+      expect(result.createdRoles).toEqual([]);
+      expect(result.template).toMatchObject({ name: "Import casa role", minPartySize: 3, maxPartySize: 7, totalSlots: 4, roles: [{ name: "Tank", slots: 2 }, { name: "Healer", slots: 2 }] });
+      expect((await listEventRoles(handle.db)).length).toBe(before.length);
+    });
+
+    it("cria as roles que faltam no catálogo e devolve os nomes criados (AC#4)", async () => {
+      const result = await importEventTemplate(
+        handle.db,
+        yaml({ name: "Import cria role", minParty: 2, maxParty: 6, roles: [{ name: "Battlemount", slots: 2, description: "monta de guerra" }, { name: "Tank", slots: 1, description: null }, { name: "Bardo", slots: 1, description: null }] }),
+      );
+      if (!result.ok) throw new Error(result.reason);
+      expect(result.createdRoles).toEqual(["Battlemount", "Bardo"]);
+      expect(result.template.roles.map((r) => r.name)).toEqual(["Battlemount", "Tank", "Bardo"]);
+      const catalog = await listEventRoles(handle.db);
+      const battlemount = catalog.find((r) => r.name === "Battlemount")!;
+      expect(battlemount.description).toBe("monta de guerra");
+      expect(battlemount.templateCount).toBe(1);
+      // Roles novas entram no fim do catálogo, sem colidir no sort_order entre si.
+      expect(catalog.findIndex((r) => r.name === "Bardo")).toBeGreaterThan(catalog.findIndex((r) => r.name === "Battlemount"));
+    });
+
+    it("nome de template repetido não grava nada, nem as roles novas (AC#3, tudo ou nada)", async () => {
+      const first = await importEventTemplate(handle.db, yaml({ name: "Import colide", roles: [{ name: "Tank", slots: 3, description: null }] }));
+      expect(first.ok).toBe(true);
+      const before = (await listEventRoles(handle.db)).length;
+      const again = await importEventTemplate(handle.db, yaml({ name: "IMPORT COLIDE", roles: [{ name: "Necromante", slots: 3, description: null }] }));
+      expect(again).toEqual({ ok: false, reason: "duplicate" });
+      expect((await listEventRoles(handle.db)).map((r) => r.name)).not.toContain("Necromante");
+      expect((await listEventRoles(handle.db)).length).toBe(before);
+      expect((await listEventTemplates(handle.db)).filter((t) => t.name.toLowerCase() === "import colide")).toHaveLength(1);
+    });
+
+    it("importa template sem teto de party e inativo", async () => {
+      const result = await importEventTemplate(handle.db, yaml({ name: "Import roaming", minParty: 2, maxParty: null, active: false, roles: [{ name: "DPS Range", slots: 5, description: null }] }));
+      expect(result).toMatchObject({ ok: true, template: { maxPartySize: null, active: false, totalSlots: 5 } });
     });
   });
 

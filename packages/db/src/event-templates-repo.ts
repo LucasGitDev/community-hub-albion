@@ -1,4 +1,4 @@
-import type { EventRoleDto, EventRoleInput, EventRolePatch, EventTemplateDto, EventTemplateInput } from "@albion-hub/shared";
+import type { EventRoleDto, EventRoleInput, EventRolePatch, EventTemplateDto, EventTemplateInput, EventTemplateYaml } from "@albion-hub/shared";
 import { asc, count, eq, inArray, sql } from "drizzle-orm";
 import type { Database } from "./client.js";
 import { eventRoles, eventTemplateRoles, eventTemplates } from "./schema.js";
@@ -12,6 +12,15 @@ function pgCode(error: unknown): string | undefined {
   return undefined;
 }
 const UNIQUE_VIOLATION = "23505";
+
+/** Qual índice único estourou: import distingue nome de template repetido de corrida na criação de role. */
+function pgConstraint(error: unknown): string | undefined {
+  for (let e: unknown = error; e && typeof e === "object"; e = (e as { cause?: unknown }).cause) {
+    const name = (e as { constraint_name?: unknown; constraint?: unknown }).constraint_name ?? (e as { constraint?: unknown }).constraint;
+    if (typeof name === "string") return name;
+  }
+  return undefined;
+}
 const FK_VIOLATION = "23503";
 
 export type EventRoleWriteResult = { ok: true; role: EventRoleDto } | { ok: false; reason: "not_found" | "duplicate" };
@@ -139,6 +148,51 @@ export async function saveEventTemplate(db: Database, input: EventTemplateInput,
     const code = pgCode(error);
     if (code === UNIQUE_VIOLATION) return { ok: false, reason: "duplicate" };
     if (code === FK_VIOLATION) return { ok: false, reason: "unknown_role" };
+    throw error;
+  }
+}
+
+export type EventTemplateImportDbResult = { ok: true; template: EventTemplateDto; createdRoles: string[] } | { ok: false; reason: "duplicate" | "role_race" };
+
+/**
+ * Importa um template vindo de YAML (TASK-038, AC#2/AC#4) numa transação só: ou entra template,
+ * vagas e roles novas, ou não entra nada.
+ *
+ * Roles são casadas pelo nome sem diferenciar maiúsculas (mesma regra do índice único do catálogo) e
+ * as que faltam são **criadas** — o arquivo existe pra levar template de um servidor pro outro, e um
+ * servidor novo não tem o catálogo do antigo. Os nomes criados voltam pra tela avisar a staff.
+ * Nome de template repetido → `duplicate` (a API devolve 409): renomear é decisão da staff, não do sistema.
+ */
+export async function importEventTemplate(db: Database, input: EventTemplateYaml): Promise<EventTemplateImportDbResult> {
+  try {
+    const saved = await db.transaction(async (tx) => {
+      const [template] = await tx
+        .insert(eventTemplates)
+        .values({ name: input.name, description: input.description, minPartySize: input.minParty, maxPartySize: input.maxParty, active: input.active })
+        .returning({ id: eventTemplates.id });
+
+      const wanted = input.roles.map((r) => ({ ...r, key: r.name.toLowerCase() }));
+      const existing = await tx
+        .select({ id: eventRoles.id, key: sql<string>`lower(${eventRoles.name})` })
+        .from(eventRoles)
+        .where(inArray(sql`lower(${eventRoles.name})`, wanted.map((r) => r.key)));
+      const byKey = new Map(existing.map((r) => [r.key, r.id]));
+
+      const missing = wanted.filter((r) => !byKey.has(r.key));
+      if (missing.length > 0) {
+        const created = await tx
+          .insert(eventRoles)
+          .values(missing.map((r, i) => ({ name: r.name, description: r.description, sortOrder: sql<number>`(select coalesce(max(${eventRoles.sortOrder}), 0) from ${eventRoles}) + ${10 * (i + 1)}` })))
+          .returning({ id: eventRoles.id, name: eventRoles.name });
+        for (const role of created) byKey.set(role.name.toLowerCase(), role.id);
+      }
+
+      await tx.insert(eventTemplateRoles).values(wanted.map((r, i) => ({ templateId: template!.id, roleId: byKey.get(r.key)!, slots: r.slots, sortOrder: i })));
+      return { id: template!.id, createdRoles: missing.map((r) => r.name) };
+    });
+    return { ok: true, template: (await getEventTemplate(db, saved.id))!, createdRoles: saved.createdRoles };
+  } catch (error) {
+    if (pgCode(error) === UNIQUE_VIOLATION) return { ok: false, reason: pgConstraint(error) === "event_roles_name_lower_idx" ? "role_race" : "duplicate" };
     throw error;
   }
 }

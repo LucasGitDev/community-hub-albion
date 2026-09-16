@@ -67,7 +67,8 @@ const yamlRoleSchema = z
     slots: size("Vagas"),
     description: optional("A descrição da role", EVENT_ROLE_DESCRIPTION_MAX),
   })
-  .strict({ error: "A role tem um campo que o formato não conhece. Use só name, slots e description." });
+  // `strict()` sem mensagem: a tradução PT-BR da chave desconhecida vive em `yamlIssueMessage`.
+  .strict();
 
 /**
  * `strict()` nos dois níveis: chave desconhecida vira erro em vez de sumir calada — um typo
@@ -87,7 +88,7 @@ export const eventTemplateYamlSchema = z
     active: z.boolean({ error: "O campo active precisa ser true ou false." }).optional().transform((v) => v ?? true),
     roles: z.array(yamlRoleSchema, { error: "Falta a lista roles no arquivo." }).min(1, "Adicione pelo menos uma role com vagas.").max(30, "Use no máximo 30 roles."),
   })
-  .strict({ error: "O arquivo tem um campo que o formato não conhece. Use só version, name, description, minParty, maxParty, active e roles." })
+  .strict()
   .superRefine((t, ctx) => {
     const seen = new Set<string>();
     t.roles.forEach((r, i) => {
