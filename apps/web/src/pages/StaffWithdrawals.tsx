@@ -7,10 +7,10 @@ import { Textarea } from "@/components/ui/textarea";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { EmptyState, PageHeader, Silver, StatCard, StatusBadge } from "@/components/display";
 import { cn } from "@/lib/utils";
+import { formatDateTime } from "@/lib/format";
 import { nickOf, useStore } from "@/mock/store";
 import { toast } from "sonner";
 import type { Withdrawal, WithdrawalStatus } from "@/mock/types";
-import { WithdrawalTimeline } from "./MyWithdrawals";
 
 const tabs: { key: WithdrawalStatus; label: string }[] = [
   { key: "pending", label: "Em análise" },
@@ -188,5 +188,19 @@ function StaffRow({ w }: { w: Withdrawal }) {
         </div>
       )}
     </li>
+  );
+}
+
+/**
+ * Linha do tempo do pedido na fila da staff. Vive aqui porque esta tela ainda usa os dados de
+ * demonstração (`@/mock`) — a versão real é a TASK-032. A carteira do membro já saiu do mock (TASK-031).
+ */
+function WithdrawalTimeline({ w }: { w: Withdrawal }) {
+  return (
+    <p className="text-sm text-muted-foreground">
+      Pedido em {formatDateTime(w.requestedAt)}
+      {w.decidedAt && `. ${w.status === "rejected" ? "Recusado" : "Aprovado"} por ${w.decidedBy} em ${formatDateTime(w.decidedAt)}`}
+      {w.settledAt && `. Entregue por ${w.settledBy} em ${formatDateTime(w.settledAt)}`}
+    </p>
   );
 }

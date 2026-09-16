@@ -1,36 +1,57 @@
-import type { ReactNode } from "react";
+import { useCallback, type ReactNode } from "react";
 import { Link } from "react-router";
-import { ArrowDownLeft, ArrowUpRight, CalendarDays, Check, Coins, Lock, RotateCcw, Swords, TriangleAlert } from "lucide-react";
-import { formatSilverShort } from "@albion-hub/shared";
+import { ArrowDownLeft, ArrowUpRight, CalendarDays, Check, Coins, Lock, Receipt, RefreshCw, RotateCcw, Scissors, SlidersHorizontal, Swords, TriangleAlert } from "lucide-react";
+import { LEDGER_ENTRY_KIND_LABELS, type LedgerEntryKind } from "@albion-hub/shared";
+import { usePoll } from "@/api/use-poll";
+import { useWallet } from "@/api/WalletProvider";
+import { fetchMyStatement, type LedgerEntry, type Statement } from "@/api/wallet";
 import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
+import { Skeleton } from "@/components/ui/skeleton";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { PageHeader, Panel, Pill, Silver, StatCard, StatusBadge } from "@/components/display";
+import { PageHeader, Panel, Pill, Silver, StatCard, StatusBadge, type Tone } from "@/components/display";
 import { WithdrawDialog } from "@/components/WithdrawDialog";
+import { ErrorState } from "@/pages/MyWithdrawals";
 import { cn } from "@/lib/utils";
 import { formatDateTime } from "@/lib/format";
 import { lastSplit, monthEarnings } from "@/lib/wallet";
-import { useCurrentUser } from "@/auth/AuthProvider";
 import { useMyNick } from "@/nick/api";
-import { MIN_WITHDRAWAL, useStore } from "@/mock/store";
-import type { LedgerEntry } from "@/mock/types";
 
 const monthFmt = new Intl.DateTimeFormat("pt-BR", { month: "long" });
 
+/**
+ * Carteira do membro (TASK-031, Q3/Q10): saldo, o que está reservado em saques pendentes e o extrato
+ * real do ledger. Tudo vem da API — saldo e saques de `/api/me/withdrawals` (via `WalletProvider`) e o
+ * extrato de `/api/me/ledger`, ambos amarrados à sessão (AC#2).
+ *
+ * Saldo negativo é permitido (estorno depois de um saque) e bloqueia pedido novo (Q24); reserva é só o
+ * que está `pending`, porque a partir de `approved` o débito já está no ledger (Q25).
+ */
 export function Wallet() {
-  const { user } = useCurrentUser();
-  const { balanceFor, ledgerFor, withdrawalsFor } = useStore();
-  const { total, reserved, available } = balanceFor(user.discordId);
-  const entries = ledgerFor(user.discordId);
-  const open = withdrawalsFor(user.discordId).filter((w) => w.status === "pending" || w.status === "approved");
-  const pendingCount = open.filter((w) => w.status === "pending").length;
+  const { balance, withdrawals, loading, error, refresh } = useWallet();
+  const load = useCallback(() => fetchMyStatement(), []);
+  const statement = usePoll<Statement>(load, "Não foi possível carregar o extrato.");
+
+  const entries = statement.data?.entries ?? [];
+  const open = withdrawals.filter((w) => w.status === "pending" || w.status === "approved");
+  const pendingCount = withdrawals.filter((w) => w.status === "pending").length;
 
   const now = new Date();
   const month = monthEarnings(entries, now);
   const last = lastSplit(entries);
+  const total = balance?.balance ?? 0n;
+  const reserved = balance?.reserved ?? 0n;
+  const available = balance?.available ?? 0n;
   const negative = total < 0n;
-  const canWithdraw = available >= MIN_WITHDRAWAL;
-  const hasData = entries.length > 0;
+  const canWithdraw = !!balance && !negative && available > 0n;
+  const ready = !!balance && statement.data !== null;
+
+  const reloadAll = () => {
+    refresh();
+    statement.refresh();
+  };
+
+  if (error) return <WalletError message={error} onRetry={reloadAll} />;
 
   return (
     <>
@@ -38,28 +59,26 @@ export function Wallet() {
         title="Carteira"
         description="Sua prata dos loot splits da comunidade. Cada evento vira uma linha no extrato."
         action={
-          hasData && (
-            <>
-              <Button variant="outline" asChild>
-                <Link to="/saques">Meus saques</Link>
-              </Button>
-              <WithdrawDialog
-                trigger={
-                  <Button disabled={!canWithdraw}>
-                    <ArrowUpRight />
-                    Pedir saque
-                  </Button>
-                }
-              />
-            </>
-          )
+          <>
+            <Button variant="outline" asChild>
+              <Link to="/saques">Meus saques</Link>
+            </Button>
+            <WithdrawDialog
+              trigger={
+                <Button disabled={!canWithdraw}>
+                  <ArrowUpRight />
+                  Pedir saque
+                </Button>
+              }
+            />
+          </>
         }
       />
 
       {negative && (
         <p role="alert" className="mb-4 flex items-start gap-3 rounded-xl border border-destructive/40 bg-destructive/10 p-4 text-sm">
           <TriangleAlert className="mt-0.5 size-4 shrink-0 text-destructive" aria-hidden />
-          Seu saldo ficou negativo por um estorno. Novos saques ficam bloqueados até ele voltar a zero.
+          Seu saldo ficou negativo por um estorno. Novos saques ficam bloqueados até ele voltar a zero (fale com a staff para acertar a conta).
         </p>
       )}
 
@@ -70,43 +89,67 @@ export function Wallet() {
           label="Disponível pra saque"
           icon={<Coins />}
           className="col-span-2 xl:col-span-1"
-          value={<Silver value={available} className={negative ? "text-destructive" : undefined} />}
+          value={balance ? <Silver value={available} className={negative ? "text-destructive" : undefined} /> : <Skeleton className="h-8 w-40" />}
           hint={
-            canWithdraw ? (
-              <>Saldo total <Silver value={total} className="text-foreground" /></>
-            ) : available >= 0n ? (
-              <>Saque mínimo de {formatSilverShort(MIN_WITHDRAWAL)}</>
-            ) : (
+            !balance ? (
+              " "
+            ) : negative ? (
               "Saques bloqueados até o saldo voltar a zero"
+            ) : (
+              <>
+                Saldo total <Silver value={total} className="text-foreground" />
+                {reserved > 0n && " (reserva já descontada)"}
+              </>
             )
           }
         />
         <StatCard
           label="Reservado em saques"
           icon={<Lock />}
-          value={<Silver value={reserved} />}
+          value={balance ? <Silver value={reserved} /> : <Skeleton className="h-7 w-28" />}
           hint={pendingCount === 0 ? "Nenhum saque em análise" : `${pendingCount} ${pendingCount === 1 ? "saque em análise" : "saques em análise"}`}
         />
         <StatCard
           label={`Ganhos em ${monthFmt.format(now)}`}
           icon={<CalendarDays />}
-          value={<Silver value={month.total} signed={month.total > 0n} className={month.total > 0n ? "text-success" : undefined} />}
+          value={statement.data ? <Silver value={month.total} signed={month.total > 0n} className={month.total > 0n ? "text-success" : undefined} /> : <Skeleton className="h-7 w-28" />}
           hint={month.splits === 0 ? "Nenhum split neste mês ainda" : `${month.splits} ${month.splits === 1 ? "split recebido" : "splits recebidos"}`}
         />
         <StatCard
           label="Último split"
           className="col-span-2 xl:col-span-1"
           icon={<Swords />}
-          value={last ? <Silver value={last.amount} signed /> : <span className="text-muted-foreground">—</span>}
-          hint={last ? <span className="block truncate">{last.eventName ?? last.description}, {formatDateTime(last.createdAt)}</span> : "Participe de um evento pra receber"}
+          value={!statement.data ? <Skeleton className="h-7 w-28" /> : last ? <Silver value={last.amount} signed /> : <span className="text-muted-foreground">—</span>}
+          hint={last ? <span className="block truncate">{formatDateTime(last.createdAt)}</span> : "Participe de um evento pra receber"}
         />
       </div>
 
-      {hasData && <ReservedBar total={total} reserved={reserved} />}
+      {ready && <ReservedBar total={total} reserved={reserved} />}
 
       <div className="mt-4 grid items-start gap-4 lg:grid-cols-[minmax(0,1fr)_20rem]">
-        <Panel title="Extrato" action={hasData && <span className="text-xs text-muted-foreground">{entries.length} lançamentos</span>}>
-          {hasData ? <Statement entries={entries} /> : <FirstSteps />}
+        <Panel
+          title="Extrato"
+          titleId="extrato"
+          action={
+            <span className="flex items-center gap-3">
+              {entries.length > 0 && <span className="num text-xs text-muted-foreground">{entries.length} lançamentos</span>}
+              <button onClick={reloadAll} className="press rounded-md p-1 text-muted-foreground hover:text-foreground" aria-label="Atualizar extrato">
+                <RefreshCw className="size-4" />
+              </button>
+            </span>
+          }
+        >
+          {statement.error && !statement.data ? (
+            <div className="p-4">
+              <ErrorState message={statement.error} onRetry={statement.refresh} />
+            </div>
+          ) : !statement.data || loading ? (
+            <StatementSkeleton />
+          ) : entries.length > 0 ? (
+            <Statement entries={entries} hasMore={!!statement.data.nextCursor} />
+          ) : (
+            <FirstSteps />
+          )}
         </Panel>
 
         <div className="grid gap-4">
@@ -130,7 +173,7 @@ export function Wallet() {
                       <Silver value={w.amount} className="text-lg font-semibold" />
                       <StatusBadge status={w.status} />
                     </div>
-                    <span className="text-xs text-muted-foreground">Pedido em {formatDateTime(w.requestedAt)}</span>
+                    <span className="text-xs text-muted-foreground">Pedido em {formatDateTime(w.createdAt)}</span>
                   </li>
                 ))}
               </ul>
@@ -143,19 +186,40 @@ export function Wallet() {
   );
 }
 
+function WalletError({ message, onRetry }: { message: string; onRetry: () => void }) {
+  return (
+    <>
+      <PageHeader title="Carteira" description="Sua prata dos loot splits da comunidade." />
+      <ErrorState message={message} onRetry={onRetry} />
+    </>
+  );
+}
+
+function StatementSkeleton() {
+  return (
+    <div className="divide-y" aria-busy>
+      {[0, 1, 2, 3, 4].map((i) => (
+        <div key={i} className="flex items-center justify-between gap-6 px-4 py-4">
+          <Skeleton className="h-4 w-24" />
+          <Skeleton className="h-4 flex-1" />
+          <Skeleton className="h-4 w-24" />
+        </div>
+      ))}
+    </div>
+  );
+}
+
 /** Histórico de saques em números: dá contexto ao "Pedir saque" sem abrir outra tela. */
 function WithdrawalSummary() {
-  const { user } = useCurrentUser();
-  const { withdrawalsFor } = useStore();
-  const all = withdrawalsFor(user.discordId);
-  const settled = all.filter((w) => w.status === "settled");
+  const { withdrawals } = useWallet();
+  const settled = withdrawals.filter((w) => w.status === "settled");
+  if (withdrawals.length === 0) return null;
   const rows: { label: string; value: ReactNode }[] = [
-    { label: "Pedidos", value: <span className="num">{all.length}</span> },
+    { label: "Pedidos", value: <span className="num">{withdrawals.length}</span> },
     { label: "Entregues", value: <span className="num">{settled.length}</span> },
-    { label: "Recusados", value: <span className="num">{all.filter((w) => w.status === "rejected").length}</span> },
+    { label: "Recusados", value: <span className="num">{withdrawals.filter((w) => w.status === "rejected").length}</span> },
     { label: "Prata já sacada", value: <Silver value={settled.reduce((s, w) => s + w.amount, 0n)} /> },
   ];
-  if (all.length === 0) return null;
   return (
     <Panel title="Histórico de saques">
       <dl className="divide-y text-sm">
@@ -186,60 +250,67 @@ function ReservedBar({ total, reserved }: { total: bigint; reserved: bigint }) {
   );
 }
 
-const kindMeta: Record<LedgerEntry["kind"], { label: string; icon: ReactNode }> = {
-  split_credit: { label: "Split", icon: <ArrowDownLeft /> },
-  split_remainder: { label: "Sobra", icon: <ArrowDownLeft /> },
-  withdrawal_debit: { label: "Saque", icon: <ArrowUpRight /> },
-  reversal: { label: "Estorno", icon: <RotateCcw /> },
+/** Origem do lançamento (AC#1): ícone + rótulo PT-BR + tom, nunca só cor. */
+const kindMeta: Record<LedgerEntryKind, { icon: ReactNode; tone: Tone }> = {
+  split_payout: { icon: <ArrowDownLeft />, tone: "neutral" },
+  split_fee: { icon: <Scissors />, tone: "neutral" },
+  withdrawal: { icon: <ArrowUpRight />, tone: "info" },
+  reversal: { icon: <RotateCcw />, tone: "destructive" },
+  adjustment: { icon: <SlidersHorizontal />, tone: "warning" },
 };
 
-function Statement({ entries }: { entries: LedgerEntry[] }) {
-  const reversed = new Set(entries.map((e) => e.reversesId).filter(Boolean));
+function Statement({ entries, hasMore }: { entries: LedgerEntry[]; hasMore: boolean }) {
+  const reversed = new Set(entries.map((e) => e.reversalOf).filter((id): id is string => !!id));
   return (
-    <Table>
-      <TableHeader>
-        <TableRow className="hover:bg-transparent">
-          <TableHead className="hidden sm:table-cell">Data</TableHead>
-          <TableHead>Lançamento</TableHead>
-          <TableHead className="hidden md:table-cell">Tipo</TableHead>
-          <TableHead className="text-right">Valor</TableHead>
-        </TableRow>
-      </TableHeader>
-      <TableBody>
-        {entries.map((e) => {
-          const isReversed = reversed.has(e.id);
-          const meta = kindMeta[e.kind];
-          return (
-            <TableRow key={e.id}>
-              <TableCell className="num hidden text-sm text-muted-foreground sm:table-cell">{formatDateTime(e.createdAt)}</TableCell>
-              <TableCell className="max-w-0 w-full whitespace-normal">
-                <p className={cn("truncate font-medium", isReversed && "text-muted-foreground line-through")}>{e.eventName ?? e.description}</p>
-                <p className={cn("truncate text-xs", e.kind === "reversal" ? "text-destructive" : "text-muted-foreground")}>
-                  <span className="sm:hidden">{formatDateTime(e.createdAt)} · </span>
-                  {e.eventName ? e.description : meta.label}
-                  {isReversed && " (estornado)"}
-                </p>
-              </TableCell>
-              <TableCell className="hidden md:table-cell">
-                <Pill tone={e.kind === "reversal" ? "destructive" : e.kind === "withdrawal_debit" ? "info" : "neutral"} icon={meta.icon}>
-                  {meta.label}
-                </Pill>
-              </TableCell>
-              <TableCell className="text-right">
-                <Silver
-                  value={e.amount}
-                  signed
-                  className={cn(
-                    "font-semibold",
-                    isReversed ? "text-muted-foreground line-through" : e.amount > 0n ? "text-success" : "text-foreground",
-                  )}
-                />
-              </TableCell>
-            </TableRow>
-          );
-        })}
-      </TableBody>
-    </Table>
+    <>
+      <Table>
+        <TableHeader>
+          <TableRow className="hover:bg-transparent">
+            <TableHead className="hidden sm:table-cell">Data</TableHead>
+            <TableHead>Lançamento</TableHead>
+            <TableHead className="hidden md:table-cell">Origem</TableHead>
+            <TableHead className="text-right">Valor</TableHead>
+          </TableRow>
+        </TableHeader>
+        <TableBody>
+          {entries.map((e) => {
+            const isReversed = reversed.has(e.id);
+            const meta = kindMeta[e.kind];
+            const label = LEDGER_ENTRY_KIND_LABELS[e.kind];
+            return (
+              <TableRow key={e.id}>
+                <TableCell className="num hidden text-sm text-muted-foreground sm:table-cell">{formatDateTime(e.createdAt)}</TableCell>
+                <TableCell className="w-full max-w-0 whitespace-normal">
+                  <p className={cn("truncate font-medium", isReversed && "text-muted-foreground line-through")}>{e.memo ?? label}</p>
+                  <p className={cn("truncate text-xs", e.kind === "reversal" ? "text-destructive" : "text-muted-foreground")}>
+                    <span className="sm:hidden">{formatDateTime(e.createdAt)} · </span>
+                    {e.memo ? label : "Sem descrição"}
+                    {isReversed && " · estornado depois"}
+                  </p>
+                </TableCell>
+                <TableCell className="hidden md:table-cell">
+                  <Pill tone={meta.tone} icon={meta.icon}>
+                    {label}
+                  </Pill>
+                </TableCell>
+                <TableCell className="text-right">
+                  <Silver
+                    value={e.amount}
+                    signed
+                    className={cn("font-semibold", isReversed ? "text-muted-foreground line-through" : e.amount > 0n ? "text-success" : "text-foreground")}
+                  />
+                </TableCell>
+              </TableRow>
+            );
+          })}
+        </TableBody>
+      </Table>
+      {hasMore && (
+        <p className="border-t px-4 py-3 text-xs text-muted-foreground">
+          Mostrando os 50 lançamentos mais recentes. Peça o histórico completo à staff.
+        </p>
+      )}
+    </>
   );
 }
 
@@ -264,6 +335,10 @@ function FirstSteps() {
   const done = steps.filter((s) => s.done).length;
   return (
     <div className="p-4">
+      <div className="mb-3 flex items-center gap-2 text-sm text-muted-foreground">
+        <Receipt className="size-4" aria-hidden />
+        Seu extrato ainda não tem lançamento nenhum.
+      </div>
       <div className="mb-4 flex items-center gap-3">
         <Progress value={(done / steps.length) * 100} className="h-2 flex-1" aria-label="Progresso até a primeira prata" />
         <span className="num text-xs text-muted-foreground">

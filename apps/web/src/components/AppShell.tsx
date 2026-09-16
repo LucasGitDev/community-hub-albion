@@ -6,6 +6,7 @@ import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import { useAuth, useCurrentUser } from "@/auth/AuthProvider";
 import { Silver } from "@/components/display";
+import { useWallet } from "@/api/WalletProvider";
 import { useStore } from "@/mock/store";
 import { ThemeToggle } from "@/theme/theme";
 
@@ -22,12 +23,13 @@ interface NavItem {
 export function AppShell() {
   const { user, ability } = useCurrentUser();
   const { logout } = useAuth();
-  const { balanceFor, withdrawalsFor, allWithdrawals } = useStore();
+  // Saldo e meus saques vêm da API real (TASK-031); a fila da staff ainda é demonstração (TASK-032).
+  const { balance, withdrawals } = useWallet();
+  const { allWithdrawals } = useStore();
   const { pathname } = useLocation();
   const allowed = (item: NavItem) => !item.can || ability.can(item.can[0], item.can[1]);
 
-  const { available } = balanceFor(user.discordId);
-  const myOpen = withdrawalsFor(user.discordId).filter((w) => w.status === "pending" || w.status === "approved").length;
+  const myOpen = withdrawals.filter((w) => w.status === "pending" || w.status === "approved").length;
   const queue = allWithdrawals.filter((w) => w.status === "pending").length;
 
   const personal: NavItem[] = [
@@ -91,7 +93,7 @@ export function AppShell() {
               aria-label="Saldo disponível"
             >
               <Coins className="size-4 text-brand" aria-hidden />
-              <Silver value={available} className="font-semibold" />
+              {balance ? <Silver value={balance.available} className="font-semibold" /> : <span className="h-3 w-12 animate-pulse rounded bg-muted" aria-hidden />}
             </NavLink>
             <ThemeToggle />
             <button onClick={onLogout} className="press rounded-md p-2 text-muted-foreground hover:bg-accent md:hidden" aria-label="Sair">
