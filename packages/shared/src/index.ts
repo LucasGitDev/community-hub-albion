@@ -4,6 +4,7 @@ export * from "./silver.js";
 export * from "./permissions.js";
 export * from "./nick.js";
 export * from "./albion.js";
+export * from "./discord-nickname.js";
 export * from "./event-templates.js";
 export * from "./events.js";
 export * from "./event-signups.js";
