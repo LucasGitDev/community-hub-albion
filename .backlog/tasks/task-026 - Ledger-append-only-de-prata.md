@@ -1,11 +1,11 @@
 ---
 id: TASK-026
 title: Ledger append-only de prata
-status: In Progress
+status: Done
 assignee:
   - '@claude'
 created_date: '2026-09-15 03:24'
-updated_date: '2026-09-16 16:44'
+updated_date: '2026-09-16 19:27'
 labels:
   - economy
   - db
@@ -41,7 +41,7 @@ Ledger único append-only (doc-002) em bigint de prata inteira (Q20); correção
 - [x] #5 Comportamento confere com decisões do doc-005 (Qs citadas) e nada fora do escopo da task
 - [x] #6 Toca auth, ledger, prata ou saque: security-review sem achado crítico
 - [x] #7 Notas e final summary com evidências; commits Conventional atômicos sem co-autor
-- [ ] #8 PR merged na main com quality gate verde; branch e worktree removidos
+- [x] #8 PR merged na main com quality gate verde; branch e worktree removidos
 <!-- DOD:END -->
 
 ## Implementation Plan

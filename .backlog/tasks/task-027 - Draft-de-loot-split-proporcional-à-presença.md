@@ -1,11 +1,11 @@
 ---
 id: TASK-027
 title: Draft de loot split proporcional à presença
-status: In Progress
+status: Done
 assignee:
   - '@claude'
 created_date: '2026-09-15 03:24'
-updated_date: '2026-09-16 19:23'
+updated_date: '2026-09-16 19:27'
 labels:
   - economy
   - events
@@ -42,7 +42,7 @@ Draft de split proporcional ao tempo no canal do evento entre start e finish (Q5
 - [x] #5 Comportamento confere com decisões do doc-005 (Qs citadas) e nada fora do escopo da task
 - [x] #6 Toca auth, ledger, prata ou saque: security-review sem achado crítico
 - [x] #7 Notas e final summary com evidências; commits Conventional atômicos sem co-autor
-- [ ] #8 PR merged na main com quality gate verde; branch e worktree removidos
+- [x] #8 PR merged na main com quality gate verde; branch e worktree removidos
 <!-- DOD:END -->
 
 ## Implementation Plan
