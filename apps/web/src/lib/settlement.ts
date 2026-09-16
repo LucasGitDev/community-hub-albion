@@ -142,7 +142,7 @@ export function withAmounts(rows: readonly SettlementRow[], distributable: bigin
  * A frase da taxa que não cabe no total, uma só (AC#8). É a mesma que a API devolve ao confirmar,
  * usada aqui antes de gastar uma requisição — quem lê na tela e quem leria no 409 ouve uma história só.
  */
-export const FEE_EXCEEDS_TOTAL = splitConfirmRefusalMessage("fee_exceeds_total");
+const FEE_EXCEEDS_TOTAL = splitConfirmRefusalMessage("fee_exceeds_total");
 
 /**
  * A frase do bloco da taxa, em tempo real (AC#3). Diz os três números que decidem a taxa — quanto
