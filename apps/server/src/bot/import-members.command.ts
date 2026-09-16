@@ -4,7 +4,7 @@ import { defineAbilityFor } from "@albion-hub/shared";
 import { MessageFlags } from "discord.js";
 import { Context, SlashCommand } from "necord";
 import { DB_HANDLE } from "../db/db.module.js";
-import { buildImportSummaryReply, IMPORT_MEMBERS_COMMAND, IMPORT_MEMBERS_REPLIES } from "../domain/member-import.js";
+import { buildImportSummaryReply, IMPORT_MEMBERS_COMMAND, IMPORT_MEMBERS_REPLIES, isMissingMembersIntent } from "../domain/member-import.js";
 import { isConfiguredGuild } from "../domain/register-nick.js";
 import { DiscordMemberImportService } from "../members/discord-member-import.service.js";
 import { DISCORD_GUILD_ID } from "./discord-guild.gateway.js";
@@ -17,10 +17,6 @@ export interface ImportMembersInteraction {
   deferReply(options: { flags: MessageFlags.Ephemeral }): Promise<unknown>;
   editReply(options: { content: string }): Promise<unknown>;
 }
-
-/** Discord responde 403 quando o Server Members Intent está desligado. */
-const isForbidden = (error: unknown): boolean =>
-  typeof error === "object" && error !== null && "status" in error && (error as { status: unknown }).status === 403;
 
 /**
  * `/importar-membros` (TASK-042, AC#1): traz para o painel quem já tem cargo Membro e apelido no servidor.
@@ -59,7 +55,7 @@ export class ImportMembersCommand {
       await interaction.editReply({ content: buildImportSummaryReply(summary) });
     } catch (error) {
       this.logger.error(`/${IMPORT_MEMBERS_COMMAND.name} de ${interaction.user.id} falhou: ${String(error)}`);
-      await this.respond(interaction, isForbidden(error) ? IMPORT_MEMBERS_REPLIES.forbidden : IMPORT_MEMBERS_REPLIES.failed, deferred);
+      await this.respond(interaction, isMissingMembersIntent(error) ? IMPORT_MEMBERS_REPLIES.forbidden : IMPORT_MEMBERS_REPLIES.failed, deferred);
     }
   }
 

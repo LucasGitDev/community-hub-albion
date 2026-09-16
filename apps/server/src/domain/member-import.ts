@@ -66,6 +66,21 @@ export const emptyImportSummary = (): MemberImportSummary => ({
   albion: { found: 0, notFound: 0, unavailable: 0, disabled: 0 },
 });
 
+/**
+ * Discord responde 403 em `GET /guilds/{id}/members` quando o Server Members Intent está desligado.
+ * Mesma detecção no comando do bot e no endpoint de admin (TASK-043): um erro, uma explicação.
+ */
+export const isMissingMembersIntent = (error: unknown): boolean =>
+  typeof error === "object" && error !== null && "status" in error && (error as { status: unknown }).status === 403;
+
+/** Mesmas mensagens sem markdown, para o corpo JSON da API de admin (TASK-043). */
+export const IMPORT_MEMBERS_HTTP_ERRORS = {
+  botOffline: "O bot do Discord está desligado neste servidor, então não dá para ler a lista de membros. Ligue o bot e tente de novo.",
+  forbidden:
+    "O Discord recusou a lista de membros (403). Ligue o Server Members Intent em Discord Developer Portal → Bot → Privileged Gateway Intents e tente de novo.",
+  failed: "Não consegui importar os membros agora. Tente de novo em instantes.",
+} as const;
+
 /** Limite de conflitos listados na resposta efêmera (2000 caracteres no Discord). */
 export const MAX_LISTED_CONFLICTS = 10;
 

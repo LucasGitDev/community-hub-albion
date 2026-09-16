@@ -28,6 +28,7 @@ export {
   type VoiceSession,
 } from "./voice-repo.js";
 export { listUsersWithRoles, revokeRoleGuarded, userExists, type RevokeRoleResult, type UserWithRoles } from "./admin-roles-repo.js";
+export { listAdminMembers, type AdminMember, type AdminMembersPage, type AdminMembersQuery } from "./admin-members-repo.js";
 export {
   decideNickRequest,
   getNickRequestEmbedData,
