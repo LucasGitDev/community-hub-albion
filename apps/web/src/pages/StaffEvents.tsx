@@ -9,13 +9,16 @@ import {
   type EventTemplateDto,
   type EventTransition,
 } from "@albion-hub/shared";
-import { Archive, CalendarPlus, CircleDot, Crown, DoorOpen, Flag, ListOrdered, Lock, Play, Users, X } from "lucide-react";
+import { Archive, CalendarPlus, CircleDot, Coins, Crown, DoorOpen, Flag, ListOrdered, Lock, Play, Users, X } from "lucide-react";
 import { useCallback, useEffect, useId, useState } from "react";
 import { toast } from "sonner";
 import * as api from "@/api/events";
 import { errorText } from "@/api/http";
 import { usePoll } from "@/api/use-poll";
 import { EventArchivedNote, EventCancelledNote, EventMeta, EventStatusPill, FillMeter, Freshness, eventStatusText } from "@/components/events";
+import { DraftBlocksArchiveNote, EventSettlement } from "@/components/EventSettlement";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { canSettle, showsSettlement, toSettle } from "@/lib/settlement";
 import { EmptyState, PageHeader, Panel, Pill, StatCard } from "@/components/display";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
@@ -54,7 +57,7 @@ const TRANSITION_META: Record<EventTransition, { label: string; icon: typeof Pla
  * o papel pode fazer naquele evento e naquele estado; a API continua sendo a autoridade.
  */
 export function StaffEvents() {
-  const { user } = useCurrentUser();
+  const { user, ability } = useCurrentUser();
   const load = useCallback(() => api.fetchEventBoard(), []);
   const { data, error, updatedAt, loading, refresh } = usePoll<EventBoard>(load, "Erro ao carregar os eventos");
   const [selectedId, setSelectedId] = useState<string | null>(null);
@@ -66,9 +69,17 @@ export function StaffEvents() {
   const board = data ?? { events: [], occupancy: [], mySignups: [] };
   const groups = groupEvents(board.events);
   const live = [...groups.running, ...groups.open, ...groups.upcoming];
-  const mine = board.events.filter((e) => e.ownerUserId === user.id && !["finished", "cancelled", "archived"].includes(e.status));
-  // Sem escolha ainda, abre um evento seu: é nele que o caller vai mexer, não no do vizinho.
-  const selected = board.events.find((e) => e.id === selectedId) ?? live.find((e) => e.ownerUserId === user.id) ?? live[0] ?? board.events[0] ?? null;
+  const mine = board.events.filter((e) => e.ownerUserId === user.id && !["cancelled", "archived"].includes(e.status));
+  /**
+   * Fila do acerto (AC#1): o evento finalizado **é** pendência, não histórico, e antes desta task ele
+   * sumia da conta de "meus eventos" no instante em que o caller terminava o jogo — justo quando a
+   * prata ainda não tinha sido dividida. Some daqui quando arquiva, que é o fim de fato (Q26).
+   */
+  const settling = toSettle(board.events, ability);
+  const settlingIds = new Set(settling.map((e) => e.id));
+  // Sem escolha ainda, o acerto pendente ganha do evento vivo: é a única coisa aqui com prazo e prata parada.
+  const selected =
+    board.events.find((e) => e.id === selectedId) ?? settling.find((e) => e.ownerUserId === user.id) ?? live.find((e) => e.ownerUserId === user.id) ?? live[0] ?? board.events[0] ?? null;
 
   async function transition(event: EventDto, action: EventTransition, reason?: string) {
     setBusy(true);
@@ -124,11 +135,17 @@ export function StaffEvents() {
 
       {data && (
         <>
-          <div className="mb-4 grid grid-cols-2 gap-3 lg:grid-cols-4">
+          <div className="mb-4 grid grid-cols-2 gap-3 lg:grid-cols-5">
             <StatCard label="Inscrições abertas" icon={<DoorOpen />} emphasis value={<span className="num">{groups.open.length}</span>} hint="aceitando gente agora" />
             <StatCard label="Acontecendo agora" icon={<CircleDot />} value={<span className="num">{groups.running.length}</span>} hint="já iniciados" />
             <StatCard label="Aguardando início" icon={<Lock />} value={<span className="num">{groups.upcoming.length}</span>} hint="rascunho ou lista fechada" />
             <StatCard label="Meus eventos" icon={<Crown />} value={<span className="num">{mine.length}</span>} hint="você é o caller" />
+            <StatCard
+              label="A acertar"
+              icon={<Coins />}
+              value={<span className="num">{settling.length}</span>}
+              hint={settling.length === 0 ? "nenhuma prata em aberto" : "finalizados sem a conta fechada"}
+            />
           </div>
 
           <div className="grid items-start gap-4 lg:grid-cols-[22rem_1fr]">
@@ -148,39 +165,45 @@ export function StaffEvents() {
                   />
                 </div>
               ) : (
-                <ul className="max-h-[32rem] divide-y overflow-y-auto">
-                  {board.events.map((event) => {
-                    const fill = eventFill(roleViews(event, board.occupancy, null));
-                    return (
-                      <li key={event.id}>
-                        <button
-                          type="button"
-                          onClick={() => setSelectedId(event.id)}
-                          aria-current={selected?.id === event.id}
-                          className={cn(
-                            "press w-full px-4 py-3 text-left transition-colors hover:bg-accent/60",
-                            selected?.id === event.id && "bg-accent",
-                          )}
-                        >
-                          <div className="flex items-center justify-between gap-2">
-                            <span className="truncate font-medium">{event.name}</span>
-                            <span className="num shrink-0 text-sm text-muted-foreground">
-                              {fill.confirmed}/{fill.total}
-                            </span>
-                          </div>
-                          <div className="mt-1 flex flex-wrap items-center gap-2">
-                            <EventStatusPill status={event.status} />
-                            {event.ownerUserId === user.id && (
-                              <Pill tone="neutral" icon={<Crown aria-hidden />}>
-                                seu
-                              </Pill>
-                            )}
-                          </div>
-                        </button>
-                      </li>
-                    );
-                  })}
-                </ul>
+                <div className="max-h-[32rem] overflow-y-auto">
+                  {/* A acertar vem primeiro e separado: é dívida em aberto, não histórico (AC#1). */}
+                  {settling.length > 0 && (
+                    <>
+                      <h3 className="sticky top-0 z-10 flex items-center justify-between gap-2 border-b bg-card px-4 py-2 text-xs font-semibold text-brand">
+                        <span className="flex items-center gap-1.5">
+                          <Coins className="size-3.5" aria-hidden />A acertar
+                        </span>
+                        <span className="num">{settling.length}</span>
+                      </h3>
+                      <ul className="divide-y border-b">
+                        {settling.map((event) => (
+                          <EventListItem
+                            key={event.id}
+                            event={event}
+                            board={board}
+                            selected={selected?.id === event.id}
+                            userId={user.id}
+                            onSelect={() => setSelectedId(event.id)}
+                          />
+                        ))}
+                      </ul>
+                    </>
+                  )}
+                  <ul className="divide-y">
+                    {board.events
+                      .filter((event) => !settlingIds.has(event.id))
+                      .map((event) => (
+                        <EventListItem
+                          key={event.id}
+                          event={event}
+                          board={board}
+                          selected={selected?.id === event.id}
+                          userId={user.id}
+                          onSelect={() => setSelectedId(event.id)}
+                        />
+                      ))}
+                  </ul>
+                </div>
               )}
             </Panel>
 
@@ -228,6 +251,48 @@ export function StaffEvents() {
   );
 }
 
+/** Linha da lista de eventos: nome, ocupação e o que ele é agora. */
+function EventListItem({
+  event,
+  board,
+  selected,
+  userId,
+  onSelect,
+}: {
+  event: EventDto;
+  board: EventBoard;
+  selected: boolean;
+  userId: string;
+  onSelect: () => void;
+}) {
+  const fill = eventFill(roleViews(event, board.occupancy, null));
+  return (
+    <li>
+      <button
+        type="button"
+        onClick={onSelect}
+        aria-current={selected}
+        className={cn("press w-full px-4 py-3 text-left transition-colors hover:bg-accent/60", selected && "bg-accent")}
+      >
+        <div className="flex items-center justify-between gap-2">
+          <span className="truncate font-medium">{event.name}</span>
+          <span className="num shrink-0 text-sm text-muted-foreground">
+            {fill.confirmed}/{fill.total}
+          </span>
+        </div>
+        <div className="mt-1 flex flex-wrap items-center gap-2">
+          <EventStatusPill status={event.status} />
+          {event.ownerUserId === userId && (
+            <Pill tone="neutral" icon={<Crown aria-hidden />}>
+              seu
+            </Pill>
+          )}
+        </div>
+      </button>
+    </li>
+  );
+}
+
 /** Evento selecionado: ações de estado permitidas agora e a lista de inscritos por role. */
 function EventDetail({
   event,
@@ -250,6 +315,12 @@ function EventDetail({
   const fill = eventFill(roles);
   const canMove = canManageRoster(event, ability);
   const canTransfer = canTransferOwner(event, ability);
+  /** Só quem responde pela distribuição vê o acerto: `distribute` no evento, nunca `read` (AC#12). */
+  const settlement = showsSettlement(event) && canSettle(event, ability);
+  // Finalizado abre direto no acerto: quem vem parar aqui acabou de terminar o jogo e tem prata para dividir.
+  const [tab, setTab] = useState(event.status === "finished" ? "settlement" : "roster");
+  const [hasDraft, setHasDraft] = useState(false);
+  const onDraftChange = useCallback((draft: boolean) => setHasDraft(draft), []);
 
   const refreshAll = () => {
     roster.refresh();
@@ -305,13 +376,23 @@ function EventDetail({
         {event.status === "finished" && (
           <p className="text-sm text-muted-foreground">Evento finalizado. Quem conduz ainda acerta a taxa e os splits, e arquiva quando terminar.</p>
         )}
+        {hasDraft && actions.includes("archive") && <DraftBlocksArchiveNote />}
         {actions.length > 0 ? (
           <div className="flex flex-wrap gap-2">
             {actions.map((action) => {
               const meta = TRANSITION_META[action];
               const Icon = meta.icon;
+              // AC#10: arquivar com rascunho aberto trancaria prata que ninguém mais poderia distribuir.
+              const blocked = action === "archive" && hasDraft;
               return (
-                <Button key={action} variant={meta.variant} size="sm" disabled={busy} onClick={() => onTransition(action)}>
+                <Button
+                  key={action}
+                  variant={meta.variant}
+                  size="sm"
+                  disabled={busy || blocked}
+                  title={blocked ? "Confirme ou apague o loot split em rascunho antes de arquivar." : undefined}
+                  onClick={() => onTransition(action)}
+                >
                   <Icon />
                   {meta.label}
                 </Button>
@@ -331,6 +412,21 @@ function EventDetail({
         )}
       </div>
 
+      {settlement ? (
+        /* Finalizado ganha abas: o roster continua ali, e o acerto é onde a prata é decidida (AC#1/AC#2). */
+        <Tabs value={tab} onValueChange={setTab}>
+          <TabsList variant="line" className="mx-4 mt-3">
+            <TabsTrigger value="roster">
+              <Users />
+              Inscritos
+            </TabsTrigger>
+            <TabsTrigger value="settlement">
+              <Coins />
+              Acerto
+            </TabsTrigger>
+          </TabsList>
+          <TabsContent value="roster">
+            <>
       {roster.loading && (
         <div className="p-4">
           <Skeleton className="h-24 w-full" aria-label="Carregando inscritos…" />
@@ -369,6 +465,55 @@ function EventDetail({
             </p>
           )}
         </div>
+      )}
+            </>
+          </TabsContent>
+          <TabsContent value="settlement">
+            <EventSettlement event={event} onChanged={onChanged} onDraftChange={onDraftChange} />
+          </TabsContent>
+        </Tabs>
+      ) : (
+        <>
+      {roster.loading && (
+        <div className="p-4">
+          <Skeleton className="h-24 w-full" aria-label="Carregando inscritos…" />
+        </div>
+      )}
+      {roster.error && !roster.data && (
+        <p role="alert" className="px-4 py-3 text-sm text-destructive">
+          {roster.error}
+        </p>
+      )}
+
+      {roster.data && (
+        <div className="divide-y">
+          {roles.map((role) => (
+            <RoleRoster
+              key={role.slotId}
+              role={role}
+              roles={roles}
+              signups={active.filter((s) => s.slotId === role.slotId)}
+              members={roster.data!.members}
+              ownerUserId={event.ownerUserId}
+              canMove={canMove}
+              canTransfer={canTransfer}
+              onMove={move}
+              onTransfer={transferOwner}
+            />
+          ))}
+          {roles.length === 0 && <p className="px-4 py-3 text-sm text-muted-foreground">O template deste evento não tinha nenhuma role.</p>}
+          {active.length === 0 && roles.length > 0 && (
+            <p className="px-4 py-3 text-sm text-muted-foreground">
+              {event.status === "draft"
+                ? "Abra as inscrições para o pessoal entrar."
+                : event.status === "cancelled"
+                  ? "As inscrições caíram junto com o evento."
+                  : "Ninguém se inscreveu ainda."}
+            </p>
+          )}
+        </div>
+      )}
+        </>
       )}
     </Panel>
   );
