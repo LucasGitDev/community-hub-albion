@@ -1,4 +1,4 @@
-import type { EventDto } from "@albion-hub/shared";
+import { BUFFUNFA_ROLE_MAX, type EventDto } from "@albion-hub/shared";
 import { eq, sql } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import {
@@ -29,9 +29,9 @@ if (!baseUrl && process.env.CI) throw new Error("CI sem TEST_DATABASE_URL: teste
 const HOUR = 3_600_000;
 
 /**
- * Buffunfa por participação em evento (TASK-057, F6-8 a F6-11) contra Postgres real: a faixa que o
- * template impõe, o valor que o caller move dentro dela, o corte binário dos 90% e o pagamento que
- * só acontece uma vez.
+ * Buffunfa por participação em evento (TASK-057, F6-8 a F6-11; revisada na TASK-072) contra
+ * Postgres real: a faixa que o template **sugere**, o valor que o caller move em lote ou por role
+ * até o teto do sistema, o corte binário dos 90% e o pagamento que só acontece uma vez.
  */
 describe.skipIf(!baseUrl)("Buffunfa por presença em evento (TASK-057, Postgres real)", () => {
   let handle: DbHandle;
@@ -120,7 +120,7 @@ describe.skipIf(!baseUrl)("Buffunfa por presença em evento (TASK-057, Postgres 
     await handle?.close();
   });
 
-  it("a faixa do template vira snapshot na vaga e o valor nasce no mínimo (AC#1)", async () => {
+  it("a faixa do template vira snapshot na vaga e o valor nasce no mínimo (AC#4)", async () => {
     const owner = await nextUser();
     const { event } = await finishedEvent(owner.id, "chan-faixa");
     const tank = event.roles.find((r) => r.name === "Tank")!;
@@ -129,18 +129,65 @@ describe.skipIf(!baseUrl)("Buffunfa por presença em evento (TASK-057, Postgres 
     expect([healer.buffunfaMin, healer.buffunfaMax, healer.buffunfaValue]).toEqual(["0", "0", "0"]);
   });
 
-  it("o caller mexe no valor dentro da faixa e o banco recusa fora dela (AC#2)", async () => {
+  it("o valor da role aceita qualquer inteiro até o teto do sistema, inclusive acima da faixa do template (AC#2, AC#3)", async () => {
     const owner = await nextUser();
     const { event } = await finishedEvent(owner.id, "chan-ajuste");
     const slotId = await slotIdOf(event.id, "Tank");
-    expect(await setEventRoleBuffunfa(handle.db, event.id, slotId, 40n)).toEqual({ ok: true });
-    expect((await getEvent(handle.db, event.id))!.roles.find((r) => r.name === "Tank")!.buffunfaValue).toBe("40");
-    const above = await setEventRoleBuffunfa(handle.db, event.id, slotId, 41n);
-    expect(above).toMatchObject({ ok: false, reason: "out_of_range" });
-    const below = await setEventRoleBuffunfa(handle.db, event.id, slotId, 9n);
-    expect(below).toMatchObject({ ok: false, reason: "out_of_range" });
-    // A recusa não deixa rastro: o valor continua o último aceito.
-    expect((await getEvent(handle.db, event.id))!.roles.find((r) => r.name === "Tank")!.buffunfaValue).toBe("40");
+    const valueOf = async (name: string) => (await getEvent(handle.db, event.id))!.roles.find((r) => r.name === name)!.buffunfaValue;
+
+    expect(await setEventRoleBuffunfa(handle.db, event.id, slotId, 40n)).toEqual({ ok: true, roles: 1 });
+    expect(await valueOf("Tank")).toBe("40");
+    // Acima do máximo da faixa do template (40) e abaixo do mínimo (10): os dois passam agora.
+    expect(await setEventRoleBuffunfa(handle.db, event.id, slotId, 900n)).toEqual({ ok: true, roles: 1 });
+    expect(await valueOf("Tank")).toBe("900");
+    expect(await setEventRoleBuffunfa(handle.db, event.id, slotId, 3n)).toEqual({ ok: true, roles: 1 });
+    expect(await valueOf("Tank")).toBe("3");
+    // O teto do sistema continua recusando, e a recusa não deixa rastro.
+    expect(await setEventRoleBuffunfa(handle.db, event.id, slotId, BUFFUNFA_ROLE_MAX)).toEqual({ ok: true, roles: 1 });
+    expect(await setEventRoleBuffunfa(handle.db, event.id, slotId, BUFFUNFA_ROLE_MAX + 1n)).toEqual({ ok: false, reason: "above_max" });
+    expect(await valueOf("Tank")).toBe(BUFFUNFA_ROLE_MAX.toString());
+    expect(await setEventRoleBuffunfa(handle.db, event.id, crypto.randomUUID(), 5n)).toEqual({ ok: false, reason: "not_found" });
+  });
+
+  it("o lote põe todas as roles no mesmo valor e o ajuste individual vale por cima dele (AC#1, AC#2)", async () => {
+    const owner = await nextUser();
+    const { event } = await finishedEvent(owner.id, "chan-lote");
+    const valuesOf = async () => Object.fromEntries((await getEvent(handle.db, event.id))!.roles.map((r) => [r.name, r.buffunfaValue]));
+    // Ponto de partida: as duas roles saem do template com valores **diferentes** (10 e 0).
+    expect(await valuesOf()).toEqual({ Tank: "10", Healer: "0" });
+
+    expect(await setEventRoleBuffunfa(handle.db, event.id, null, 77n)).toEqual({ ok: true, roles: 2 });
+    expect(await valuesOf()).toEqual({ Tank: "77", Healer: "77" });
+
+    // Depois do lote, o tank continua editável sozinho — é o gesto de preencher vaga escassa.
+    expect(await setEventRoleBuffunfa(handle.db, event.id, await slotIdOf(event.id, "Tank"), 120n)).toEqual({ ok: true, roles: 1 });
+    expect(await valuesOf()).toEqual({ Tank: "120", Healer: "77" });
+
+    // E um lote novo por cima reescreve tudo de novo, inclusive o ajuste individual.
+    expect(await setEventRoleBuffunfa(handle.db, event.id, null, 5n)).toEqual({ ok: true, roles: 2 });
+    expect(await valuesOf()).toEqual({ Tank: "5", Healer: "5" });
+
+    // O teto do sistema também vale no lote, e recusar não move role nenhuma.
+    expect(await setEventRoleBuffunfa(handle.db, event.id, null, BUFFUNFA_ROLE_MAX + 1n)).toEqual({ ok: false, reason: "above_max" });
+    expect(await valuesOf()).toEqual({ Tank: "5", Healer: "5" });
+  });
+
+  it("evento de template antigo, com faixa 0 a 0, paga Buffunfa de verdade (AC#6)", async () => {
+    const owner = await nextUser();
+    const membro = await nextUser();
+    // Healer no template da suíte é exatamente o caso da F6-51: faixa 0 a 0, que antes travava tudo.
+    const { event, startedAt } = await finishedEvent(owner.id, "chan-zerado", [{ userId: membro.id, roleName: "Healer" }]);
+    const healer = event.roles.find((r) => r.name === "Healer")!;
+    expect([healer.buffunfaMin, healer.buffunfaMax, healer.buffunfaValue]).toEqual(["0", "0", "0"]);
+    await voice(membro.discordId, "chan-zerado", startedAt, new Date(startedAt.getTime() + HOUR));
+
+    expect(await setEventRoleBuffunfa(handle.db, event.id, null, 60n)).toEqual({ ok: true, roles: 2 });
+    const preview = (await previewEventAttendance(handle.db, event.id))!;
+    expect(preview.rows.find((r) => r.userId === membro.id)!.skip).toBeNull();
+    expect(preview.total).toBe(60n);
+
+    expect(await payEventAttendance(handle.db, event.id, { actorUserId: owner.id })).toMatchObject({ ok: true, alreadyPaid: false });
+    expect(await getLedgerBalance(handle.db, membro.id, "buffunfa")).toBe(60n);
   });
 
   it("a janela começa na primeira entrada no canal, não no início do evento (TASK-073)", async () => {
@@ -191,7 +238,7 @@ describe.skipIf(!baseUrl)("Buffunfa por presença em evento (TASK-057, Postgres 
 
     // O valor sobe **depois** das inscrições: quem entrou antes recebe o valor do fechamento (F6-9).
     const slotId = await slotIdOf(event.id, "Tank");
-    expect(await setEventRoleBuffunfa(handle.db, event.id, slotId, 35n)).toEqual({ ok: true });
+    expect(await setEventRoleBuffunfa(handle.db, event.id, slotId, 35n)).toEqual({ ok: true, roles: 1 });
 
     const preview = (await previewEventAttendance(handle.db, event.id))!;
     expect(preview.measured).toBe(true);
@@ -259,7 +306,10 @@ describe.skipIf(!baseUrl)("Buffunfa por presença em evento (TASK-057, Postgres 
     expect(await getLedgerBalance(handle.db, membro.id, "buffunfa")).toBe(30n);
     expect(await listLedgerEntriesByReference(handle.db, "event", event.id)).toHaveLength(1);
 
+    // Depois de pago tudo congela, com motivo — no individual e no lote (AC#5).
     expect(await setEventRoleBuffunfa(handle.db, event.id, slotId, 10n)).toEqual({ ok: false, reason: "already_paid" });
+    expect(await setEventRoleBuffunfa(handle.db, event.id, null, 10n)).toEqual({ ok: false, reason: "already_paid" });
+    expect((await getEvent(handle.db, event.id))!.roles.find((r) => r.name === "Tank")!.buffunfaValue).toBe("30");
     expect((await getEvent(handle.db, event.id))!.buffunfaPaidAt).not.toBeNull();
   });
 

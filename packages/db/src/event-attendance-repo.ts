@@ -2,7 +2,7 @@ import {
   attendanceMemo,
   attendanceRows,
   attendanceTotal,
-  inBuffunfaRange,
+  isBuffunfaValue,
   type AttendanceRow,
   type BuffunfaRange,
   type SplitPresenceDto,
@@ -22,7 +22,7 @@ import { eventRoleSlots, events } from "./schema.js";
  * lançamento por pessoa elegível e carimba `events.buffunfa_paid_at`.
  *
  * Três garantias que não dependem do JavaScript:
- * - **valor dentro da faixa**: checado aqui e, por baixo, pelo `check` de `event_role_slots`;
+ * - **valor dentro do teto do sistema**: checado aqui e, por baixo, pelo `check` de `event_role_slots`;
  * - **paga uma vez só**: o `update ... where buffunfa_paid_at is null` na mesma transação dos
  *   lançamentos é a chave de idempotência — dois cliques simultâneos, um pagamento;
  * - **valor do fechamento para todos daquela role** (F6-9): o rateio lê a coluna da vaga no instante
@@ -66,25 +66,33 @@ export async function listEventRoleBuffunfa(db: Reader, eventId: string): Promis
   return rows;
 }
 
-export type SetEventRoleBuffunfaResult = { ok: true } | { ok: false; reason: "not_found" | "out_of_range" | "already_paid"; range?: BuffunfaRange };
+export type SetEventRoleBuffunfaResult = { ok: true; roles: number } | { ok: false; reason: "not_found" | "above_max" | "already_paid" };
 
 /**
- * Troca o valor de Buffunfa de uma role do evento (AC#2). Recusa fora da faixa e recusa depois do
- * pagamento: o ledger é imutável, então mudar o valor depois não mudaria nada e só mentiria na tela.
+ * Troca o valor de Buffunfa das roles do evento até o fechamento (AC#1, AC#2, AC#3).
+ *
+ * `slotId` nulo é o **ajuste em lote**: todas as roles do evento passam a valer o mesmo — é o caso
+ * que o caller vive, "no geral todas ganham X e depois isso muda" —, e o ajuste individual continua
+ * existindo e continua valendo depois do lote, porque é o mesmo UPDATE com um `where` a mais.
+ *
+ * O que recusa:
+ * - **acima do teto do sistema** (`BUFFUNFA_ROLE_MAX`): freio contra o zero a mais digitado. A faixa
+ *   do template **não** recusa mais nada aqui — ela é valor de partida (revisão da F6-8/F6-48 na
+ *   TASK-072), e é por isso que template antigo com faixa 0 a 0 (F6-51) consegue pagar (AC#6);
+ * - **depois de pago**: o ledger é imutável, mudar o valor depois não mudaria nada e só mentiria na
+ *   tela (AC#5).
  */
-export async function setEventRoleBuffunfa(db: Database, eventId: string, slotId: string, value: bigint): Promise<SetEventRoleBuffunfaResult> {
+export async function setEventRoleBuffunfa(db: Database, eventId: string, slotId: string | null, value: bigint): Promise<SetEventRoleBuffunfaResult> {
   return db.transaction(async (tx) => {
     const [event] = await tx.select({ paidAt: events.buffunfaPaidAt }).from(events).where(eq(events.id, eventId)).for("update");
     if (!event) return { ok: false as const, reason: "not_found" as const };
     if (event.paidAt) return { ok: false as const, reason: "already_paid" as const };
-    const [slot] = await tx
-      .select({ min: eventRoleSlots.buffunfaMin, max: eventRoleSlots.buffunfaMax })
-      .from(eventRoleSlots)
-      .where(and(eq(eventRoleSlots.id, slotId), eq(eventRoleSlots.eventId, eventId)));
-    if (!slot) return { ok: false as const, reason: "not_found" as const };
-    if (!inBuffunfaRange(value, slot)) return { ok: false as const, reason: "out_of_range" as const, range: slot };
-    await tx.update(eventRoleSlots).set({ buffunfaValue: value }).where(eq(eventRoleSlots.id, slotId));
-    return { ok: true as const };
+    if (!isBuffunfaValue(value)) return { ok: false as const, reason: "above_max" as const };
+    const target = slotId === null ? eq(eventRoleSlots.eventId, eventId) : and(eq(eventRoleSlots.id, slotId), eq(eventRoleSlots.eventId, eventId));
+    const updated = await tx.update(eventRoleSlots).set({ buffunfaValue: value }).where(target).returning({ id: eventRoleSlots.id });
+    // Lote sem role nenhuma é evento vazio, não erro: só o ajuste individual precisa achar a vaga.
+    if (updated.length === 0 && slotId !== null) return { ok: false as const, reason: "not_found" as const };
+    return { ok: true as const, roles: updated.length };
   });
 }
 

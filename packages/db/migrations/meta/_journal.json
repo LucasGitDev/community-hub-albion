@@ -162,6 +162,13 @@
       "when": 1789671821648,
       "tag": "0022_windy_lord_hawal",
       "breakpoints": true
+    },
+    {
+      "idx": 23,
+      "version": "7",
+      "when": 1789675358797,
+      "tag": "0023_nasty_doctor_octopus",
+      "breakpoints": true
     }
   ]
 }
