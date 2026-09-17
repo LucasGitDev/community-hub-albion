@@ -63,7 +63,7 @@ describe.skipIf(!baseUrl)("ledger append-only de prata (TASK-026, Postgres real)
     let entry: LedgerEntry;
 
     beforeAll(async () => {
-      entry = await insertLedgerEntry(handle.db, { userId: await nextUser(), amount: 1_000n, kind: "split_payout", memo: "original" });
+      entry = await insertLedgerEntry(handle.db, { currency: "silver", userId: await nextUser(), amount: 1_000n, kind: "split_payout", memo: "original" });
     });
 
     it("UPDATE é rejeitado pelo banco", async () => {
@@ -92,13 +92,13 @@ describe.skipIf(!baseUrl)("ledger append-only de prata (TASK-026, Postgres real)
 
     it("apagar a conta é bloqueado: o lançamento e sua autoria são histórico", async () => {
       const userId = await nextUser();
-      await insertLedgerEntry(handle.db, { userId, amount: 50n, kind: "adjustment", createdBy: userId });
+      await insertLedgerEntry(handle.db, { currency: "silver", userId, amount: 50n, kind: "adjustment", createdBy: userId });
       // `restrict` nos dois FKs de usuário: sem isso o `set null` seria um UPDATE no ledger, que o trigger recusa.
       expect(await pgCode(handle.db.delete(schema.users).where(eq(schema.users.id, userId)))).toBe("23503");
     });
 
     it("lançamento de valor zero é recusado", async () => {
-      expect(await pgCode(insertLedgerEntry(handle.db, { userId: entry.userId, amount: 0n, kind: "adjustment" }))).toBe("23514");
+      expect(await pgCode(insertLedgerEntry(handle.db, { currency: "silver", userId: entry.userId, amount: 0n, kind: "adjustment" }))).toBe("23514");
     });
   });
 
@@ -106,6 +106,7 @@ describe.skipIf(!baseUrl)("ledger append-only de prata (TASK-026, Postgres real)
     it("cria lançamento inverso vinculado ao original, sem tocar nele", async () => {
       const userId = await nextUser();
       const original = await insertLedgerEntry(handle.db, {
+      currency: "silver",
         userId,
         amount: 2_500_000n,
         kind: "split_payout",
@@ -128,12 +129,12 @@ describe.skipIf(!baseUrl)("ledger append-only de prata (TASK-026, Postgres real)
 
       const [untouched] = await handle.db.select().from(schema.ledgerEntries).where(eq(schema.ledgerEntries.id, original.id));
       expect(untouched).toMatchObject({ amount: 2_500_000n, kind: "split_payout", memo: "pagamento do split" });
-      expect(await getLedgerBalance(handle.db, userId)).toBe(0n);
+      expect(await getLedgerBalance(handle.db, userId, "silver")).toBe(0n);
     });
 
     it("dois estornos concorrentes: só um passa (índice único parcial)", async () => {
       const userId = await nextUser();
-      const original = await insertLedgerEntry(handle.db, { userId, amount: 700_000n, kind: "split_payout" });
+      const original = await insertLedgerEntry(handle.db, { currency: "silver", userId, amount: 700_000n, kind: "split_payout" });
 
       const results = await Promise.all([
         reverseLedgerEntry(handle.db, original.id, { reason: "corrida A" }),
@@ -145,19 +146,19 @@ describe.skipIf(!baseUrl)("ledger append-only de prata (TASK-026, Postgres real)
 
       const rows = await handle.db.select().from(schema.ledgerEntries).where(eq(schema.ledgerEntries.reversalOf, original.id));
       expect(rows).toHaveLength(1);
-      expect(await getLedgerBalance(handle.db, userId)).toBe(0n);
+      expect(await getLedgerBalance(handle.db, userId, "silver")).toBe(0n);
     });
 
     it("estorno sequencial repetido devolve already_reversed", async () => {
       const userId = await nextUser();
-      const original = await insertLedgerEntry(handle.db, { userId, amount: 10n, kind: "adjustment" });
+      const original = await insertLedgerEntry(handle.db, { currency: "silver", userId, amount: 10n, kind: "adjustment" });
       expect((await reverseLedgerEntry(handle.db, original.id, { reason: "primeiro" })).ok).toBe(true);
       expect(await reverseLedgerEntry(handle.db, original.id, { reason: "segundo" })).toEqual({ ok: false, reason: "already_reversed" });
     });
 
     it("estorno de estorno é recusado e lançamento inexistente devolve not_found", async () => {
       const userId = await nextUser();
-      const original = await insertLedgerEntry(handle.db, { userId, amount: 10n, kind: "adjustment" });
+      const original = await insertLedgerEntry(handle.db, { currency: "silver", userId, amount: 10n, kind: "adjustment" });
       const first = await reverseLedgerEntry(handle.db, original.id, { reason: "erro de lançamento" });
       expect(first.ok).toBe(true);
       if (!first.ok) return;
@@ -167,8 +168,8 @@ describe.skipIf(!baseUrl)("ledger append-only de prata (TASK-026, Postgres real)
 
     it("reversal_of sem kind reversal é recusado pelo banco", async () => {
       const userId = await nextUser();
-      const original = await insertLedgerEntry(handle.db, { userId, amount: 10n, kind: "adjustment" });
-      const insert = handle.db.insert(schema.ledgerEntries).values({ userId, amount: -10n, kind: "adjustment", reversalOf: original.id });
+      const original = await insertLedgerEntry(handle.db, { currency: "silver", userId, amount: 10n, kind: "adjustment" });
+      const insert = handle.db.insert(schema.ledgerEntries).values({ userId, currency: "silver", amount: -10n, kind: "adjustment", reversalOf: original.id });
       expect(await pgCode(insert)).toBe("23514");
     });
   });
@@ -177,9 +178,9 @@ describe.skipIf(!baseUrl)("ledger append-only de prata (TASK-026, Postgres real)
     it("é exato acima de 2^53", async () => {
       const userId = await nextUser();
       // 2^53 = 9007199254740992: valores que o double do JS não representa.
-      await insertLedgerEntry(handle.db, { userId, amount: 9_007_199_254_740_993n, kind: "split_payout" });
-      await insertLedgerEntry(handle.db, { userId, amount: 9_007_199_254_740_994n, kind: "split_payout" });
-      const balance = await getLedgerBalance(handle.db, userId);
+      await insertLedgerEntry(handle.db, { currency: "silver", userId, amount: 9_007_199_254_740_993n, kind: "split_payout" });
+      await insertLedgerEntry(handle.db, { currency: "silver", userId, amount: 9_007_199_254_740_994n, kind: "split_payout" });
+      const balance = await getLedgerBalance(handle.db, userId, "silver");
       expect(balance).toBe(18_014_398_509_481_987n);
       expect(typeof balance).toBe("bigint");
       // A prova do problema: o mesmo cálculo em number perderia prata.
@@ -187,48 +188,48 @@ describe.skipIf(!baseUrl)("ledger append-only de prata (TASK-026, Postgres real)
     });
 
     it("saldo sem lançamento é zero", async () => {
-      expect(await getLedgerBalance(handle.db, await nextUser())).toBe(0n);
+      expect(await getLedgerBalance(handle.db, await nextUser(), "silver")).toBe(0n);
     });
 
     it("permite saldo negativo (Q24)", async () => {
       const userId = await nextUser();
-      const payout = await insertLedgerEntry(handle.db, { userId, amount: 1_000_000n, kind: "split_payout" });
-      await insertLedgerEntry(handle.db, { userId, amount: -1_000_000n, kind: "withdrawal", reference: { type: "withdrawal", id: "33333333-3333-4333-8333-333333333333" } });
-      expect(await getLedgerBalance(handle.db, userId)).toBe(0n);
+      const payout = await insertLedgerEntry(handle.db, { currency: "silver", userId, amount: 1_000_000n, kind: "split_payout" });
+      await insertLedgerEntry(handle.db, { currency: "silver", userId, amount: -1_000_000n, kind: "withdrawal", reference: { type: "withdrawal", id: "33333333-3333-4333-8333-333333333333" } });
+      expect(await getLedgerBalance(handle.db, userId, "silver")).toBe(0n);
 
       // Estorno do pagamento depois do saque já liquidado: o saldo vira negativo e nada é apagado.
       expect((await reverseLedgerEntry(handle.db, payout.id, { reason: "split cancelado depois do saque" })).ok).toBe(true);
-      expect(await getLedgerBalance(handle.db, userId)).toBe(-1_000_000n);
+      expect(await getLedgerBalance(handle.db, userId, "silver")).toBe(-1_000_000n);
     });
   });
 
   describe("extrato", () => {
     it("lista do mais novo ao mais antigo e pagina por cursor", async () => {
       const userId = await nextUser();
-      for (let i = 1; i <= 5; i++) await insertLedgerEntry(handle.db, { userId, amount: BigInt(i) * 100n, kind: "adjustment", memo: `m${i}` });
+      for (let i = 1; i <= 5; i++) await insertLedgerEntry(handle.db, { currency: "silver", userId, amount: BigInt(i) * 100n, kind: "adjustment", memo: `m${i}` });
 
-      const first = await listLedgerEntries(handle.db, userId, { limit: 2 });
+      const first = await listLedgerEntries(handle.db, userId, "silver", { limit: 2 });
       expect(first.entries.map((e) => e.memo)).toEqual(["m5", "m4"]);
       expect(first.nextCursor).not.toBeNull();
 
-      const second = await listLedgerEntries(handle.db, userId, { limit: 2, cursor: first.nextCursor });
+      const second = await listLedgerEntries(handle.db, userId, "silver", { limit: 2, cursor: first.nextCursor });
       expect(second.entries.map((e) => e.memo)).toEqual(["m3", "m2"]);
 
-      const last = await listLedgerEntries(handle.db, userId, { limit: 2, cursor: second.nextCursor });
+      const last = await listLedgerEntries(handle.db, userId, "silver", { limit: 2, cursor: second.nextCursor });
       expect(last.entries.map((e) => e.memo)).toEqual(["m1"]);
       expect(last.nextCursor).toBeNull();
 
       // limit fora da faixa é normalizado (1..200), não estoura.
-      expect((await listLedgerEntries(handle.db, userId, { limit: 0 })).entries).toHaveLength(1);
-      expect((await listLedgerEntries(handle.db, userId, { limit: 9_999 })).entries).toHaveLength(5);
-      expect((await listLedgerEntries(handle.db, userId)).entries).toHaveLength(5);
+      expect((await listLedgerEntries(handle.db, userId, "silver", { limit: 0 })).entries).toHaveLength(1);
+      expect((await listLedgerEntries(handle.db, userId, "silver", { limit: 9_999 })).entries).toHaveLength(5);
+      expect((await listLedgerEntries(handle.db, userId, "silver")).entries).toHaveLength(5);
     });
 
     it("lista lançamentos de uma origem, do mais antigo ao mais novo", async () => {
       const userId = await nextUser();
       const splitId = "44444444-4444-4444-8444-444444444444";
-      const payout = await insertLedgerEntry(handle.db, { userId, amount: 900n, kind: "split_payout", reference: { type: "loot_split", id: splitId } });
-      await insertLedgerEntry(handle.db, { userId, amount: -100n, kind: "split_fee", reference: { type: "loot_split", id: splitId } });
+      const payout = await insertLedgerEntry(handle.db, { currency: "silver", userId, amount: 900n, kind: "split_payout", reference: { type: "loot_split", id: splitId } });
+      await insertLedgerEntry(handle.db, { currency: "silver", userId, amount: -100n, kind: "split_fee", reference: { type: "loot_split", id: splitId } });
       await reverseLedgerEntry(handle.db, payout.id, { reason: "recalculado" });
 
       const rows = await listLedgerEntriesByReference(handle.db, "loot_split", splitId);

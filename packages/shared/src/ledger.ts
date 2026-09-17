@@ -1,5 +1,7 @@
+import { CURRENCIES, type Currency } from "./currency.js";
+
 /**
- * Ledger de prata (doc-002, TASK-026): tabela única append-only em bigint inteiro (Q20).
+ * Ledger (doc-002, TASK-026; duas moedas desde a TASK-056): tabela única append-only em bigint inteiro (Q20).
  * Correção nunca edita lançamento: cria um estorno (`reversal`) ligado ao original.
  */
 export const LEDGER_ENTRY_KINDS = ["split_payout", "split_fee", "withdrawal", "reversal", "adjustment"] as const;
@@ -30,6 +32,8 @@ export const LEDGER_ENTRY_KIND_LABELS: Record<LedgerEntryKind, string> = {
 export interface LedgerEntryDto {
   id: string;
   amount: string;
+  /** Moeda da linha (F6-1). Cada linha do extrato marca a sua: nada aqui vira um total misturado (F6-27). */
+  currency: Currency;
   kind: LedgerEntryKind;
   referenceType: LedgerReferenceType | null;
   referenceId: string | null;
@@ -39,6 +43,20 @@ export interface LedgerEntryDto {
   memo: string | null;
   createdAt: string;
 }
+
+/**
+ * Filtro de moeda do extrato: `"all"` é o default, porque a ordem cronológica das duas moedas juntas é
+ * o que conta a história (F6-27). Os saldos, esses, nunca vêm somados.
+ */
+export type LedgerCurrencyFilter = Currency | "all";
+
+export const LEDGER_CURRENCY_FILTERS = ["all", ...CURRENCIES] as const;
+
+export const isLedgerCurrencyFilter = (value: unknown): value is LedgerCurrencyFilter =>
+  typeof value === "string" && (LEDGER_CURRENCY_FILTERS as readonly string[]).includes(value);
+
+/** Os dois saldos como a API devolve: um por moeda, em string (Q20), **nunca somados** (F6-27). */
+export type LedgerBalancesDto = Record<Currency, string>;
 
 /** Cursor do extrato serializado para a query string: `<iso>|<uuid>`. */
 export const encodeLedgerCursor = (cursor: { createdAt: string; id: string }): string => `${cursor.createdAt}|${cursor.id}`;
@@ -57,9 +75,16 @@ export function decodeLedgerCursor(raw: string): { createdAt: Date; id: string }
 export const LEDGER_PAGE_MAX = 200;
 export const LEDGER_PAGE_DEFAULT = 50;
 
-/** `?limit=&cursor=` do extrato. Valor inválido é recusado em vez de silenciosamente ignorado. */
-export function parseLedgerPageQuery(query: Record<string, unknown>): { ok: true; limit?: number; cursor?: { createdAt: Date; id: string } } | { ok: false; error: string } {
+/** `?currency=&limit=&cursor=` do extrato. Valor inválido é recusado em vez de silenciosamente ignorado. */
+export function parseLedgerPageQuery(
+  query: Record<string, unknown>,
+): { ok: true; currency: LedgerCurrencyFilter; limit?: number; cursor?: { createdAt: Date; id: string } } | { ok: false; error: string } {
   const out: { limit?: number; cursor?: { createdAt: Date; id: string } } = {};
+  let currency: LedgerCurrencyFilter = "all";
+  if (query.currency !== undefined) {
+    if (!isLedgerCurrencyFilter(query.currency)) return { ok: false, error: `Moeda inválida: use ${LEDGER_CURRENCY_FILTERS.join(", ")}.` };
+    currency = query.currency;
+  }
   if (query.limit !== undefined) {
     const limit = Number(query.limit);
     if (!Number.isInteger(limit) || limit < 1 || limit > LEDGER_PAGE_MAX) return { ok: false, error: `O limite do extrato vai de 1 a ${LEDGER_PAGE_MAX}.` };
@@ -71,7 +96,7 @@ export function parseLedgerPageQuery(query: Record<string, unknown>): { ok: true
     if (!cursor) return { ok: false, error: "Cursor do extrato inválido." };
     out.cursor = cursor;
   }
-  return { ok: true, ...out };
+  return { ok: true, currency, ...out };
 }
 
 /** Quem assinou o lançamento. Null quando não houve gente: job, ou o namespace de manutenção (TASK-048). */

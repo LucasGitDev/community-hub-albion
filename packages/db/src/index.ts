@@ -136,11 +136,15 @@ export {
 } from "./event-signups-repo.js";
 export {
   getLedgerBalance,
+  getLedgerBalancesByCurrency,
   insertLedgerEntry,
   listLedgerEntries,
   listLedgerEntriesByReference,
   listLedgerEntriesWithAuthor,
   reverseLedgerEntry,
+  spendCurrency,
+  type CurrencyFilter,
+  type LedgerBalances,
   type LedgerEntry,
   type LedgerEntryInput,
   type LedgerEntryWithAuthor,
@@ -149,6 +153,8 @@ export {
   type LedgerPageQuery,
   type ReverseLedgerEntryOptions,
   type ReverseLedgerEntryResult,
+  type SpendInput,
+  type SpendResult,
 } from "./ledger-repo.js";
 export {
   approveWithdrawal,

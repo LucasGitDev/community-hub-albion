@@ -552,7 +552,7 @@ describe.skipIf(!baseUrl)("rascunho de loot split (TASK-027, Postgres real)", ()
       return { owner, a, b, event, split: created.split };
     };
 
-    const balances = async (...ids: string[]) => Promise.all(ids.map((id) => getLedgerBalance(handle.db, id)));
+    const balances = async (...ids: string[]) => Promise.all(ids.map((id) => getLedgerBalance(handle.db, id, "silver")));
 
     describe("edição do rascunho (AC#1)", () => {
       it("mudar só o total recalcula a prata de todo mundo sem mexer nos percentuais", async () => {
@@ -720,7 +720,7 @@ describe.skipIf(!baseUrl)("rascunho de loot split (TASK-027, Postgres real)", ()
         expect(second).toMatchObject({ ok: true, alreadyConfirmed: true });
         // Dois pagamentos e o lançamento da sobra do arredondamento para o dono: um conjunto só.
         expect(await listLedgerEntriesByReference(handle.db, "loot_split", split.id)).toHaveLength(3);
-        expect(await getLedgerBalance(handle.db, a.id)).toBe(666n);
+        expect(await getLedgerBalance(handle.db, a.id, "silver")).toBe(666n);
       });
 
       it("duas confirmações SIMULTÂNEAS, em conexões diferentes, lançam um único conjunto (AC#4)", async () => {

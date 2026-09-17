@@ -1,5 +1,5 @@
-import type { LedgerEntryKind, LedgerReferenceType } from "@albion-hub/shared";
-import { and, asc, desc, eq, lt, or, sql } from "drizzle-orm";
+import { CURRENCIES, type Currency, type LedgerEntryKind, type LedgerReferenceType } from "@albion-hub/shared";
+import { and, asc, desc, eq, inArray, lt, or, sql } from "drizzle-orm";
 import type { Database } from "./client.js";
 import type { EventTx } from "./events-repo.js";
 import { memberNick } from "./member-nick.js";
@@ -11,8 +11,12 @@ type LedgerWriter = Database | EventTx;
 /**
  * Ledger de prata (TASK-026). Regras que este módulo faz valer, junto com o banco:
  * - append-only: nada aqui faz UPDATE ou DELETE em `ledger_entries` (triggers rejeitam de qualquer jeito);
- * - prata é `bigint` inteiro (Q20): nenhum valor passa por `number`, nem o saldo;
+ * - valor é `bigint` inteiro (Q20): nenhum valor passa por `number`, nem o saldo;
  * - correção é estorno, no máximo um por lançamento (índice único parcial).
+ *
+ * Desde a TASK-056 a tabela guarda **duas moedas** (F6-1). O risco assumido lá é query que esqueça o
+ * filtro e some prata com Buffunfa, e é por isso que **saldo e extrato exigem a moeda na assinatura**:
+ * não existe leitura aqui que devolva um número sem alguém ter dito de que moeda ele é.
  */
 
 const UNIQUE_VIOLATION = "23505";
@@ -28,8 +32,10 @@ function pgCode(error: unknown): string | undefined {
 export interface LedgerEntry {
   id: string;
   userId: string;
-  /** Prata inteira: positivo credita, negativo debita. */
+  /** Valor inteiro: positivo credita, negativo debita. */
   amount: bigint;
+  /** Moeda do lançamento (F6-1). Saldo e extrato nunca cruzam moedas diferentes. */
+  currency: Currency;
   kind: LedgerEntryKind;
   referenceType: LedgerReferenceType | null;
   referenceId: string | null;
@@ -43,6 +49,7 @@ const columns = {
   id: ledgerEntries.id,
   userId: ledgerEntries.userId,
   amount: ledgerEntries.amount,
+  currency: ledgerEntries.currency,
   kind: ledgerEntries.kind,
   referenceType: ledgerEntries.referenceType,
   referenceId: ledgerEntries.referenceId,
@@ -54,8 +61,10 @@ const columns = {
 
 export interface LedgerEntryInput {
   userId: string;
-  /** Prata inteira, diferente de zero. */
+  /** Valor inteiro, diferente de zero. */
   amount: bigint;
+  /** Moeda: obrigatória, sem default. Lançamento sem moeda declarada não existe (F6-2). */
+  currency: Currency;
   /** `reversal` não entra aqui: estorno só nasce de `reverseLedgerEntry`. */
   kind: Exclude<LedgerEntryKind, "reversal">;
   reference?: { type: LedgerReferenceType; id: string } | null;
@@ -70,6 +79,7 @@ export async function insertLedgerEntry(db: LedgerWriter, input: LedgerEntryInpu
     .values({
       userId: input.userId,
       amount: input.amount,
+      currency: input.currency,
       kind: input.kind,
       referenceType: input.reference?.type ?? null,
       referenceId: input.reference?.id ?? null,
@@ -106,6 +116,8 @@ export async function reverseLedgerEntry(db: LedgerWriter, entryId: string, opti
       .values({
         userId: original.userId,
         amount: -original.amount,
+        // Estorno herda a moeda do original: corrigir prata com Buffunfa não seria correção.
+        currency: original.currency,
         kind: "reversal",
         referenceType: original.referenceType,
         referenceId: original.referenceId,
@@ -122,13 +134,45 @@ export async function reverseLedgerEntry(db: LedgerWriter, entryId: string, opti
 }
 
 /**
- * Saldo do usuário: soma feita **no banco** e devolvida como `bigint` (o driver lê int8 como BigInt),
- * nunca como number — acima de 2^53 o JS perderia prata (AC#3). Pode ser negativo (Q24).
+ * Saldo do usuário **numa moeda**: soma feita no banco e devolvida como `bigint` (o driver lê int8 como
+ * BigInt), nunca como number — acima de 2^53 o JS perderia prata (AC#3). Pode ser negativo (Q24).
+ *
+ * A moeda é parâmetro obrigatório de propósito (F6-1): não existe assinatura aqui que devolva "o saldo"
+ * sem dizer de quê, então nenhuma chamada consegue somar prata com Buffunfa por esquecimento.
  */
-export async function getLedgerBalance(db: Database, userId: string): Promise<bigint> {
-  const rows = await db.execute<{ balance: bigint }>(sql`select coalesce(sum(${ledgerEntries.amount}), 0)::int8 as balance from ${ledgerEntries} where ${ledgerEntries.userId} = ${userId}`);
+export async function getLedgerBalance(db: Database | EventTx, userId: string, currency: Currency): Promise<bigint> {
+  const rows = await db.execute<{ balance: bigint }>(
+    sql`select coalesce(sum(${ledgerEntries.amount}), 0)::int8 as balance from ${ledgerEntries} where ${ledgerEntries.userId} = ${userId} and ${ledgerEntries.currency} = ${currency}`,
+  );
   return rows[0]?.balance ?? 0n;
 }
+
+/** Um saldo por moeda, **nunca somados** (F6-27): o cabeçalho do extrato e o chip do header mostram os dois lado a lado. */
+export type LedgerBalances = Record<Currency, bigint>;
+
+/**
+ * Os saldos de todas as moedas numa consulta só, agrupados pelo banco. Existe para a tela que mostra as
+ * duas moedas juntas não fazer uma ida por moeda — e devolve um número por moeda, nunca um total.
+ */
+export async function getLedgerBalancesByCurrency(db: Database | EventTx, userId: string): Promise<LedgerBalances> {
+  const out = Object.fromEntries(CURRENCIES.map((c) => [c, 0n])) as LedgerBalances;
+  const rows = await db
+    .select({ currency: ledgerEntries.currency, total: sql<bigint>`coalesce(sum(${ledgerEntries.amount}), 0)::int8` })
+    .from(ledgerEntries)
+    .where(eq(ledgerEntries.userId, userId))
+    .groupBy(ledgerEntries.currency);
+  for (const row of rows) out[row.currency] = BigInt(row.total);
+  return out;
+}
+
+/**
+ * Filtro de moeda do extrato: uma moeda, ou `"all"` para a lista cronológica com as duas (F6-27). É a
+ * **única** leitura que aceita mais de uma moeda, e mesmo assim exige a escolha explícita — cada linha
+ * carrega a sua moeda, então nada aqui vira um total misturado.
+ */
+export type CurrencyFilter = Currency | "all";
+
+const currencyWhere = (filter: CurrencyFilter) => (filter === "all" ? inArray(ledgerEntries.currency, [...CURRENCIES]) : eq(ledgerEntries.currency, filter));
 
 export interface LedgerPageQuery {
   /** Máximo de lançamentos (1..200, default 50). */
@@ -146,8 +190,8 @@ export interface LedgerPage {
 const MAX_PAGE = 200;
 const DEFAULT_PAGE = 50;
 
-/** Extrato do usuário, do mais novo para o mais antigo, paginado por keyset (`created_at`, `id`). */
-export async function listLedgerEntries(db: Database, userId: string, query: LedgerPageQuery = {}): Promise<LedgerPage> {
+/** Extrato do usuário numa moeda (ou `"all"`), do mais novo para o mais antigo, paginado por keyset (`created_at`, `id`). */
+export async function listLedgerEntries(db: Database, userId: string, currency: CurrencyFilter, query: LedgerPageQuery = {}): Promise<LedgerPage> {
   const limit = Math.min(Math.max(query.limit ?? DEFAULT_PAGE, 1), MAX_PAGE);
   const cursor = query.cursor;
   const before = cursor
@@ -156,7 +200,7 @@ export async function listLedgerEntries(db: Database, userId: string, query: Led
   const rows = await db
     .select(columns)
     .from(ledgerEntries)
-    .where(before ? and(eq(ledgerEntries.userId, userId), before) : eq(ledgerEntries.userId, userId))
+    .where(and(eq(ledgerEntries.userId, userId), currencyWhere(currency), before))
     .orderBy(desc(ledgerEntries.createdAt), desc(ledgerEntries.id))
     .limit(limit + 1);
   const entries = rows.slice(0, limit);
@@ -193,7 +237,7 @@ export interface LedgerPageWithAuthor {
  * `created_by` é nulo de propósito em lançamento sem gente por trás (ajuste do namespace de manutenção,
  * TASK-048): a tela distingue isso pela origem `manual/maintenance`, não inventando um nome aqui.
  */
-export async function listLedgerEntriesWithAuthor(db: Database, userId: string, query: LedgerPageQuery = {}): Promise<LedgerPageWithAuthor> {
+export async function listLedgerEntriesWithAuthor(db: Database, userId: string, currency: CurrencyFilter, query: LedgerPageQuery = {}): Promise<LedgerPageWithAuthor> {
   const limit = Math.min(Math.max(query.limit ?? DEFAULT_PAGE, 1), MAX_PAGE);
   const cursor = query.cursor;
   const before = cursor
@@ -203,7 +247,7 @@ export async function listLedgerEntriesWithAuthor(db: Database, userId: string, 
     .select({ ...columns, authorId: users.id, authorName: memberNick(users) })
     .from(ledgerEntries)
     .leftJoin(users, eq(users.id, ledgerEntries.createdBy))
-    .where(before ? and(eq(ledgerEntries.userId, userId), before) : eq(ledgerEntries.userId, userId))
+    .where(and(eq(ledgerEntries.userId, userId), currencyWhere(currency), before))
     .orderBy(desc(ledgerEntries.createdAt), desc(ledgerEntries.id))
     .limit(limit + 1);
   const entries = rows.slice(0, limit).map(({ authorId, authorName, ...entry }) => ({
@@ -212,4 +256,55 @@ export async function listLedgerEntriesWithAuthor(db: Database, userId: string, 
   }));
   const last = entries.at(-1);
   return { entries, nextCursor: rows.length > limit && last ? { createdAt: last.createdAt, id: last.id } : null };
+}
+
+export interface SpendInput {
+  userId: string;
+  /** Moeda gasta. Prata continua passando pela fila de saque; esta porta é a do gasto direto (loja, taxa). */
+  currency: Currency;
+  /** Valor **positivo** do gasto. O débito no ledger é o negativo dele. */
+  amount: bigint;
+  kind: Exclude<LedgerEntryKind, "reversal">;
+  reference?: { type: LedgerReferenceType; id: string } | null;
+  createdBy?: string | null;
+  memo?: string | null;
+}
+
+export type SpendResult =
+  | { ok: true; entry: LedgerEntry; balance: bigint }
+  | { ok: false; reason: "unknown_user" }
+  | { ok: false; reason: "invalid_amount" }
+  /** Saldo insuficiente: `balance` é o que havia **dentro** da transação, para a mensagem dizer o número certo. */
+  | { ok: false; reason: "insufficient_funds"; balance: bigint };
+
+/**
+ * Gasto que **não pode deixar o saldo negativo** (F6-7): compra na loja e taxa de entrada recusam em vez
+ * de deixar o membro devendo por conta própria.
+ *
+ * O desenho é o mesmo do saque (TASK-030) e pelo mesmo motivo: a regra a serializar é sobre o saldo do
+ * membro, não sobre o gasto. A linha do usuário é travada com `for update` e o saldo é **relido dentro da
+ * transação** — dois gastos simultâneos de 30 com 50 de saldo terminam em um aprovado e um recusado, e
+ * nunca nos dois passando.
+ *
+ * A exceção registrada é o ajuste/estorno da staff (F6-6/F6-7): ele **não** passa por aqui, vai direto no
+ * `insertLedgerEntry`, porque quem ganhou por engano e já gastou precisa poder ficar devendo.
+ */
+export async function spendCurrency(db: Database, input: SpendInput): Promise<SpendResult> {
+  if (input.amount <= 0n) return { ok: false, reason: "invalid_amount" };
+  return db.transaction(async (tx) => {
+    const [owner] = await tx.select({ id: users.id }).from(users).where(eq(users.id, input.userId)).for("update");
+    if (!owner) return { ok: false as const, reason: "unknown_user" as const };
+    const balance = await getLedgerBalance(tx, input.userId, input.currency);
+    if (balance < input.amount) return { ok: false as const, reason: "insufficient_funds" as const, balance };
+    const entry = await insertLedgerEntry(tx, {
+      userId: input.userId,
+      currency: input.currency,
+      amount: -input.amount,
+      kind: input.kind,
+      reference: input.reference,
+      createdBy: input.createdBy,
+      memo: input.memo,
+    });
+    return { ok: true as const, entry, balance: balance - input.amount };
+  });
 }

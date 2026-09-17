@@ -36,7 +36,7 @@ describe.skipIf(!baseUrl)("fluxo de saque (TASK-030, Postgres real)", () => {
   /** Membro com saldo de prata já creditado no ledger. */
   const memberWith = async (silver: bigint) => {
     const userId = await nextUser();
-    if (silver !== 0n) await insertLedgerEntry(handle.db, { userId, amount: silver, kind: "split_payout", memo: "saldo inicial" });
+    if (silver !== 0n) await insertLedgerEntry(handle.db, { currency: "silver", userId, amount: silver, kind: "split_payout", memo: "saldo inicial" });
     return userId;
   };
 
@@ -96,8 +96,8 @@ describe.skipIf(!baseUrl)("fluxo de saque (TASK-030, Postgres real)", () => {
 
     it("saldo negativo bloqueia pedido novo, mesmo pequeno (Q24)", async () => {
       const userId = await memberWith(1_000n);
-      await insertLedgerEntry(handle.db, { userId, amount: -5_000n, kind: "adjustment", memo: "acerto" });
-      expect(await getLedgerBalance(handle.db, userId)).toBe(-4_000n);
+      await insertLedgerEntry(handle.db, { currency: "silver", userId, amount: -5_000n, kind: "adjustment", memo: "acerto" });
+      expect(await getLedgerBalance(handle.db, userId, "silver")).toBe(-4_000n);
       const result = await requestWithdrawal(handle.db, { userId, amount: 1n });
       expect(result).toMatchObject({ ok: false, reason: "negative_balance", balance: -4_000n });
     });
@@ -116,7 +116,7 @@ describe.skipIf(!baseUrl)("fluxo de saque (TASK-030, Postgres real)", () => {
       expect(after.balance).toBe(1_000_000n);
       expect(after.reserved).toBe(400_000n);
       expect(after.available).toBe(600_000n);
-      expect(await getLedgerBalance(handle.db, userId)).toBe(1_000_000n);
+      expect(await getLedgerBalance(handle.db, userId, "silver")).toBe(1_000_000n);
       if (result.ok) expect(await listLedgerEntriesByReference(handle.db, "withdrawal", result.withdrawal.id)).toEqual([]);
     });
 
@@ -188,7 +188,7 @@ describe.skipIf(!baseUrl)("fluxo de saque (TASK-030, Postgres real)", () => {
       const again = await approveWithdrawal(handle.db, req.withdrawal.id, { actorUserId: staffId });
       expect(again).toMatchObject({ ok: false, reason: "invalid", from: "approved" });
       expect(await listLedgerEntriesByReference(handle.db, "withdrawal", req.withdrawal.id)).toHaveLength(1);
-      expect(await getLedgerBalance(handle.db, userId)).toBe(900_000n);
+      expect(await getLedgerBalance(handle.db, userId, "silver")).toBe(900_000n);
     });
 
     it("saque já recusado não pode ser aprovado depois", async () => {
@@ -197,7 +197,7 @@ describe.skipIf(!baseUrl)("fluxo de saque (TASK-030, Postgres real)", () => {
       if (!req.ok) throw new Error("pedido devia passar");
       await rejectWithdrawal(handle.db, req.withdrawal.id, { actorUserId: staffId, note: "não" });
       expect(await approveWithdrawal(handle.db, req.withdrawal.id, { actorUserId: staffId })).toMatchObject({ ok: false, reason: "invalid", from: "rejected" });
-      expect(await getLedgerBalance(handle.db, userId)).toBe(50_000n);
+      expect(await getLedgerBalance(handle.db, userId, "silver")).toBe(50_000n);
     });
   });
 
@@ -223,7 +223,7 @@ describe.skipIf(!baseUrl)("fluxo de saque (TASK-030, Postgres real)", () => {
         expect(settled.withdrawal.settledAt).not.toBeNull();
       }
       expect(await listLedgerEntriesByReference(handle.db, "withdrawal", id)).toEqual(entriesBefore);
-      expect(await getLedgerBalance(handle.db, userId)).toBe(0n);
+      expect(await getLedgerBalance(handle.db, userId, "silver")).toBe(0n);
     });
 
     it("sem nota não liquida", async () => {

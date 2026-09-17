@@ -1,4 +1,4 @@
-import { EVENT_FEE_TYPES, EVENT_SIGNUP_STATUSES, EVENT_STATUSES, LEDGER_ENTRY_KINDS, LEDGER_REFERENCE_TYPES, LOOT_SPLIT_STATUSES, NICK_REQUEST_STATUSES, ROLES, USER_NOTE_KINDS, WITHDRAWAL_STATUSES } from "@albion-hub/shared";
+import { CURRENCIES, EVENT_FEE_TYPES, EVENT_SIGNUP_STATUSES, EVENT_STATUSES, LEDGER_ENTRY_KINDS, LEDGER_REFERENCE_TYPES, LOOT_SPLIT_STATUSES, NICK_REQUEST_STATUSES, ROLES, USER_NOTE_KINDS, WITHDRAWAL_STATUSES } from "@albion-hub/shared";
 import { sql } from "drizzle-orm";
 import { bigint, boolean, check, index, integer, pgEnum, pgTable, primaryKey, text, timestamp, uniqueIndex, uuid, type AnyPgColumn } from "drizzle-orm/pg-core";
 
@@ -395,6 +395,9 @@ export const eventSignups = pgTable(
 export const ledgerEntryKindEnum = pgEnum("ledger_entry_kind", LEDGER_ENTRY_KINDS);
 export const ledgerReferenceTypeEnum = pgEnum("ledger_reference_type", LEDGER_REFERENCE_TYPES);
 
+/** Moeda do lançamento (F6-1). Fonte única: `CURRENCIES` de @albion-hub/shared. */
+export const ledgerCurrencyEnum = pgEnum("ledger_currency", CURRENCIES);
+
 /**
  * Ledger único de prata (doc-002, TASK-026): **append-only**. `amount` é prata inteira em bigint (Q20),
  * positivo credita e negativo debita; saldo é `sum(amount)` no banco e pode ficar negativo (Q24).
@@ -416,6 +419,12 @@ export const ledgerEntries = pgTable(
       .notNull()
       .references(() => users.id, { onDelete: "restrict" }),
     amount: bigint("amount", { mode: "bigint" }).notNull(),
+    /**
+     * Moeda do lançamento (F6-1). Nasceu `default 'silver'` para o Postgres preencher as linhas antigas
+     * sem UPDATE — as triggers append-only abaixo recusam UPDATE, então backfill era impossível — e o
+     * default caiu na **mesma** migration (F6-2): insert sem moeda volta a ser erro.
+     */
+    currency: ledgerCurrencyEnum("currency").notNull(),
     kind: ledgerEntryKindEnum("kind").notNull(),
     referenceType: ledgerReferenceTypeEnum("reference_type"),
     /** Id da origem (uuid do evento/split/saque) como texto: nem toda origem é uuid no futuro. */
@@ -433,8 +442,9 @@ export const ledgerEntries = pgTable(
   (t) => [
     // Um lançamento só pode ser estornado uma vez (AC#2): a corrida é resolvida pelo banco.
     uniqueIndex("ledger_entries_reversal_of_unique").on(t.reversalOf).where(sql`${t.reversalOf} is not null`),
-    // Extrato e saldo por usuário: ordem estável por (created_at, id).
-    index("ledger_entries_user_idx").on(t.userId, t.createdAt, t.id),
+    // Extrato e saldo por usuário **e moeda**: `currency` antes de `created_at` (F6-3), senão ler
+    // uma moeda varreria os lançamentos da outra. Ordem estável por (created_at, id).
+    index("ledger_entries_user_currency_idx").on(t.userId, t.currency, t.createdAt, t.id),
     index("ledger_entries_reference_idx").on(t.referenceType, t.referenceId),
     check("ledger_entries_amount_not_zero", sql`${t.amount} <> 0`),
     // Estorno e `reversal_of` andam juntos: nenhum dos dois existe sozinho.

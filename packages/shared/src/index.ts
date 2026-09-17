@@ -1,6 +1,6 @@
 export * from "./auth-errors.js";
 export * from "./roles.js";
-export * from "./silver.js";
+export * from "./currency.js";
 export * from "./permissions.js";
 export * from "./nick.js";
 export * from "./albion.js";
