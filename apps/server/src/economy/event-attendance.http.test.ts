@@ -78,7 +78,11 @@ describe.skipIf(!baseUrl)("Buffunfa por presença HTTP (TASK-057)", () => {
       name: "Buffunfa Roads",
       minPartySize: 1,
       maxPartySize: null,
-      roles: [{ roleId: roles.find((r) => r.name === "Tank")!.id, slots: 5, buffunfaMin: 10, buffunfaMax: 40 }],
+      roles: [
+        { roleId: roles.find((r) => r.name === "Tank")!.id, slots: 5, buffunfaMin: 10, buffunfaMax: 40 },
+        // Faixa 0 a 0: o template antigo da F6-51, que antes não tinha como pagar nada (AC#6).
+        { roleId: roles.find((r) => r.name === "Healer")!.id, slots: 5, buffunfaMin: 0, buffunfaMax: 0 },
+      ],
     });
     expect(template.status).toBe(201);
     templateId = template.body.id;
@@ -131,6 +135,8 @@ describe.skipIf(!baseUrl)("Buffunfa por presença HTTP (TASK-057)", () => {
   }
 
   const attendance = async (cookie: string, id: string) => http().get(`/api/events/${id}/attendance`).set("Cookie", cookie);
+  /** Relê o evento pela API: é onde o valor vigente por role aparece para a tela. */
+  const eventOf = async (id: string): Promise<EventDto> => (await http().get(`/api/events/${id}`).set("Cookie", caller)).body as EventDto;
 
   describe("autorização: esta rota cria moeda", () => {
     it("sem sessão 401, de outra origem 403 (CSRF)", async () => {
@@ -157,26 +163,57 @@ describe.skipIf(!baseUrl)("Buffunfa por presença HTTP (TASK-057)", () => {
     });
   });
 
-  describe("faixa e valor por role (AC#1, AC#2)", () => {
-    it("o evento nasce com a faixa do template e o valor no mínimo", async () => {
+  describe("valor de Buffunfa do evento (AC#1 a AC#4, AC#6)", () => {
+    it("o evento nasce com a faixa do template e o valor no mínimo (AC#4)", async () => {
       const event = await finishedEvent();
-      expect(event.roles[0]).toMatchObject({ buffunfaMin: "10", buffunfaMax: "40", buffunfaValue: "10" });
+      expect(event.roles[0]).toMatchObject({ name: "Tank", buffunfaMin: "10", buffunfaMax: "40", buffunfaValue: "10" });
+      expect(event.roles[1]).toMatchObject({ name: "Healer", buffunfaMin: "0", buffunfaMax: "0", buffunfaValue: "0" });
     });
 
-    it("aceita valor dentro da faixa e recusa fora dela com a frase da faixa", async () => {
+    it("aceita qualquer inteiro até o teto do sistema e recusa acima dele com a frase do teto (AC#3)", async () => {
       const event = await finishedEvent();
       const slotId = event.roles[0]!.id;
-      const ok = await send("patch", `/api/events/${event.id}/attendance/roles/${slotId}`, caller, { value: 40 });
-      expect(ok.status).toBe(200);
-      expect((ok.body as EventAttendanceDto).lines[0]!.roleValue).toBe("40");
+      const patch = (value: unknown) => send("patch", `/api/events/${event.id}/attendance/roles/${slotId}`, caller, { value });
+      const valueOf = async (name: string) => (await eventOf(event.id)).roles.find((r) => r.name === name)!.buffunfaValue;
 
-      const above = await send("patch", `/api/events/${event.id}/attendance/roles/${slotId}`, caller, { value: 41 });
-      expect(above.status).toBe(409);
-      expect(above.body.message).toContain("entre 10 e 40");
-      expect((await send("patch", `/api/events/${event.id}/attendance/roles/${slotId}`, caller, { value: 9 })).status).toBe(409);
-      // Valor negativo e valor não inteiro são erro de pedido, não de regra.
-      expect((await send("patch", `/api/events/${event.id}/attendance/roles/${slotId}`, caller, { value: -1 })).status).toBe(400);
-      expect((await send("patch", `/api/events/${event.id}/attendance/roles/${slotId}`, caller, { value: "2,5" })).status).toBe(400);
+      expect((await patch(40)).status).toBe(200);
+      // Acima do máximo do template e abaixo do mínimo dele: os dois passam agora (revisão da F6-8).
+      expect((await patch(900)).status).toBe(200);
+      expect(await valueOf("Tank")).toBe("900");
+      expect((await patch(9)).status).toBe(200);
+      expect((await patch(0)).status).toBe(200);
+
+      // O teto do sistema recusa, e a recusa explica de quem é o teto.
+      const above = await patch(10_001);
+      expect(above.status).toBe(400);
+      expect(above.body.message).toContain("10000");
+      expect(await valueOf("Tank")).toBe("0");
+      // Valor negativo e valor não inteiro continuam erro de pedido, não de regra.
+      expect((await patch(-1)).status).toBe(400);
+      expect((await patch("2,5")).status).toBe(400);
+    });
+
+    it("o lote põe todas as roles no mesmo valor e o individual vale por cima (AC#1, AC#2)", async () => {
+      const event = await finishedEvent();
+      const valuesOf = async () => Object.fromEntries((await eventOf(event.id)).roles.map((r) => [r.name, r.buffunfaValue]));
+      expect(await valuesOf()).toEqual({ Tank: "10", Healer: "0" });
+
+      const lote = await send("patch", `/api/events/${event.id}/attendance/roles`, caller, { value: 55 });
+      expect(lote.status).toBe(200);
+      expect(await valuesOf()).toEqual({ Tank: "55", Healer: "55" });
+
+      expect((await send("patch", `/api/events/${event.id}/attendance/roles/${event.roles[0]!.id}`, caller, { value: 80 })).status).toBe(200);
+      expect(await valuesOf()).toEqual({ Tank: "80", Healer: "55" });
+    });
+
+    it("o lote é a mesma porta do individual: sem sessão 401, de outra origem 403, membro comum 403 (AC#1)", async () => {
+      const event = await finishedEvent();
+      const path = `/api/events/${event.id}/attendance/roles`;
+      expect((await send("patch", path, null, { value: 5 })).status).toBe(401);
+      expect((await send("patch", path, caller, { value: 5 }, "http://evil.example")).status).toBe(403);
+      expect((await send("patch", path, member, { value: 5 })).status).toBe(403);
+      expect((await send("patch", path, outroCaller, { value: 5 })).status).toBe(403);
+      expect((await send("patch", `/api/events/${MISSING}/attendance/roles`, caller, { value: 5 })).status).toBe(404);
     });
 
     it("role de outro evento não é alcançável pela rota de um evento que o caller manda", async () => {
@@ -211,6 +248,10 @@ describe.skipIf(!baseUrl)("Buffunfa por presença HTTP (TASK-057)", () => {
       const late = await send("patch", `/api/events/${event.id}/attendance/roles/${event.roles[0]!.id}`, caller, { value: 10 });
       expect(late.status).toBe(409);
       expect(late.body.message).toContain("já foi paga");
+      // O lote congela junto: depois de pago não existe porta de ajuste nenhuma (AC#5).
+      const loteTarde = await send("patch", `/api/events/${event.id}/attendance/roles`, caller, { value: 10 });
+      expect(loteTarde.status).toBe(409);
+      expect(loteTarde.body.message).toContain("já foi paga");
     });
 
     it("presença abaixo de 90% não recebe nada, e a linha diz o motivo", async () => {
@@ -234,6 +275,28 @@ describe.skipIf(!baseUrl)("Buffunfa por presença HTTP (TASK-057)", () => {
       expect(refused.status).toBe(409);
       expect(refused.body.message).toContain("sem presença medida");
       expect(await getLedgerBalance(handle.db, membroId, "buffunfa")).toBe(before);
+    });
+  });
+
+  /**
+   * Fica por último de propósito: este teste **credita** o mesmo membro dos outros, e o extrato
+   * deles é conferido em valor absoluto.
+   */
+  describe("template antigo com faixa zerada (AC#6)", () => {
+    it("evento de template com faixa 0 a 0 paga Buffunfa depois do lote (AC#6)", async () => {
+      const event = await finishedEvent();
+      const before = await getLedgerBalance(handle.db, membroId, "buffunfa");
+      // O membro está inscrito na Tank; o que importa é que o valor venha do lote, não da faixa.
+      expect((await send("patch", `/api/events/${event.id}/attendance/roles`, caller, { value: 0 })).status).toBe(200);
+      const zerado = (await attendance(caller, event.id)).body as EventAttendanceDto;
+      expect(zerado).toMatchObject({ total: "0" });
+      expect(zerado.lines[0]!.skip).toBe("zero_value");
+
+      expect((await send("patch", `/api/events/${event.id}/attendance/roles`, caller, { value: 70 })).status).toBe(200);
+      const paid = await send("post", `/api/events/${event.id}/attendance/payout`, caller);
+      expect(paid.status).toBe(201);
+      expect(paid.body as EventAttendanceDto).toMatchObject({ total: "70" });
+      expect(await getLedgerBalance(handle.db, membroId, "buffunfa")).toBe(before + 70n);
     });
   });
 });
