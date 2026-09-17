@@ -1,11 +1,11 @@
 ---
 id: TASK-065
 title: Import de YAML sobrescreve a descrição global da role
-status: In Progress
+status: Done
 assignee:
   - '@claude'
 created_date: '2026-09-17 17:37'
-updated_date: '2026-09-17 17:51'
+updated_date: '2026-09-17 17:53'
 labels: []
 milestone: m-12
 dependencies: []

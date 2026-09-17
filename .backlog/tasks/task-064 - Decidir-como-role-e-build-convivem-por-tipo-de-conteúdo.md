@@ -4,7 +4,7 @@ title: Decidir como role e build convivem por tipo de conteúdo
 status: To Do
 assignee: []
 created_date: '2026-09-17 17:06'
-updated_date: '2026-09-17 17:37'
+updated_date: '2026-09-17 17:53'
 labels:
   - congelada
   - eventos
@@ -78,4 +78,6 @@ Recomendação: **role continua identidade global** (preserva o ranking da F10, 
 Descartadas: catálogo por conteúdo (`content_type_id`) destrói o agrupamento por role antes de a F10 nascer; entidade `role_builds` com N builds e escolha na inscrição é a mesma base mais uma camada, e cobra um segundo passo no botão do Discord por algo que ainda não existe — fica registrada como evolução aditiva.
 
 Sete perguntas abertas para o usuário no §5 do doc-010 (P1 a P7), incluindo se a faixa de Buffunfa da F6-8 é por role ou por build, o que decidiria se a TASK-057 passa a depender desta decisão.
+
+Mais um sintoma registrado na TASK-065: `event-templates-repo.ts:99-110` entrega no `EventTemplateRoleDto` a descrição **do catálogo global**, apresentada na tela como se fosse do template. A correção da 065 tornou isso mais honesto (o texto realmente é global agora), mas a leitura continua ambígua enquanto a descrição por par não existir. É mais um argumento para a Opção B do doc-010.
 <!-- SECTION:NOTES:END -->
