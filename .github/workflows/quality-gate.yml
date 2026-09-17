@@ -49,12 +49,14 @@ jobs:
       - run: node scripts/quality-gate.mjs run ${{ matrix.check }}
       # path único: artifact extrai plano em .quality/ no job summary
       - if: always()
+        continue-on-error: true
         uses: actions/upload-artifact@v4
         with:
           name: quality-${{ matrix.check }}
           path: .quality/${{ matrix.check }}.json
           if-no-files-found: ignore
       - if: always() && matrix.check == 'coverage'
+        continue-on-error: true
         uses: actions/upload-artifact@v4
         with:
           name: coverage-report
@@ -86,19 +88,24 @@ jobs:
       - run: pnpm exec playwright install --with-deps chromium
       - run: node scripts/quality-gate.mjs run e2e
       - if: always()
+        continue-on-error: true
         uses: actions/upload-artifact@v4
         with:
           name: quality-e2e
           path: .quality/e2e.json
           if-no-files-found: ignore
-      - if: always()
+      # Evidência visual só interessa quando algo quebrou: subir screenshot de rodada verde encheu a cota
+      # de artefatos da conta e o 403 do upload derrubava o job (e, com ele, o deploy). `continue-on-error`
+      # garante que problema de artefato nunca mais reprove um gate que passou.
+      - if: failure()
+        continue-on-error: true
         uses: actions/upload-artifact@v4
         with:
           name: playwright-report
           path: |
             playwright-report
             test-results
-          retention-days: 14
+          retention-days: 7
           if-no-files-found: ignore
 
   image:
@@ -108,6 +115,7 @@ jobs:
       - uses: ./.github/actions/setup
       - run: node scripts/quality-gate.mjs run image
       - if: always()
+        continue-on-error: true
         uses: actions/upload-artifact@v4
         with:
           name: quality-image
