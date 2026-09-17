@@ -2,6 +2,7 @@ import type { ReactNode } from "react";
 import { Check, Hand, Hourglass, PackageCheck, RotateCcw, X } from "lucide-react";
 import { formatAmount, formatAmountShort, SHOP_ORDER_STATUS_LABELS, type Currency, type ShopOrderStatus, type WithdrawalStatus } from "@albion-hub/shared";
 import { cn } from "@/lib/utils";
+import buffunfaIcon from "@/assets/buffunfa.png";
 
 /**
  * **O** renderizador de valor do sistema, agora por moeda (F6-4). A moeda é obrigatória: um valor sem
@@ -32,10 +33,38 @@ export function Amount({
   const abs = negative ? -value : value;
   const sign = signed ? (negative ? "−" : "+") : negative ? "−" : "";
   return (
-    <span className={cn("num whitespace-nowrap", currency === "buffunfa" && "text-brand", className)}>
+    <span className={cn("num inline-flex items-baseline whitespace-nowrap", currency === "buffunfa" && "text-brand", className)}>
+      {currency === "buffunfa" && <BuffunfaIcon />}
       {sign}
       {short ? formatAmountShort(abs, currency) : formatAmount(abs, currency)}
     </span>
+  );
+}
+
+/**
+ * A moeda da Toca da Turma como ícone inline (doc-009: "no painel, o PNG como ícone inline junto do
+ * número"). Mora aqui, dentro do `<Amount>`, e em lugar nenhum mais: espalhar a `<img>` pelas telas
+ * faria a Buffunfa aparecer de dois jeitos, que é exatamente o que o formatador compartilhado evita.
+ *
+ * `aria-hidden` de propósito: quem lê com leitor de tela já ouve o `BUF` do texto, e o ícone repetiria
+ * a moeda em toda linha do extrato. O texto também é o que garante que a distinção entre prata e
+ * Buffunfa **nunca** dependa da cor nem da imagem ter carregado.
+ *
+ * `1em` amarra o ícone ao tamanho da fonte, então o mesmo componente serve do extrato (14px) ao
+ * número-chave da carteira (30px) sem tamanho mágico por tela. O PNG versionado é de 512px e pesa
+ * 318 KB; o que entra no bundle é a redução para 64px (@2x do maior uso).
+ */
+function BuffunfaIcon() {
+  return (
+    <img
+      src={buffunfaIcon}
+      alt=""
+      aria-hidden
+      draggable={false}
+      width={64}
+      height={64}
+      className="mr-[0.3em] size-[1em] shrink-0 translate-y-[0.1em] select-none"
+    />
   );
 }
 

@@ -142,7 +142,9 @@ function ItemCard({
         </div>
         <div className="flex shrink-0 flex-col items-end gap-1">
           {/* Nunca abrevia: `340 BUF`, não `0,3K` (F6-5). */}
-          <Amount value={item.price} currency={SHOP_CURRENCY} className={cn("text-xl font-semibold", soldOut && "text-muted-foreground")} />
+          {/* Esgotado recua o card inteiro (F6-18), e o ícone da moeda recua junto: um card cinza com uma
+              moeda dourada acesa no canto chamaria atenção justamente para o que não dá pra comprar. */}
+          <Amount value={item.price} currency={SHOP_CURRENCY} className={cn("text-xl font-semibold", soldOut && "text-muted-foreground [&_img]:opacity-45 [&_img]:grayscale")} />
           <StockHint item={item} />
         </div>
       </div>
