@@ -3,7 +3,7 @@ id: doc-005
 title: Decisões v1
 type: specification
 created_date: '2026-09-15 03:22'
-updated_date: '2026-09-17 18:54'
+updated_date: '2026-09-17 19:02'
 ---
 Resultado do grill (R1–R3, 2026-09-15). Referência pra specs e tasks.
 
@@ -189,3 +189,17 @@ ping comprado com Buffunfa (vai com a F7), automação de cargo do Discord.
 | F6-46 | Teto de `int8` na validação do valor (limite **físico**, não de política — o "sem teto" da F6-12 continua valendo). Sem ele, valor acima de 2^63-1 virava 500 do Postgres. |
 
 **Bug encontrado e corrigido no caminho:** o PATCH de template não carregava `defaultEntryFee` na mesclagem, então **editar o nome do template zerava a taxa em silêncio**. O caller só descobriria na hora em que ninguém pagou para entrar. Os e2e de template pegaram; corrigido com teste de regressão. O mesmo padrão valeu para a faixa de Buffunfa da TASK-057, que é obrigatória e faria o PATCH recusar qualquer edição.
+
+### Decisões tomadas durante a TASK-057 (ganho por presença)
+| # | Decisão |
+|---|---|
+| F6-47 | O valor vigente mora na **vaga do evento**, não no template: a faixa é **snapshot**, como as vagas já eram. Mexer no template depois não mexe em evento já criado. |
+| F6-48 | O valor **nasce no mínimo** da faixa. Subir é decisão do caller, e é o gesto que preenche vaga escassa (F6-8) — nascer no máximo tiraria dele o instrumento. |
+| F6-49 | O pagamento da Buffunfa é **passo próprio** do acerto, não efeito do `finish` nem da confirmação do split: o split tem N levas, a Buffunfa é paga **uma** vez. Depois de paga, o valor por role congela (409 `already_paid`). |
+| F6-50 | Recebe só quem tinha **inscrição ativa com role**. Presente sem inscrição aparece na lista com o motivo, e não recebe — presença sem vaga não é participação. |
+| F6-51 | No **YAML** a faixa é opcional com default 0, enquanto na API e na UI é obrigatória. É o que mantém importável um template exportado antes da F6. **0 a 0 é role que não paga, nunca faixa aberta** — a obrigatoriedade da F6-8 continua valendo onde alguém decide. |
+| F6-52 | Teto de schema de 10.000 BUF por role (`BUFFUNFA_ROLE_MAX`). |
+
+**Ordem de merge, para o histórico:** a 058 (taxa) entrou antes da 057 (ganho) e ficou com o slot `0020`; a 057 foi rebaseada e regerada como `0021`, o que também trocou um `DROP TYPE`/`CREATE TYPE` do enum de lançamentos por `ALTER TYPE ... ADD VALUE` — mais seguro, e sem tocar nos lançamentos existentes.
+
+**Armadilha que custou tempo, registrada para não repetir:** `pnpm db:generate` lê o **compilado** de `packages/shared`, não o fonte. Com o `dist/` velho depois de um rebase, a migration saiu recriando o enum **sem** o `entry_fee` que a 058 tinha acabado de adicionar — teria apagado o tipo de lançamento da taxa de entrada em produção. Rodar `turbo run build --filter=@albion-hub/shared` antes de gerar migration depois de qualquer rebase que toque `packages/shared`.

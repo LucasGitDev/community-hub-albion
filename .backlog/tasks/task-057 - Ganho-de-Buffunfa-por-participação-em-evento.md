@@ -1,11 +1,11 @@
 ---
 id: TASK-057
 title: Ganho de Buffunfa por participação em evento
-status: In Progress
+status: Done
 assignee:
   - '@claude'
 created_date: '2026-09-17 17:04'
-updated_date: '2026-09-17 18:47'
+updated_date: '2026-09-17 19:01'
 labels: []
 milestone: m-6
 dependencies:
