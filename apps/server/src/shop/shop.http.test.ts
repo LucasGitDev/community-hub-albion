@@ -2,7 +2,7 @@ import "reflect-metadata";
 import type { INestApplication } from "@nestjs/common";
 import { Test } from "@nestjs/testing";
 import { createDb, createSession, grantRole, insertLedgerEntry, runMigrations, upsertUserByDiscordId, type DbHandle } from "@albion-hub/db";
-import type { ShopCatalogResponse, ShopItemDto } from "@albion-hub/shared";
+import type { ShopCatalogResponse, ShopItemDto, ShopOrderDto, ShopOrderQueueResponse } from "@albion-hub/shared";
 import { sql } from "drizzle-orm";
 import request from "supertest";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
@@ -182,5 +182,120 @@ describe.skipIf(!baseUrl)("/api/shop (TASK-059)", () => {
   it("compra de item inexistente é 404", async () => {
     const plebe = await member(["member"], 100n);
     await post("/api/shop/orders", plebe.cookie, { itemId: "11111111-1111-4111-8111-111111111111" }).expect(404);
+  });
+
+  /**
+   * A fila da staff pela API (TASK-060). O foco é o que só o HTTP prova: **quem** pode mexer no pedido de
+   * quem. A máquina de estados, o débito e a devolução de moeda e estoque são testados no repo, contra o
+   * banco, onde a transação existe de verdade.
+   */
+  describe("fila de pedidos (TASK-060)", () => {
+    /** Um pedido `reserved` de um membro com Buffunfa sobrando, e o item por trás dele. */
+    async function ordered(opts: { price?: string; stock?: number | null } = {}) {
+      const staff = await member(["member", "staff"]);
+      const item = await publish(staff.cookie, { name: "Bolsa T8", price: opts.price ?? "300", stock: opts.stock === undefined ? 2 : opts.stock });
+      const comprador = await member(["member"], 5_000n);
+      const bought = await post("/api/shop/orders", comprador.cookie, { itemId: item.id }).expect(201);
+      const order = (bought.body as ShopCatalogResponse).orders[0]!;
+      return { staff, comprador, item, order };
+    }
+
+    it("a staff pega, entrega com nota, e o débito aparece no pedido (AC#1, AC#4, AC#5)", async () => {
+      const { staff, comprador, order } = await ordered();
+
+      const claimed = (await post(`/api/shop/orders/${order.id}/claim`, staff.cookie, {}).expect(200)).body as ShopOrderDto;
+      expect(claimed).toMatchObject({ status: "claimed", handledByUserId: staff.id, ledgerEntryId: null });
+      expect(claimed.handledByNick).toBeTruthy();
+
+      // Sem nota não entrega: 400 PT-BR, e o pedido fica onde estava.
+      expect((await post(`/api/shop/orders/${order.id}/deliver`, staff.cookie, {}).expect(400)).body.message).toContain("Escreva");
+
+      const delivered = (await post(`/api/shop/orders/${order.id}/deliver`, staff.cookie, { note: "banco de Martlock, para Fulano" }).expect(200)).body as ShopOrderDto;
+      expect(delivered).toMatchObject({ status: "delivered", note: "banco de Martlock, para Fulano" });
+      expect(delivered.ledgerEntryId).toBeTruthy();
+      // O membro enxerga o pedido entregue e a Buffunfa já saiu do saldo.
+      const catalogo = (await get("/api/shop", comprador.cookie).expect(200)).body as ShopCatalogResponse;
+      expect(catalogo.balance).toEqual({ balance: "4700", reserved: "0", available: "4700" });
+    });
+
+    it("a staff devolve o pedido à fila, e a segunda entrega do mesmo pedido é 409 (AC#2, AC#3)", async () => {
+      const { staff, order } = await ordered();
+      await post(`/api/shop/orders/${order.id}/claim`, staff.cookie, {}).expect(200);
+      const released = (await post(`/api/shop/orders/${order.id}/release`, staff.cookie, {}).expect(200)).body as ShopOrderDto;
+      expect(released).toMatchObject({ status: "reserved", handledByUserId: null, handledAt: null });
+
+      // Entregar sem ter pegado é 409 com a frase que diz o que dá pra fazer.
+      expect((await post(`/api/shop/orders/${order.id}/deliver`, staff.cookie, { note: "no banco" }).expect(409)).body.message).toContain("aguardando entrega");
+
+      await post(`/api/shop/orders/${order.id}/claim`, staff.cookie, {}).expect(200);
+      await post(`/api/shop/orders/${order.id}/deliver`, staff.cookie, { note: "no banco" }).expect(200);
+      expect((await post(`/api/shop/orders/${order.id}/deliver`, staff.cookie, { note: "de novo" }).expect(409)).body.message).toContain("estado final");
+    });
+
+    it("o comprador cancela enquanto está reserved; depois de claimed leva 403 (AC#6, F6-24)", async () => {
+      const { staff, comprador, order } = await ordered();
+      const cancelled = (await post(`/api/shop/orders/${order.id}/cancel`, comprador.cookie, {}).expect(200)).body as ShopOrderDto;
+      expect(cancelled).toMatchObject({ status: "cancelled" });
+      expect(cancelled.note).toContain("comprador");
+
+      const outro = await ordered();
+      await post(`/api/shop/orders/${outro.order.id}/claim`, outro.staff.cookie, {}).expect(200);
+      expect((await post(`/api/shop/orders/${outro.order.id}/cancel`, outro.comprador.cookie, {}).expect(403)).body.message).toContain("staff já pegou");
+      // A staff cancela o mesmo pedido, com motivo.
+      const byStaff = (await post(`/api/shop/orders/${outro.order.id}/cancel`, staff.cookie, { note: "membro desistiu no voice" }).expect(200)).body as ShopOrderDto;
+      expect(byStaff).toMatchObject({ status: "cancelled", note: "membro desistiu no voice" });
+    });
+
+    it("pedido de outro membro é 404 para o membro: a resposta não diz nem que o id existe", async () => {
+      const { order } = await ordered();
+      const estranho = await member(["member"], 100n);
+      await post(`/api/shop/orders/${order.id}/cancel`, estranho.cookie, {}).expect(404);
+    });
+
+    it("membro comum não pega, não entrega, não recusa e não estorna (AC#6, F6-25)", async () => {
+      const { comprador, order } = await ordered();
+      for (const action of ["claim", "release", "deliver", "reject", "refund"]) {
+        await post(`/api/shop/orders/${order.id}/${action}`, comprador.cookie, { note: "eu mesmo entrego" }).expect(403);
+      }
+      // Nem deslogado.
+      await request(app.getHttpServer()).post(`/api/shop/orders/${order.id}/claim`).set("Origin", PUBLIC_URL).send({}).expect(401);
+    });
+
+    it("a fila da staff mostra todos os pedidos; o membro só enxerga os próprios (AC#8)", async () => {
+      const { staff, comprador, order } = await ordered();
+
+      const fila = (await get("/api/shop/orders?status=reserved", staff.cookie).expect(200)).body as ShopOrderQueueResponse;
+      expect(fila.orders.some((o) => o.id === order.id)).toBe(true);
+      expect(fila.orders.every((o) => o.status === "reserved")).toBe(true);
+      // Nick do dono: é o contexto de quem entrega.
+      expect(fila.orders.find((o) => o.id === order.id)?.userNick).toBeTruthy();
+
+      const minha = (await get("/api/shop/orders", comprador.cookie).expect(200)).body as ShopOrderQueueResponse;
+      expect(minha.orders.map((o) => o.userId)).toEqual([comprador.id]);
+      // Pedir o de outro, sem shop:fulfill, é 403 em vez de vazar.
+      await get(`/api/shop/orders?userId=${staff.id}`, comprador.cookie).expect(403);
+      // Filtro inválido é 400, nunca silenciosamente ignorado.
+      await get("/api/shop/orders?status=entregando", staff.cookie).expect(400);
+    });
+
+    it("a recusa da staff exige motivo, e o estorno só vale em pedido entregue (AC#7)", async () => {
+      const { staff, order } = await ordered();
+      await post(`/api/shop/orders/${order.id}/reject`, staff.cookie, {}).expect(400);
+      const rejected = (await post(`/api/shop/orders/${order.id}/reject`, staff.cookie, { note: "item saiu do jogo" }).expect(200)).body as ShopOrderDto;
+      expect(rejected).toMatchObject({ status: "rejected", note: "item saiu do jogo" });
+
+      const entregue = await ordered();
+      await post(`/api/shop/orders/${entregue.order.id}/refund`, entregue.staff.cookie, { note: "nem entreguei" }).expect(409);
+      await post(`/api/shop/orders/${entregue.order.id}/claim`, entregue.staff.cookie, {}).expect(200);
+      await post(`/api/shop/orders/${entregue.order.id}/deliver`, entregue.staff.cookie, { note: "banco de Martlock" }).expect(200);
+      const refunded = (await post(`/api/shop/orders/${entregue.order.id}/refund`, entregue.staff.cookie, { note: "item errado" }).expect(200)).body as ShopOrderDto;
+      expect(refunded.reversalEntryId).toBeTruthy();
+      expect((await post(`/api/shop/orders/${entregue.order.id}/refund`, entregue.staff.cookie, { note: "de novo" }).expect(409)).body.message).toContain("já foi estornado");
+    });
+
+    it("recusa id fora de formato com 400 PT-BR", async () => {
+      const staff = await member(["member", "staff"]);
+      expect((await post("/api/shop/orders/nao-uuid/claim", staff.cookie, {}).expect(400)).body.message).toContain("pedido");
+    });
   });
 });
