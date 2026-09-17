@@ -1,5 +1,5 @@
 import type { ReactNode } from "react";
-import { ArrowDownLeft, ArrowUpRight, RotateCcw, Scissors, SlidersHorizontal, Wrench } from "lucide-react";
+import { ArrowDownLeft, ArrowUpRight, RotateCcw, Scissors, ShoppingBag, SlidersHorizontal, Wrench } from "lucide-react";
 import { CURRENCY_LABELS, describeLedgerAuthor, isMaintenanceLedgerEntry, LEDGER_ENTRY_KIND_LABELS, LEDGER_CURRENCY_FILTERS, type Currency, type LedgerCurrencyFilter, type LedgerEntryKind, type MemberLedgerEntryDto } from "@albion-hub/shared";
 import { Pill, Amount, type Tone } from "@/components/display";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
@@ -13,6 +13,8 @@ const LEDGER_KIND_META: Record<LedgerEntryKind, { icon: ReactNode; tone: Tone }>
   withdrawal: { icon: <ArrowUpRight />, tone: "info" },
   reversal: { icon: <RotateCcw />, tone: "destructive" },
   adjustment: { icon: <SlidersHorizontal />, tone: "warning" },
+  // Compra na loja (TASK-059): o lançamento só aparece na entrega (TASK-060) — antes disso a compra é reserva.
+  purchase: { icon: <ShoppingBag />, tone: "neutral" },
 };
 
 /** O mínimo que a tabela precisa saber de um lançamento. Valor é bigint: nunca `number` (Q20). */

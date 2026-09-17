@@ -1,6 +1,6 @@
 import { ROLE_LABELS, type Action, type SubjectType } from "@albion-hub/shared";
 import { NavLink, Outlet, useLocation } from "react-router";
-import { CalendarPlus, CalendarRange, Coins, Sparkles, LayoutTemplate, HandCoins, CircleUser, KeyRound, LogOut, ScrollText, Shield, Swords, Users, UsersRound, Vault } from "lucide-react";
+import { CalendarPlus, CalendarRange, Coins, Sparkles, LayoutTemplate, HandCoins, CircleUser, KeyRound, LogOut, ScrollText, Shield, Store, Swords, Users, UsersRound, Vault } from "lucide-react";
 import type { ReactNode } from "react";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
@@ -36,6 +36,7 @@ export function AppShell() {
   const personal: NavItem[] = [
     { to: "/carteira", label: "Carteira", icon: <Coins /> },
     { to: "/eventos", label: "Eventos", icon: <CalendarRange /> },
+    { to: "/loja", label: "Loja", icon: <Store /> },
     { to: "/saques", label: "Meus saques", icon: <HandCoins />, count: myOpen },
     { to: "/perfil", label: "Meu perfil", icon: <CircleUser /> },
   ];
