@@ -39,6 +39,17 @@ export {
   type UpdateMemberProfileInput,
   type UpdateMemberProfileResult,
 } from "./admin-members-repo.js";
+export {
+  banUser,
+  countOtherActiveAdmins,
+  getBanStatus,
+  getBanStatusByDiscordId,
+  unbanUser,
+  type BanStatus,
+  type BanUserInput,
+  type BanUserResult,
+  type UnbanUserResult,
+} from "./bans-repo.js";
 export { addUserNote, listUserNotes, type AddUserNoteInput, type UserNote } from "./user-notes-repo.js";
 export {
   decideNickRequest,

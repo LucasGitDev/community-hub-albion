@@ -113,6 +113,13 @@
       "when": 1789587277929,
       "tag": "0015_lethal_vivisector",
       "breakpoints": true
+    },
+    {
+      "idx": 16,
+      "version": "7",
+      "when": 1789611942671,
+      "tag": "0016_glorious_sunspot",
+      "breakpoints": true
     }
   ]
 }

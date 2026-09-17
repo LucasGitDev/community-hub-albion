@@ -39,6 +39,14 @@ export const users = pgTable("users", {
   albionPlayerId: text("albion_player_id"),
   albionGuildName: text("albion_guild_name"),
   albionCheckedAt: timestamp("albion_checked_at", { withTimezone: true }),
+  /**
+   * Banimento (TASK-050). Soft delete: a linha continua aqui, o nick continua ocupado e o extrato
+   * fica intacto — `banned_at` preenchido é a única coisa que define "banido". Desbanir é voltar
+   * os três campos para null, e é o único caminho de volta.
+   */
+  bannedAt: timestamp("banned_at", { withTimezone: true }),
+  bannedBy: uuid("banned_by").references((): AnyPgColumn => users.id, { onDelete: "set null" }),
+  banReason: text("ban_reason"),
   createdAt: createdAt(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
 });
