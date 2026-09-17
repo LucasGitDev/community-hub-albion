@@ -203,3 +203,13 @@ export {
   type PurchaseShopItemResult,
   type ShopBalance,
 } from "./shop-repo.js";
+export {
+  listEventRoleBuffunfa,
+  payEventAttendance,
+  previewEventAttendance,
+  setEventRoleBuffunfa,
+  type EventAttendancePreview,
+  type EventRoleBuffunfa,
+  type PayEventAttendanceResult,
+  type SetEventRoleBuffunfaResult,
+} from "./event-attendance-repo.js";
