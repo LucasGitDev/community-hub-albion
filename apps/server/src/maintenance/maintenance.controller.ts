@@ -1,6 +1,7 @@
 import { BadRequestException, Body, Controller, HttpCode, Inject, NotFoundException, Optional, Post, ServiceUnavailableException, UseGuards } from "@nestjs/common";
 import { addUserNote, getAdminMemberProfile, type DbHandle } from "@albion-hub/db";
 import { DB_HANDLE } from "../db/db.module.js";
+import { MAINTENANCE_LEDGER_REFERENCE } from "@albion-hub/shared";
 import { parseSilverAdjustment } from "../domain/maintenance.js";
 import { LedgerService } from "../economy/ledger.service.js";
 import { AlbionCheckService, type AlbionCheckDto } from "../members/albion-check.service.js";
@@ -9,8 +10,9 @@ import { MAINTENANCE_CLEANUP, type MaintenanceCleanup, type MaintenanceCleanupRe
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
-/** Origem fixa dos lançamentos de manutenção: `byReference("manual", "maintenance")` lista todos eles. */
-const MAINTENANCE_REFERENCE = { type: "manual", id: "maintenance" } as const;
+/** Origem fixa dos lançamentos de manutenção: `byReference("manual", "maintenance")` lista todos eles.
+ *  Mora em shared porque o extrato da staff (TASK-051) precisa reconhecer essa mesma origem pra rotular a linha. */
+const MAINTENANCE_REFERENCE = MAINTENANCE_LEDGER_REFERENCE;
 
 export interface MaintenanceAdjustmentResponse {
   entryId: string;

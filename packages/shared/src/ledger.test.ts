@@ -1,5 +1,14 @@
 import { describe, expect, it } from "vitest";
-import { decodeLedgerCursor, encodeLedgerCursor, LEDGER_ENTRY_KIND_LABELS, LEDGER_ENTRY_KINDS, LEDGER_PAGE_MAX, parseLedgerPageQuery } from "./ledger.js";
+import {
+  decodeLedgerCursor,
+  describeLedgerAuthor,
+  encodeLedgerCursor,
+  isMaintenanceLedgerEntry,
+  LEDGER_ENTRY_KIND_LABELS,
+  LEDGER_ENTRY_KINDS,
+  LEDGER_PAGE_MAX,
+  parseLedgerPageQuery,
+} from "./ledger.js";
 
 describe("rótulos do extrato (TASK-031)", () => {
   it("nomeia toda origem de lançamento em PT-BR", () => {
@@ -40,5 +49,23 @@ describe("parseLedgerPageQuery", () => {
     expect(parseLedgerPageQuery({ limit: "1,5" }).ok).toBe(false);
     expect(parseLedgerPageQuery({ cursor: 5 }).ok).toBe(false);
     expect(parseLedgerPageQuery({ cursor: "lixo" }).ok).toBe(false);
+  });
+});
+
+describe("describeLedgerAuthor (TASK-051)", () => {
+  const base = { id: "e1", amount: "100", kind: "adjustment", reversalOf: null, memo: null, createdAt: "2026-09-17T00:00:00.000Z" } as const;
+
+  it("usa o nome de quem assinou o lançamento", () => {
+    expect(describeLedgerAuthor({ ...base, referenceType: null, referenceId: null, author: { id: "u1", name: "Rekk" } })).toBe("Rekk");
+  });
+
+  it("ajuste do namespace de manutenção se identifica como manutenção, não como um traço mudo", () => {
+    expect(describeLedgerAuthor({ ...base, referenceType: "manual", referenceId: "maintenance", author: null })).toBe("Manutenção");
+    expect(isMaintenanceLedgerEntry({ referenceType: "manual", referenceId: "maintenance" })).toBe(true);
+  });
+
+  it("lançamento sem autor e sem origem de manutenção é do sistema", () => {
+    expect(describeLedgerAuthor({ ...base, referenceType: "loot_split", referenceId: "s1", author: null })).toBe("Sistema");
+    expect(isMaintenanceLedgerEntry({ referenceType: "manual", referenceId: "outro" })).toBe(false);
   });
 });
