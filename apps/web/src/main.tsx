@@ -15,6 +15,7 @@ import { QueueProvider } from "./api/QueueProvider";
 import { Login } from "./pages/Login";
 import { MyWithdrawals } from "./pages/MyWithdrawals";
 import { Profile } from "./pages/Profile";
+import { Shop } from "./pages/Shop";
 import { Placeholder } from "./pages/Placeholder";
 import { StaffMembers } from "./pages/StaffMembers";
 import { StaffEvents } from "./pages/StaffEvents";
@@ -48,6 +49,8 @@ createRoot(document.getElementById("root")!).render(
             <Route path="/perfil" element={<Profile />} />
             {/* TASK-041: "Meu nick" virou "Meu perfil"; link antigo (e o do bot) continua funcionando. */}
             <Route path="/nick" element={<Navigate to="/perfil" replace />} />
+            {/* Loja: qualquer membro vê o catálogo e compra com Buffunfa (TASK-059). */}
+            <Route path="/loja" element={<Shop />} />
             {/* Eventos: qualquer membro vê e se inscreve (TASK-023). */}
             <Route path="/eventos" element={<Events />} />
             {/* Gate de UI com as mesmas regras CASL da API; a API é a autoridade (TASK-009). */}
