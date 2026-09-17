@@ -36,6 +36,12 @@ interface SubjectFields {
   UserRole: Record<never, never>;
   /** Banimento de um jogador (TASK-050). Subject próprio: banir não é "editar papel". */
   Ban: Record<never, never>;
+  /**
+   * Ficha do membro no painel (TASK-047): nick, tag de guilda, notas internas e a revalidação na API
+   * do Albion. Subject separado de `UserRole` de propósito — `UserRole` é conceder e revogar papel, a
+   * porta que cria outro admin, e continua só do admin.
+   */
+  MemberProfile: Record<never, never>;
 }
 
 export type SubjectType = keyof SubjectFields | "all";
@@ -79,6 +85,13 @@ export function defineAbilityFor(user: AbilityUser): AppAbility {
     can(["approve", "reject", "settle"], "Withdrawal");
     // Banir e desbanir jogador (TASK-050). Provisório na staff até a revisão de papéis (TASK-052).
     can("ban", "Ban");
+    // Gestão de usuários (TASK-047, G3): achar e revalidar o nick, editar nick/tag, ler e escrever notas.
+    // PROVISÓRIO: é um degrau, não o destino. Hoje "staff" é um papel que carrega um pacote fixo de poderes,
+    // e a gestão de usuários entrou nesse pacote inteiro porque não existe granularidade menor. A TASK-052
+    // separa permissão de papel; quando ela chegar, estas capacidades viram permissões atribuíveis uma a uma
+    // e esta linha sai daqui. Não use este `manage` como argumento de que "staff pode tudo em membro":
+    // conceder papel (`UserRole`) segue fora, e banir staff/admin segue só do admin (TASK-050).
+    can("manage", "MemberProfile");
   }
 
   if (roles.has("admin")) {

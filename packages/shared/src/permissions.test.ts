@@ -37,6 +37,9 @@ const matrix: Case[] = [
   ["approve", "MemberRequest", "type", { member: false, caller: false, staff: true, admin: true }],
   ["update", "UserRole", "type", { member: false, caller: false, staff: false, admin: true }],
   ["read", "UserRole", "type", { member: false, caller: false, staff: false, admin: true }],
+  // gestão de usuários (TASK-047, G3): staff alcança as quatro capacidades da ficha do membro.
+  ["read", "MemberProfile", "type", { member: false, caller: false, staff: true, admin: true }],
+  ["update", "MemberProfile", "type", { member: false, caller: false, staff: true, admin: true }],
 ];
 
 function target(subjectType: SubjectType, who: "own" | "other" | "type") {
@@ -70,5 +73,22 @@ describe("matriz papel x permissão (Q13)", () => {
     const ability = defineAbilityFor({ id: ME, roles: ["member", "caller", "staff"] });
     expect(ability.can("start", asSubject("Event", { ownerId: OTHER }))).toBe(true);
     expect(ability.can("update", "UserRole")).toBe(false);
+  });
+
+  /**
+   * A fronteira que a TASK-047 precisa manter de pé: a staff gere a ficha do membro, mas `MemberProfile`
+   * não lhe dá nada sobre papéis. Se alguém um dia trocar o subject de `/admin/users` por `MemberProfile`,
+   * ou der `UserRole` à staff para "simplificar", este teste cai antes do deploy.
+   */
+  it("MemberProfile da staff não vaza para papéis nem afrouxa o banimento (TASK-047)", () => {
+    const staff = defineAbilityFor({ id: ME, roles: ["member", "staff"] });
+    expect(staff.can("manage", "MemberProfile")).toBe(true);
+    // Papéis continuam fora: é a porta que criaria outro admin.
+    expect(staff.can("read", "UserRole")).toBe(false);
+    expect(staff.can("update", "UserRole")).toBe(false);
+    expect(staff.can("manage", "UserRole")).toBe(false);
+    expect(staff.can("manage", "all")).toBe(false);
+    // Banimento segue no subject próprio; a hierarquia de quem pode ser banido é do serviço (TASK-050).
+    expect(staff.can("ban", "Ban")).toBe(true);
   });
 });
