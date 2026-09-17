@@ -67,6 +67,7 @@ function BuffunfaIcon() {
   return (
     <span
       aria-hidden
+      data-currency-icon="buffunfa"
       style={{ backgroundImage: `url(${buffunfaIcon})` }}
       className="mr-[0.3em] inline-block size-[1em] bg-contain bg-center bg-no-repeat align-[-0.15em]"
     />

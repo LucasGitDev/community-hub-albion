@@ -45,7 +45,7 @@ test("as duas moedas convivem: chip, saldos separados, moeda por linha e filtro 
   // TASK-071: a Buffunfa leva o ícone da moeda junto do número (doc-009) e a prata não leva nenhum.
   // O chip mostra as duas lado a lado, então **um** ícone aqui prova as duas metades: a Buffunfa
   // ganhou o ícone e a prata continua neutra, sem depender de cor pra se distinguir (AC#1, AC#4).
-  await expect(chip.locator('img[src*="buffunfa"]')).toHaveCount(1);
+  await expect(chip.locator('[data-currency-icon="buffunfa"]')).toHaveCount(1);
 
   // A aba é a Toca da Turma, não o placeholder (AC#3).
   await expect(page).toHaveTitle("Toca da Turma");
