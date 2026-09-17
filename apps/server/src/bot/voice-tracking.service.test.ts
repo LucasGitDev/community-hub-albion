@@ -45,7 +45,9 @@ describe.skipIf(!baseUrl)("VoiceTrackingService (TASK-018, Postgres real)", () =
       providers: [VoiceTrackingService, { provide: DB_HANDLE, useValue: handle }, { provide: VOICE_CLOCK, useValue: () => now }],
     }).compile();
     service = moduleRef.get(VoiceTrackingService);
-  });
+    // 60 s como nos outros testes que criam banco isolado: com a suíte inteira em paralelo, o
+    // `create database` passa dos 10 s padrão e o hook estoura sem que nada esteja errado.
+  }, 60_000);
 
   afterAll(async () => {
     await handle?.close();
