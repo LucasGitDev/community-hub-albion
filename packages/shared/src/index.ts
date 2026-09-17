@@ -14,3 +14,4 @@ export * from "./event-signups.js";
 export * from "./ledger.js";
 export * from "./withdrawals.js";
 export * from "./loot-split.js";
+export * from "./ban.js";
