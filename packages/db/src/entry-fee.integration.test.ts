@@ -29,6 +29,14 @@ import {
  * ninguém** — a soma de tudo que circula diminui exatamente o que foi cobrado (F6-16).
  */
 
+/**
+ * O DTO do template devolve a faixa de Buffunfa como string (JSON não tem bigint, Q20), e o input de
+ * `saveEventTemplate` espera bigint. Reusar o template lido como corpo de um novo save precisa desta
+ * volta — só nos testes, onde a ida e a volta acontecem no mesmo processo.
+ */
+const templateRolesAsInput = (roles: { roleId: string; slots: number; buffunfaMin: string; buffunfaMax: string }[]) =>
+  roles.map(({ roleId, slots, buffunfaMin, buffunfaMax }) => ({ roleId, slots, buffunfaMin: BigInt(buffunfaMin), buffunfaMax: BigInt(buffunfaMax) }));
+
 const baseUrl = process.env.TEST_DATABASE_URL ?? process.env.DATABASE_URL;
 if (!baseUrl && process.env.CI) throw new Error("CI sem TEST_DATABASE_URL: testes da taxa de entrada não podem ser pulados");
 
@@ -90,8 +98,8 @@ describe.skipIf(!baseUrl)("taxa de entrada em Buffunfa (TASK-058, Postgres real)
       maxPartySize: null,
       active: true,
       roles: [
-        { roleId: roles.find((r) => r.name === "Tank")!.id, slots: 1 },
-        { roleId: roles.find((r) => r.name === "Healer")!.id, slots: 2 },
+        { roleId: roles.find((r) => r.name === "Tank")!.id, slots: 1, buffunfaMin: 0n, buffunfaMax: 0n },
+        { roleId: roles.find((r) => r.name === "Healer")!.id, slots: 2, buffunfaMin: 0n, buffunfaMax: 0n },
       ],
     });
     if (!saved.ok) throw new Error(saved.reason);
@@ -110,13 +118,13 @@ describe.skipIf(!baseUrl)("taxa de entrada em Buffunfa (TASK-058, Postgres real)
       minPartySize: 1,
       maxPartySize: null,
       active: true,
-      roles: [{ roleId: roles.find((r) => r.name === "Tank")!.id, slots: 1 }],
+      roles: [{ roleId: roles.find((r) => r.name === "Tank")!.id, slots: 1, buffunfaMin: 0n, buffunfaMax: 0n }],
     });
     if (!zeroed.ok) throw new Error(zeroed.reason);
     expect(zeroed.template.defaultEntryFee).toBe("0");
 
     // Template com taxa: o evento nasce com a cópia dela...
-    const withFee = await saveEventTemplate(handle.db, { ...zeroed.template, roles: zeroed.template.roles, defaultEntryFee: 25n }, zeroed.template.id);
+    const withFee = await saveEventTemplate(handle.db, { ...zeroed.template, roles: templateRolesAsInput(zeroed.template.roles), defaultEntryFee: 25n }, zeroed.template.id);
     if (!withFee.ok) throw new Error(withFee.reason);
     expect(withFee.template.defaultEntryFee).toBe("25");
 
@@ -133,7 +141,7 @@ describe.skipIf(!baseUrl)("taxa de entrada em Buffunfa (TASK-058, Postgres real)
     expect(created.event.entryFee).toBe("25");
 
     // ...e mexer no template depois **não** mexe no evento já criado: cópia, não referência.
-    await saveEventTemplate(handle.db, { ...withFee.template, roles: withFee.template.roles, defaultEntryFee: 999n }, withFee.template.id);
+    await saveEventTemplate(handle.db, { ...withFee.template, roles: templateRolesAsInput(withFee.template.roles), defaultEntryFee: 999n }, withFee.template.id);
     const again = await createEvent(handle.db, {
       templateId: withFee.template.id,
       name: "Depois da mudança",

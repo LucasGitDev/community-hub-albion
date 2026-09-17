@@ -22,7 +22,12 @@ async function createTemplate(page: Page, name: string): Promise<void> {
       minPartySize: 2,
       maxPartySize: 2,
       active: true,
-      roles: [{ roleId: roles.find((r) => r.name === "Tank")!.id, slots: 1 }, { roleId: roles.find((r) => r.name === "Healer")!.id, slots: 1 }],
+      // A faixa de Buffunfa é obrigatória desde a TASK-057; 0 a 0 é role que não paga presença, que é
+      // o que este teste quer — ele mede a taxa de entrada, não o ganho.
+      roles: [
+        { roleId: roles.find((r) => r.name === "Tank")!.id, slots: 1, buffunfaMin: "0", buffunfaMax: "0" },
+        { roleId: roles.find((r) => r.name === "Healer")!.id, slots: 1, buffunfaMin: "0", buffunfaMax: "0" },
+      ],
     },
   });
   expect(res.status()).toBe(201);
