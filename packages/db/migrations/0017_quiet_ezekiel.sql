@@ -1,0 +1,1 @@
+ALTER TABLE "users" ADD COLUMN "left_guild_at" timestamp with time zone;

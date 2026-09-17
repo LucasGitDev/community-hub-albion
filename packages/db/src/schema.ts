@@ -47,6 +47,15 @@ export const users = pgTable("users", {
   bannedAt: timestamp("banned_at", { withTimezone: true }),
   bannedBy: uuid("banned_by").references((): AnyPgColumn => users.id, { onDelete: "set null" }),
   banReason: text("ban_reason"),
+  /**
+   * Saída do servidor do Discord (TASK-049, G6). A limpeza diária preenche isto para quem não está
+   * mais na guild e apaga de novo se a pessoa voltar — é a marca de "conta inativa" da lista de membros.
+   *
+   * Independente do banimento: um banido que também saiu tem as duas datas, e limpar uma nunca limpa a
+   * outra. Saldo, lançamentos do ledger e saques **não** são tocados por esta marca: prata é dívida da
+   * comunidade com a pessoa, mesmo depois de ela sair.
+   */
+  leftGuildAt: timestamp("left_guild_at", { withTimezone: true }),
   createdAt: createdAt(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
 });
