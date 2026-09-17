@@ -1,5 +1,6 @@
 import { Inject, Injectable, Logger } from "@nestjs/common";
 import {
+  getBanStatus,
   joinEventRole,
   leaveEvent,
   listEventSignups,
@@ -17,6 +18,13 @@ import { DB_HANDLE } from "../db/db.module.js";
 import { ListenerSet } from "../members/listener-set.js";
 
 /** Emitido depois que a lista do evento mudou. O embed do Discord assina daqui (TASK-022). */
+/**
+ * Resultado da inscrição no serviço: o que o repo devolve, mais a recusa por banimento (TASK-050).
+ * A recusa vive aqui, e não no repo, porque banimento é regra de acesso e não regra de vaga — mas vive
+ * no **serviço**, e não no controller, para o botão do Discord e o painel recusarem igual.
+ */
+export type JoinSignupResult = JoinEventRoleResult | { ok: false; reason: "banned"; banReason: string };
+
 export interface EventSignupChangedEvent {
   eventId: string;
   /** `join` cobre entrar e trocar de role; `move` é o caller/owner mexendo na lista (AC#4). */
@@ -64,7 +72,9 @@ export class EventSignupsService {
   }
 
   /** Entra numa role ou troca de role (AC#2/AC#3). Fora de `open` é recusado (AC#5). */
-  async join(eventId: string, userId: string, slotId: string): Promise<JoinEventRoleResult> {
+  async join(eventId: string, userId: string, slotId: string): Promise<JoinSignupResult> {
+    const ban = await getBanStatus(this.handle.db, userId);
+    if (ban) return { ok: false, reason: "banned", banReason: ban.banReason };
     const result = await joinEventRole(this.handle.db, { eventId, userId, slotId });
     if (result.ok) await this.emit(eventId, "join", result);
     return result;

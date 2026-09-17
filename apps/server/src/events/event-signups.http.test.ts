@@ -1,12 +1,13 @@
 import "reflect-metadata";
 import type { INestApplication } from "@nestjs/common";
 import { Test } from "@nestjs/testing";
-import { createDb, createSession, grantRole, runMigrations, upsertUserByDiscordId, type DbHandle } from "@albion-hub/db";
+import { banUser, createDb, createSession, grantRole, runMigrations, unbanUser, upsertUserByDiscordId, type DbHandle } from "@albion-hub/db";
 import type { EventDto, EventSignupDto, Role } from "@albion-hub/shared";
 import { sql } from "drizzle-orm";
 import request from "supertest";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { AppModule, configureApp } from "../app.module.js";
+import { EventSignupsService } from "./event-signups.service.js";
 import { parseEnv } from "../config/env.js";
 
 const baseUrl = process.env.TEST_DATABASE_URL ?? process.env.DATABASE_URL;
@@ -246,4 +247,36 @@ describe.skipIf(!baseUrl)("inscrição em evento HTTP (TASK-022, Q27)", () => {
     const outroCaller = await login("740000000000000006", ["member", "caller"]);
     expect((await send("patch", `/api/events/${event.id}/signups/${membroId}`, outroCaller, { target: "waitlist" })).status).toBe(403);
   });
+
+  it("banido não se inscreve em evento pelo painel (TASK-050)", async () => {
+    const { event, tank, healer } = await openEvent("Banido não entra");
+    // Sessão criada antes do banimento: prova que o corte é imediato e não espera o próximo login.
+    const staffId = await userId("740000000000000002");
+    const signups = app.get(EventSignupsService);
+    const banidoCookie = await login("740000000000000009", ["member"]);
+    const banidoId = await userId("740000000000000009");
+    expect((await join(banidoCookie, event.id, healer.id)).status).toBe(200);
+
+    const banido = await banUser(handle.db, { userId: banidoId, actorId: staffId, reason: "roubou o loot do split" });
+    expect(banido.ok).toBe(true);
+
+    // O cookie que ele tinha na mão morreu junto com o banimento.
+    expect((await join(banidoCookie, event.id, tank.id)).status).toBe(401);
+
+    // Com uma sessão nova forjada à mão (o cenário do banimento feito fora do fluxo), o guard recusa.
+    const sobrevivente = await login("740000000000000009", []);
+    const recusa = await join(sobrevivente, event.id, tank.id);
+    expect(recusa.status).toBe(403);
+    expect(recusa.body.message).toContain("banida");
+
+    // O serviço recusa por conta própria, mesmo sem passar pelo guard: é a trava que o bot também usa.
+    const direto = await signups.join(event.id, banidoId, tank.id);
+    expect(direto).toMatchObject({ ok: false, reason: "banned", banReason: "roubou o loot do split" });
+
+    // Desbanido, entra de novo.
+    expect((await unbanUser(handle.db, banidoId)).ok).toBe(true);
+    const volta = await login("740000000000000009", ["member"]);
+    expect((await join(volta, event.id, tank.id)).status).toBe(200);
+  });
+
 });
