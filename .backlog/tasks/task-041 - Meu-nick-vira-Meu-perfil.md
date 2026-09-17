@@ -1,11 +1,11 @@
 ---
 id: TASK-041
 title: Meu nick vira Meu perfil
-status: In Progress
+status: Done
 assignee:
   - '@claude'
 created_date: '2026-09-16 03:45'
-updated_date: '2026-09-16 23:37'
+updated_date: '2026-09-17 00:32'
 labels:
   - frontend
   - backend
@@ -36,7 +36,7 @@ Renomear e ampliar a página /nick para /perfil, base para futuras configuraçõ
 - [x] #5 Comportamento confere com decisões do doc-005 (Qs citadas) e nada fora do escopo da task
 - [x] #6 Toca auth, ledger, prata ou saque: security-review sem achado crítico
 - [x] #7 Notas e final summary com evidências; commits Conventional atômicos sem co-autor
-- [ ] #8 PR merged na main com quality gate verde; branch e worktree removidos
+- [x] #8 PR merged na main com quality gate verde; branch e worktree removidos
 <!-- DOD:END -->
 
 ## Implementation Plan
