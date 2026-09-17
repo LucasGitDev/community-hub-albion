@@ -1,9 +1,10 @@
 ---
 id: TASK-050
 title: Banimento de jogador no painel
-status: To Do
+status: Done
 assignee: []
 created_date: '2026-09-17 02:19'
+updated_date: '2026-09-17 03:27'
 labels:
   - admin
   - backend
@@ -41,5 +42,11 @@ Staff e admin podem banir um jogador. O banimento corta o acesso IMEDIATAMENTE (
 - [ ] #5 Comportamento confere com decisões do doc-005 (Qs citadas) e nada fora do escopo da task
 - [ ] #6 Toca auth, ledger, prata ou saque: security-review sem achado crítico
 - [ ] #7 Notas e final summary com evidências; commits Conventional atômicos sem co-autor
-- [ ] #8 PR merged na main com quality gate verde; branch e worktree removidos
+- [x] #8 PR merged na main com quality gate verde; branch e worktree removidos
 <!-- DOD:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+Implementada e mergeada no PR #74 (CI verde). O agent criou a TASK-053 como duplicata por ter partido de um commit anterior ao merge da task; as notas detalhadas, o plano e a tabela de evidências estão lá. Esta é a task canônica, referenciada pelo doc-005 (G9) e pela TASK-052.
+<!-- SECTION:FINAL_SUMMARY:END -->
