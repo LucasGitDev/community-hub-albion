@@ -1,11 +1,11 @@
 ---
 id: TASK-063
 title: Quem foi para a espera não volta para a vaga livre
-status: In Progress
+status: Done
 assignee:
   - '@claude'
 created_date: '2026-09-17 17:05'
-updated_date: '2026-09-17 17:35'
+updated_date: '2026-09-17 17:40'
 labels:
   - eventos
   - painel
