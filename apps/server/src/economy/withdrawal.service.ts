@@ -32,10 +32,12 @@ import { DB_HANDLE } from "../db/db.module.js";
  * que está o teste que prova que um membro não age no nome de outro — recomendação do security-review da
  * TASK-026. Se um dia um comando de bot chamar este serviço, ele tem a mesma obrigação.
  */
-/** Recusa por banimento (TASK-050), somada ao que o repo já devolve. */
-type BannedRefusal = { ok: false; reason: "banned"; banReason: string };
-export type RequestSilverResult = RequestWithdrawalResult | BannedRefusal;
-export type DecideSilverResult = WithdrawalDecisionResult | BannedRefusal;
+/**
+ * Recusa por banimento no **pedido** (TASK-050). Na decisão da staff a recusa já vem do repo, de dentro
+ * da transação (`WithdrawalDecisionResult`), porque lá o que está em jogo é o débito no ledger.
+ */
+export type RequestSilverResult = RequestWithdrawalResult | { ok: false; reason: "banned"; banReason: string };
+export type DecideSilverResult = WithdrawalDecisionResult;
 
 @Injectable()
 export class WithdrawalService {
@@ -68,12 +70,7 @@ export class WithdrawalService {
    * onde está, com a reserva de pé. Quem quiser liberar o saldo rejeita (isso continua permitido) ou
    * desbane — aprovar seria pagar prata a quem acabou de ser expulso da comunidade.
    */
-  async approve(id: string, options: DecideWithdrawalOptions): Promise<DecideSilverResult> {
-    const withdrawal = await getWithdrawal(this.handle.db, id);
-    if (withdrawal) {
-      const ban = await getBanStatus(this.handle.db, withdrawal.userId);
-      if (ban) return { ok: false, reason: "banned", banReason: ban.banReason };
-    }
+  approve(id: string, options: DecideWithdrawalOptions): Promise<DecideSilverResult> {
     return approveWithdrawal(this.handle.db, id, options);
   }
 

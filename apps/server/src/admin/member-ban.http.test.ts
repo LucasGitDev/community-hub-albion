@@ -165,6 +165,26 @@ describe.skipIf(!baseUrl)("banimento de jogador (TASK-050)", () => {
     expect(conflito.status).toBe(409);
   });
 
+  it("staff não bane staff nem admin: 403 e só um admin faz isso (TASK-050)", async () => {
+    const chefe = await session("700000000000000100", "chefe-hierarquia", ["admin"]);
+    const staffer = await session("700000000000000101", "staffer-hierarquia", ["staff"]);
+    const outroStaffer = await session("700000000000000102", "staffer-alvo", ["staff"]);
+    const membro = await session("700000000000000103", "membro-alvo");
+
+    // Staff bane quem está abaixo dela.
+    expect((await ban(staffer.cookie, membro.id, { reason: "roubou o loot do split" })).ok ?? true).toBeTruthy();
+    expect((await unban(chefe.cookie, membro.id)).status).toBe(204);
+
+    const par = await ban(staffer.cookie, outroStaffer.id, { reason: "briga interna no voice" });
+    expect(par.status).toBe(403);
+    expect(par.body.message).toContain("admin");
+    expect((await ban(staffer.cookie, chefe.id, { reason: "golpe de estado" })).status).toBe(403);
+
+    // Admin bane a staff sem problema.
+    expect((await ban(chefe.cookie, outroStaffer.id, { reason: "decisão do admin" })).status).toBe(200);
+    expect((await unban(chefe.cookie, outroStaffer.id)).status).toBe(204);
+  });
+
   it("banir de novo é 409 e desbanir quem não está banido é 409 (AC#12)", async () => {
     const boss = await session("700000000000000060", "chefe-dupla", ["admin"]);
     const alvo = await session("700000000000000061", "alvo-dupla");

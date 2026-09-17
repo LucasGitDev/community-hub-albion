@@ -144,8 +144,13 @@ describe.skipIf(!baseUrl)("lista de membros do admin (TASK-043)", () => {
     const sem = await list(boss.cookie, "?search=filtro-&filter=sem_nick");
     expect(sem.body.members.map((m: { id: string }) => m.id).sort()).toEqual([boss.id, semNick.id].sort());
 
+    // Filtro "banidos" (TASK-050): ninguém aqui está banido, então a lista fica vazia sem quebrar.
+    const banidos = await list(boss.cookie, "?search=filtro-&filter=banidos");
+    expect(banidos.body.members).toEqual([]);
+    expect(banidos.body.total).toBe(0);
+
     // Filtro desconhecido não quebra: cai em todos.
-    expect((await list(boss.cookie, "?search=filtro-&filter=banidos")).body.total).toBe(3);
+    expect((await list(boss.cookie, "?search=filtro-&filter=expulsos")).body.total).toBe(3);
   });
 
   it("pagina com total estável e não repete membro entre páginas (AC#1)", async () => {

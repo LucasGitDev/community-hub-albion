@@ -1,4 +1,4 @@
-import { eq, sql } from "drizzle-orm";
+import { and, eq, isNull, sql } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import {
   banUser,
@@ -103,15 +103,61 @@ describe.skipIf(!baseUrl)("banimento de jogador (TASK-050, Postgres real)", () =
     const staffer = await user(["staff"]);
     expect(await countOtherActiveAdmins(handle.db, a.id)).toBe(1);
 
-    expect((await banUser(handle.db, { userId: b.id, actorId: staffer.id, reason: "sumiu com a prata" })).ok).toBe(true);
-    // b banido não conta mais: a virou o último e está protegido.
+    expect((await banUser(handle.db, { userId: b.id, actorId: a.id, reason: "sumiu com a prata" })).ok).toBe(true);
+    // b banido não conta mais: a virou o último e está protegido, inclusive contra a própria staff.
     expect(await countOtherActiveAdmins(handle.db, a.id)).toBe(0);
     expect(await banUser(handle.db, { userId: a.id, actorId: staffer.id, reason: "decapitar a comunidade" })).toEqual({ ok: false, reason: "last_admin" });
     expect(await getBanStatus(handle.db, a.id)).toBeNull();
 
-    // Com b de volta, a deixa de ser o último e pode ser banido.
+    // Com b de volta, a deixa de ser o último e um outro admin pode bani-lo.
     expect((await unbanUser(handle.db, b.id)).ok).toBe(true);
-    expect((await banUser(handle.db, { userId: a.id, actorId: staffer.id, reason: "agora pode, sobrou o b" })).ok).toBe(true);
+    expect((await banUser(handle.db, { userId: a.id, actorId: b.id, reason: "agora pode, sobrou o b" })).ok).toBe(true);
+    expect((await unbanUser(handle.db, a.id)).ok).toBe(true);
+  });
+
+  it("staff não bane staff nem admin: só um admin faz isso", async () => {
+    await handle.db.delete(schema.userRoles).where(eq(schema.userRoles.role, "admin"));
+    const chefe = await user(["admin"]);
+    const reserva = await user(["admin"]);
+    const staffer = await user(["staff"]);
+    const outroStaffer = await user(["staff"]);
+    const membro = await user();
+
+    // Staff bane quem está abaixo dela.
+    expect((await banUser(handle.db, { userId: membro.id, actorId: staffer.id, reason: "roubou o loot" })).ok).toBe(true);
+
+    // E não bane par nem superior.
+    expect(await banUser(handle.db, { userId: outroStaffer.id, actorId: staffer.id, reason: "briga interna" })).toEqual({ ok: false, reason: "protected_target" });
+    expect(await banUser(handle.db, { userId: reserva.id, actorId: staffer.id, reason: "golpe de estado" })).toEqual({ ok: false, reason: "protected_target" });
+    expect(await getBanStatus(handle.db, outroStaffer.id)).toBeNull();
+    expect(await getBanStatus(handle.db, reserva.id)).toBeNull();
+
+    // Admin bane staff e outro admin (com o último admin ainda protegido).
+    expect((await banUser(handle.db, { userId: outroStaffer.id, actorId: chefe.id, reason: "decisão do admin" })).ok).toBe(true);
+    expect((await banUser(handle.db, { userId: reserva.id, actorId: chefe.id, reason: "decisão do admin" })).ok).toBe(true);
+  });
+
+  it("dois banimentos simultâneos não conseguem zerar os admins", async () => {
+    await handle.db.delete(schema.userRoles).where(eq(schema.userRoles.role, "admin"));
+    const a = await user(["admin"]);
+    const b = await user(["admin"]);
+
+    // A comunidade tem exatamente dois admins e cada um tenta banir o outro no mesmo instante: é o
+    // cenário em que a trava na tabela errada deixaria os dois passarem e sobrariam zero admins.
+    // O teste guarda o invariante (sempre sobra admin); não garante reproduzir a corrida a cada rodada.
+    const resultados = await Promise.allSettled([
+      banUser(handle.db, { userId: b.id, actorId: a.id, reason: "banimento simultaneo de a em b" }),
+      banUser(handle.db, { userId: a.id, actorId: b.id, reason: "banimento simultaneo de b em a" }),
+    ]);
+    // Deadlock abortado pelo Postgres também é resultado aceitável: falha fechada, ninguém a mais banido.
+    expect(resultados.filter((r) => r.status === "fulfilled" && r.value.ok).length).toBeLessThanOrEqual(1);
+
+    const admins = await handle.db
+      .select({ userId: schema.userRoles.userId })
+      .from(schema.userRoles)
+      .innerJoin(schema.users, eq(schema.users.id, schema.userRoles.userId))
+      .where(and(eq(schema.userRoles.role, "admin"), isNull(schema.users.bannedAt)));
+    expect(admins).toHaveLength(1);
   });
 
   it("não mexe no ledger: banir e desbanir não criam lançamento nenhum", async () => {

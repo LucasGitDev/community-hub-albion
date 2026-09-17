@@ -181,7 +181,9 @@ export type WithdrawalDecisionResult =
   | { ok: true; withdrawal: WithdrawalDto }
   | { ok: false; reason: "not_found" }
   | { ok: false; reason: "note_required" }
-  | { ok: false; reason: "invalid"; from: WithdrawalStatus };
+  | { ok: false; reason: "invalid"; from: WithdrawalStatus }
+  /** Dono banido: saldo congelado (TASK-050). Só a aprovação é barrada — recusar continua valendo. */
+  | { ok: false; reason: "banned"; banReason: string };
 
 /** Trava usuário → saque (sempre nessa ordem) e devolve a linha atual do saque. */
 async function lockWithdrawal(tx: Tx, id: string): Promise<Row | null> {
@@ -207,6 +209,13 @@ export async function approveWithdrawal(db: Database, id: string, options: Decid
     const current = await lockWithdrawal(tx, id);
     if (!current) return { ok: false as const, reason: "not_found" as const };
     if (!canTransitionWithdrawal(current.status, "approved")) return { ok: false as const, reason: "invalid" as const, from: current.status };
+    /**
+     * Saldo de banido é congelado (TASK-050). A leitura mora **dentro** desta transação, com a linha do
+     * usuário já travada por `lockWithdrawal`: conferir antes, fora daqui, deixaria a janela em que um
+     * banimento entra entre a checagem e o débito — e aí a prata sairia mesmo assim.
+     */
+    const [owner] = await tx.select({ bannedAt: users.bannedAt, banReason: users.banReason }).from(users).where(eq(users.id, current.userId));
+    if (owner?.bannedAt) return { ok: false as const, reason: "banned" as const, banReason: owner.banReason ?? "" };
     const note = trimmed(options.note);
     const [entry] = await tx
       .insert(ledgerEntries)

@@ -18,7 +18,7 @@ import { type AuthContext, SessionService } from "./session.service.js";
 const POLICY = Symbol("POLICY");
 
 /** Texto único da recusa por banimento: o painel mostra isso em qualquer rota. */
-export const BANNED_MESSAGE = "Sua conta está banida da comunidade. Fale com a staff no Discord.";
+const BANNED_MESSAGE = "Sua conta está banida da comunidade. Fale com a staff no Discord.";
 
 interface Policy {
   action: Action;
