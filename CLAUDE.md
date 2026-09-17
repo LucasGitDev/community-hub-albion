@@ -61,6 +61,12 @@ curl -fsS -X POST "$HUB_URL/api/maintenance/silver" \
   -H "x-maintenance-token: $MAINTENANCE_TOKEN" -H 'content-type: application/json' \
   -d '{"userId":"<uuid-do-usuario>","amount":"-1500000","reason":"estorno do split 12 pago em duplicidade"}'
 
+# Ajuste de Buffunfa: mesma regra, outra moeda (TASK-056, F6-6). Buffunfa não tem saque; este é o
+# único conserto possível, e é a única exceção à trava de saldo não-negativo — pode cravar negativo.
+curl -fsS -X POST "$HUB_URL/api/maintenance/buffunfa" \
+  -H "x-maintenance-token: $MAINTENANCE_TOKEN" -H 'content-type: application/json' \
+  -d '{"userId":"<uuid-do-usuario>","amount":"-340","reason":"taxa de entrada cobrada em dobro"}'
+
 # Revalidar o nick do jogador na API do Albion
 curl -fsS -X POST "$HUB_URL/api/maintenance/albion-check" \
   -H "x-maintenance-token: $MAINTENANCE_TOKEN" -H 'content-type: application/json' \
@@ -70,7 +76,8 @@ curl -fsS -X POST "$HUB_URL/api/maintenance/albion-check" \
 curl -fsS -X POST "$HUB_URL/api/maintenance/cleanup" -H "x-maintenance-token: $MAINTENANCE_TOKEN"
 ```
 
-`amount` é prata inteira em string (Q20): positivo credita, negativo debita, zero é recusado.
+`amount` é valor inteiro em string (Q20), na moeda da rota: positivo credita, negativo debita, zero é
+recusado.
 O namespace **não** loga, não cria sessão, não lê sessão e não age como outro usuário — o `userId` é
 sempre alvo, nunca ator. Login sem Discord continua só no dev-login, proibido em produção pelo env.
 

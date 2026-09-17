@@ -32,16 +32,23 @@ export function Wallet() {
   // Um extrato só, recortado por moeda (F6-27): o filtro vive aqui e vai na query, não filtra em memória —
   // senão "Buffunfa" mostraria só o que coube nos 50 lançamentos mais recentes das duas moedas juntas.
   const [currency, setCurrency] = useState<LedgerCurrencyFilter>("all");
-  const load = useCallback(() => fetchMyStatement(currency), [currency]);
-  const statement = usePoll<Statement>(load, "Não foi possível carregar o extrato.");
+  // Duas leituras quando há filtro: a cronológica completa alimenta os números do topo (que são de
+  // prata) e o recorte alimenta a tabela. Calcular os dois da mesma lista faria "Ganhos no mês" sumir
+  // só porque alguém clicou em Buffunfa — o filtro é da tabela, não da carteira.
+  const load = useCallback(async () => {
+    const all = await fetchMyStatement("all");
+    return { all, view: currency === "all" ? all : await fetchMyStatement(currency) };
+  }, [currency]);
+  const statement = usePoll<{ all: Statement; view: Statement }>(load, "Não foi possível carregar o extrato.");
 
-  const entries = statement.data?.entries ?? [];
+  const entries = statement.data?.view.entries ?? [];
+  const silverEntries = statement.data?.all.entries ?? [];
   const open = withdrawals.filter((w) => w.status === "pending" || w.status === "approved");
   const pendingCount = withdrawals.filter((w) => w.status === "pending").length;
 
   const now = new Date();
-  const month = monthEarnings(entries, now);
-  const last = lastSplit(entries);
+  const month = monthEarnings(silverEntries, now);
+  const last = lastSplit(silverEntries);
   const total = balance?.balance ?? 0n;
   const reserved = balance?.reserved ?? 0n;
   const available = balance?.available ?? 0n;
@@ -85,13 +92,13 @@ export function Wallet() {
         </p>
       )}
 
-      <div className="grid grid-cols-2 gap-3 xl:grid-cols-5">
+      <div className="grid grid-cols-2 gap-3 xl:grid-cols-4">
         <StatCard
           emphasis
           labelId="balance-label"
           label="Disponível pra saque"
           icon={<Coins />}
-          className="col-span-2 xl:col-span-1"
+          className="col-span-2"
           value={balance ? <Amount currency="silver" value={available} className={negative ? "text-destructive" : undefined} /> : <Skeleton className="h-8 w-40" />}
           hint={
             !balance ? (
@@ -121,13 +128,14 @@ export function Wallet() {
         />
         <StatCard
           label={`Ganhos em ${monthFmt.format(now)}`}
+          className="col-span-2"
           icon={<CalendarDays />}
           value={statement.data ? <Amount currency="silver" value={month.total} signed={month.total > 0n} className={month.total > 0n ? "text-success" : undefined} /> : <Skeleton className="h-7 w-28" />}
           hint={month.splits === 0 ? "Nenhum split neste mês ainda" : `${month.splits} ${month.splits === 1 ? "split recebido" : "splits recebidos"}`}
         />
         <StatCard
           label="Último split"
-          className="col-span-2 xl:col-span-1"
+          className="col-span-2"
           icon={<Swords />}
           value={!statement.data ? <Skeleton className="h-7 w-28" /> : last ? <Amount currency="silver" value={last.amount} signed /> : <span className="text-muted-foreground">—</span>}
           hint={last ? <span className="block truncate">{formatDateTime(last.createdAt)}</span> : "Participe de um evento pra receber"}
@@ -157,7 +165,7 @@ export function Wallet() {
           ) : !statement.data || loading ? (
             <StatementSkeleton />
           ) : entries.length > 0 ? (
-            <Statement entries={entries} hasMore={!!statement.data.nextCursor} />
+            <Statement entries={entries} hasMore={!!statement.data.view.nextCursor} />
           ) : currency !== "all" ? (
             <p className="px-4 py-8 text-center text-sm text-muted-foreground">Nenhum lançamento nesta moeda ainda.</p>
           ) : (
