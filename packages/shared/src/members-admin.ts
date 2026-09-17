@@ -6,13 +6,14 @@
  */
 
 /** Filtros da tela; valor vai cru na URL, então usa nome estável e sem acento. */
-export const MEMBER_FILTERS = ["todos", "nao_encontrados", "sem_nick"] as const;
+export const MEMBER_FILTERS = ["todos", "nao_encontrados", "sem_nick", "banidos"] as const;
 export type MemberFilter = (typeof MEMBER_FILTERS)[number];
 
 export const MEMBER_FILTER_LABELS: Record<MemberFilter, string> = {
   todos: "Todos",
   nao_encontrados: "Não encontrados no Albion",
   sem_nick: "Sem nick",
+  banidos: "Banidos",
 };
 
 /** Filtro desconhecido (URL editada à mão) cai em `todos`: a tela mostra tudo em vez de quebrar. */

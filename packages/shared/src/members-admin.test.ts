@@ -16,10 +16,11 @@ describe("filtro da lista de membros (TASK-043, AC#4)", () => {
     expect(parseMemberFilter("todos")).toBe("todos");
     expect(parseMemberFilter("nao_encontrados")).toBe("nao_encontrados");
     expect(parseMemberFilter("sem_nick")).toBe("sem_nick");
+    expect(parseMemberFilter("banidos")).toBe("banidos");
   });
 
   it("valor desconhecido ou ausente cai em todos", () => {
-    for (const value of ["", "banidos", null, undefined, 7, {}]) expect(parseMemberFilter(value)).toBe("todos");
+    for (const value of ["", "expulsos", null, undefined, 7, {}]) expect(parseMemberFilter(value)).toBe("todos");
   });
 });
 

@@ -21,7 +21,9 @@ export type Action =
   | "distribute"
   | "approve"
   | "reject"
-  | "settle";
+  | "settle"
+  /** Banir e desbanir jogador (TASK-050): corta o acesso na hora, sem apagar a conta. */
+  | "ban";
 
 /** Campos de dono por tipo de recurso (condições das regras). */
 interface SubjectFields {
@@ -32,6 +34,8 @@ interface SubjectFields {
   LootSplit: Record<never, never>;
   MemberRequest: { userId: string };
   UserRole: Record<never, never>;
+  /** Banimento de um jogador (TASK-050). Subject próprio: banir não é "editar papel". */
+  Ban: Record<never, never>;
 }
 
 export type SubjectType = keyof SubjectFields | "all";
@@ -73,6 +77,8 @@ export function defineAbilityFor(user: AbilityUser): AppAbility {
     can("manage", ["Event", "EventTemplate", "LootSplit", "MemberRequest"]);
     can("read", ["Wallet", "Withdrawal"]);
     can(["approve", "reject", "settle"], "Withdrawal");
+    // Banir e desbanir jogador (TASK-050). Provisório na staff até a revisão de papéis (TASK-052).
+    can("ban", "Ban");
   }
 
   if (roles.has("admin")) {
