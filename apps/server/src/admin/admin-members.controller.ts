@@ -20,6 +20,8 @@ interface AdminMemberDto {
   albion: { status: string | null; playerId: string | null; guildName: string | null; checkedAt: string | null };
   /** Banimento vigente (TASK-050); `null` = conta ativa. */
   ban: { bannedAt: string; reason: string; byName: string | null } | null;
+  /** Data em que a limpeza diária viu que a conta saiu do servidor (TASK-049); `null` = está no servidor. */
+  leftGuildAt: string | null;
 }
 
 export interface AdminMembersResponse {
@@ -70,6 +72,7 @@ export class AdminMembersController {
         createdAt: m.createdAt.toISOString(),
         albion: { ...m.albion, checkedAt: m.albion.checkedAt?.toISOString() ?? null },
         ban: m.ban ? { bannedAt: m.ban.bannedAt.toISOString(), reason: m.ban.reason, byName: m.ban.byName } : null,
+        leftGuildAt: m.leftGuildAt?.toISOString() ?? null,
       })),
       total: result.total,
       page: pagination.page,

@@ -19,6 +19,11 @@ export interface AdminMember {
   albion: { status: string | null; playerId: string | null; guildName: string | null; checkedAt: Date | null };
   /** Banimento vigente (TASK-050). `null` = conta ativa. A conta banida continua na lista, marcada. */
   ban: { bannedAt: Date; reason: string; byName: string | null } | null;
+  /**
+   * Saída do servidor do Discord marcada pela limpeza diária (TASK-049). `null` = está no servidor.
+   * Marca independente do banimento: uma conta pode ter as duas, e nenhuma apaga a outra.
+   */
+  leftGuildAt: Date | null;
 }
 
 export interface AdminMembersQuery {
@@ -101,6 +106,7 @@ export async function listAdminMembers(db: Database, query: AdminMembersQuery): 
       albionCheckedAt: users.albionCheckedAt,
       bannedAt: users.bannedAt,
       banReason: users.banReason,
+      leftGuildAt: users.leftGuildAt,
       bannedByName: sql<string | null>`coalesce(${bannedBy.displayName}, ${bannedBy.discordUsername})`,
     })
     .from(users)
