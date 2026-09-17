@@ -1,8 +1,7 @@
-import { BadGatewayException, Controller, ForbiddenException, Get, Inject, Optional, Post, Query, ServiceUnavailableException, UseGuards } from "@nestjs/common";
+import { BadGatewayException, Controller, Get, Inject, Optional, Post, Query, ServiceUnavailableException, UseGuards } from "@nestjs/common";
 import { listAdminMembers, type AdminMembersPage, type DbHandle } from "@albion-hub/db";
 import { normalizeMemberSearch, parseMemberFilter, parseMemberPagination } from "@albion-hub/shared";
-import { Authorize, CurrentAuth } from "../auth/authorize.js";
-import type { AuthorizedRequest } from "../auth/authorize.js";
+import { Authorize } from "../auth/authorize.js";
 import { SameOriginGuard } from "../auth/same-origin.guard.js";
 import { DB_HANDLE } from "../db/db.module.js";
 import { IMPORT_MEMBERS_HTTP_ERRORS, isMissingMembersIntent, type MemberImportSummary } from "../domain/member-import.js";
@@ -34,9 +33,10 @@ export interface AdminMembersResponse {
 /**
  * Lista de membros do painel (TASK-043).
  *
- * Permissão da listagem: `read`/`UserRole` **ou** `ban`/`Ban`. O admin lê pela primeira (mesma regra de
- * `/admin/users`, TASK-011, Q13); a staff lê pela segunda, porque a partir da TASK-050 ela bane e não dá
- * para banir quem você não consegue encontrar. Member e caller não têm nenhuma das duas e seguem em 403.
+ * Permissão da listagem: `read`/`MemberProfile` (TASK-047, G3). Admin passa por `manage all`, staff pela
+ * regra própria. Antes eram duas checagens soltas (`read`/`UserRole` ou `ban`/`Ban`) porque a staff só
+ * chegava aqui de carona no banimento; agora a lista e as ações da ficha do membro têm um subject só, e a
+ * permissão de ler a lista deixa de depender de poder banir. Member e caller não têm a regra e seguem em 403.
  *
  * As escritas não se movem: o import continua exigindo `manage`/`all` (admin de verdade), exatamente a
  * regra que o `/importar-membros` do bot já aplica — um comportamento, dois canais. Banir tem controller
@@ -50,17 +50,13 @@ export class AdminMembersController {
   ) {}
 
   @Get()
-  @Authorize()
+  @Authorize("read", "MemberProfile")
   async list(
-    @CurrentAuth() auth: AuthorizedRequest["auth"],
     @Query("search") search?: string,
     @Query("filter") filter?: string,
     @Query("page") page?: string,
     @Query("pageSize") pageSize?: string,
   ): Promise<AdminMembersResponse> {
-    // Admin lê a lista para gerir papéis e nicks; staff lê porque precisa achar quem vai banir (TASK-050).
-    // Member e caller continuam fora: nenhum dos dois tem `read`/`UserRole` nem `ban`/`Ban`.
-    if (!auth.ability.can("read", "UserRole") && !auth.ability.can("ban", "Ban")) throw new ForbiddenException("Você não tem permissão para esta ação.");
     const pagination = parseMemberPagination(page, pageSize);
     const result = await listAdminMembers(this.handle.db, {
       search: normalizeMemberSearch(search),
