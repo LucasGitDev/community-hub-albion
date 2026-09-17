@@ -6,18 +6,15 @@ import {
   Get,
   Inject,
   NotFoundException,
-  Optional,
   Param,
   Patch,
   Post,
-  ServiceUnavailableException,
   UseGuards,
 } from "@nestjs/common";
 import {
   addUserNote,
   getAdminMemberProfile,
   listUserNotes,
-  setAlbionCheck,
   updateMemberProfile,
   type DbHandle,
   type UserNote,
@@ -27,18 +24,9 @@ import { Authorize, CurrentAuth } from "../auth/authorize.js";
 import { SameOriginGuard } from "../auth/same-origin.guard.js";
 import type { AuthContext } from "../auth/session.service.js";
 import { DB_HANDLE } from "../db/db.module.js";
-import type { AlbionPlayerLookup } from "../domain/albion-lookup.js";
-import { ALBION_PLAYER_LOOKUP } from "../members/albion-lookup.token.js";
+import { AlbionCheckService, type AlbionCheckDto } from "../members/albion-check.service.js";
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-
-/** O bloco `albion` do membro, no mesmo formato da listagem: a tela troca a linha sem recarregar nada. */
-interface AlbionCheckDto {
-  status: string | null;
-  playerId: string | null;
-  guildName: string | null;
-  checkedAt: string | null;
-}
 
 interface UserNoteDto {
   id: string;
@@ -66,43 +54,20 @@ const toNoteDto = (note: UserNote): UserNoteDto => ({ ...note, createdAt: note.c
 export class AdminMemberProfileController {
   constructor(
     @Inject(DB_HANDLE) private readonly handle: DbHandle,
-    @Optional() @Inject(ALBION_PLAYER_LOOKUP) private readonly albion: AlbionPlayerLookup | null = null,
+    @Inject(AlbionCheckService) private readonly albionCheck: AlbionCheckService,
   ) {}
 
   /**
    * Confere o nick vigente na API do Albion agora e guarda o resultado (AC#1).
    *
-   * A consulta nunca derruba a requisição: o cliente já devolve `unavailable` no lugar de lançar (timeout de 5s,
-   * sem retry). `disabled` (sem `ALBION_REGION`) é 503 com texto em PT-BR, porque aí não há nada para gravar e
-   * mostrar "não encontrado" seria mentira — Q14/Q15: a conferência é ajuda, nunca bloqueio.
+   * A regra mora no `AlbionCheckService`, compartilhado com o namespace de manutenção (TASK-048):
+   * a mesma revalidação pelo painel e pelo curl.
    */
   @Post("albion-check")
   @UseGuards(SameOriginGuard)
   @Authorize("update", "UserRole")
   async check(@Param("userId") rawUserId: string): Promise<{ albion: AlbionCheckDto }> {
-    const userId = parseUserId(rawUserId);
-    const member = await this.requireMember(userId);
-    if (!member.gameNick) throw new BadRequestException("Esse membro ainda não tem nick registrado: não há o que conferir no Albion.");
-    if (!this.albion) throw new ServiceUnavailableException("Consulta ao Albion indisponível neste servidor.");
-
-    const result = await this.albion.lookup(member.gameNick);
-    if (result.status === "disabled") throw new ServiceUnavailableException("Conferência no Albion desligada neste servidor (ALBION_REGION não configurado).");
-
-    const checkedAt = new Date(result.checkedAt);
-    await setAlbionCheck(this.handle.db, userId, {
-      status: result.status,
-      playerId: result.status === "found" ? result.playerId : null,
-      guildName: result.status === "found" ? result.guildName : null,
-      checkedAt,
-    });
-    return {
-      albion: {
-        status: result.status,
-        playerId: result.status === "found" ? result.playerId : null,
-        guildName: result.status === "found" ? result.guildName : null,
-        checkedAt: checkedAt.toISOString(),
-      },
-    };
+    return { albion: await this.albionCheck.recheck(parseUserId(rawUserId)) };
   }
 
   /**
