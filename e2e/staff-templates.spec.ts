@@ -158,6 +158,45 @@ test("staff exporta um template em YAML e importa de volta criando roles novas (
   await expect(importada).toHaveCount(1);
 });
 
+test("import não reescreve a descrição global da role e avisa o que ignorou (TASK-065 AC#1, AC#2, AC#3)", async ({ page }) => {
+  await login(page, "72000000000000005", "staffZ", ["staff"]);
+  const run = `${tag()}${Date.now().toString(36)}`;
+  const role = `Bastião ${run}`;
+  const daZvz = "segura a linha de frente na ZvZ";
+  const daDg = "puxa os mobs da dungeon";
+  const yaml = (name: string, description: string) => `version: 1\nname: ${name}\nminParty: 1\nmaxParty: 6\nroles:\n  - name: ${role}\n    slots: 1\n    description: ${description}`;
+
+  // AC#3: a role ainda não existe no catálogo, então nasce com a descrição do arquivo.
+  await page.goto("/staff/templates");
+  await page.getByRole("button", { name: "Importar YAML" }).click();
+  const dialog = page.getByRole("dialog");
+  await page.getByLabel("Conteúdo do YAML").fill(yaml(`ZvZ ${run}`, daZvz));
+  await dialog.getByRole("button", { name: "Importar template" }).click();
+  await expect(page.getByText("Template importado")).toBeVisible();
+  await page.goto("/staff/roles");
+  await expect(page.getByRole("region", { name: "Catálogo de roles" }).getByRole("row").filter({ hasText: role })).toContainText(daZvz);
+
+  // AC#2: o segundo template traz outra descrição para a mesma role; a tela avisa antes de gravar.
+  await page.goto("/staff/templates");
+  await page.getByRole("button", { name: "Importar YAML" }).click();
+  await page.getByLabel("Conteúdo do YAML").fill(yaml(`DG ${run}`, daDg));
+  const preview = dialog.getByRole("region", { name: "Pré-visualização do template" });
+  await expect(preview).toContainText(`A descrição do arquivo será ignorada nesta role, que já tem descrição no catálogo: ${role}.`);
+  await snap(page, `import-descricao-aviso-${tag()}`);
+  await dialog.getByRole("button", { name: "Importar template" }).click();
+  await expect(page.getByText("Template importado")).toBeVisible();
+  await expect(page.getByText(`Descrição do arquivo ignorada (a role já tem descrição no catálogo): ${role}.`)).toBeVisible();
+  await snap(page, `import-descricao-toast-${tag()}`);
+
+  // AC#1: o catálogo continua com a descrição do primeiro template — o import não escreveu por cima.
+  await page.goto("/staff/roles");
+  const row = page.getByRole("region", { name: "Catálogo de roles" }).getByRole("row").filter({ hasText: role });
+  await expect(row).toContainText(daZvz);
+  await expect(row).not.toContainText(daDg);
+  await expect(row.getByText("em 2 templates")).toBeVisible();
+  await snap(page, `import-descricao-catalogo-${tag()}`);
+});
+
 /** O download vem de um blob: montado no navegador; o conteúdo só é legível pelo arquivo que o Playwright salvou. */
 async function readDownload(download: Download): Promise<string> {
   const path = await download.path();
