@@ -85,7 +85,8 @@ export class BotModule {
         EventVoiceService,
         EventCommand,
       ],
-      exports: [DiscordMemberImportService, MEMBER_IMPORTER],
+      // DISCORD_GUILD_MEMBERS_GATEWAY sai daqui para a limpeza diária (TASK-049) ler a guild com o mesmo cliente.
+      exports: [DiscordMemberImportService, MEMBER_IMPORTER, DISCORD_GUILD_MEMBERS_GATEWAY],
     };
   }
 }

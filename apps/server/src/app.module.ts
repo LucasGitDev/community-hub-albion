@@ -2,6 +2,7 @@ import { type DynamicModule, type INestApplication, Module } from "@nestjs/commo
 import type { Env } from "./config/env.js";
 import { AuthModule } from "./auth/auth.module.js";
 import { BotModule } from "./bot/bot.module.js";
+import { CleanupModule } from "./cleanup/cleanup.module.js";
 import { DbModule } from "./db/db.module.js";
 import { EconomyModule } from "./economy/economy.module.js";
 import { EventsModule } from "./events/events.module.js";
@@ -28,7 +29,7 @@ export class AppModule {
   static register(env: Env, options: AppModuleOptions = { bot: true }): DynamicModule {
     return {
       module: AppModule,
-      imports: [DbModule.register(env.DATABASE_URL), EconomyModule.register(env), AuthModule.register(env, options.memberImporter), NickModule.register(env), MembersModule.register(env), TemplatesModule.register(env), EventsModule.register(env), ...(options.bot ? [BotModule.register(env)] : []), ...maintenance(env)],
+      imports: [DbModule.register(env.DATABASE_URL), EconomyModule.register(env), AuthModule.register(env, options.memberImporter), NickModule.register(env), MembersModule.register(env), TemplatesModule.register(env), EventsModule.register(env), ...(options.bot ? [BotModule.register(env), CleanupModule.register()] : []), ...maintenance(env)],
       controllers: [HealthController],
     };
   }
