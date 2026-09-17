@@ -1,11 +1,11 @@
 ---
 id: TASK-066
 title: Posição na espera é contador com buracos e vaza para a API
-status: In Progress
+status: Done
 assignee:
   - '@claude'
 created_date: '2026-09-17 17:40'
-updated_date: '2026-09-17 23:02'
+updated_date: '2026-09-17 23:05'
 labels: []
 milestone: m-12
 dependencies: []

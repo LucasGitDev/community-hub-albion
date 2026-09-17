@@ -4,10 +4,11 @@ title: Filtrar teste do packages/db por nome derruba a suíte inteira
 status: To Do
 assignee: []
 created_date: '2026-09-17 17:53'
+updated_date: '2026-09-17 23:05'
 labels: []
 milestone: m-12
 dependencies: []
-priority: low
+priority: medium
 type: bug
 ordinal: 7090
 ---
@@ -41,3 +42,9 @@ Relacionado, do mesmo achado: os testes de integração não isolam nomes por ex
 - [ ] #7 Notas e final summary com evidências; commits Conventional atômicos sem co-autor
 - [ ] #8 PR merged na main com quality gate verde; branch e worktree removidos
 <!-- DOD:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+Reincidente: apareceu de novo na TASK-066 (2026-09-17), agora com o sintoma 'relation users does not exist' num banco novo. Terceira vez que custa tempo de quem está depurando — dois agents diferentes caíram nela. Sobe de prioridade se acontecer mais uma vez.
+<!-- SECTION:NOTES:END -->
