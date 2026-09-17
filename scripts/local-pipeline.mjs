@@ -8,6 +8,7 @@
  *
  *   node scripts/local-pipeline.mjs              gate + push + imagem + webhook   (pnpm ship)
  *   node scripts/local-pipeline.mjs gate         só o quality gate
+ *   node scripts/local-pipeline.mjs gate --report  gate + publica o status `summary` no commit (pnpm ship:pr)
  *   node scripts/local-pipeline.mjs deploy       só imagem + webhook (assume gate já verde)
  *   node scripts/local-pipeline.mjs --dry-run    mostra o que faria, sem push, build ou webhook
  *   node scripts/local-pipeline.mjs --skip-gate  pula o gate (só para reexecutar um deploy que falhou no meio)
@@ -81,7 +82,32 @@ function onlyBacklogChanged() {
   return files.length > 0 && files.every((f) => f.startsWith(".backlog/"));
 }
 
-function gate() {
+/**
+ * Publica o status `summary` no commit — o mesmo contexto que o ruleset da `main` exige.
+ *
+ * É **autoatestado**: diz que o gate rodou nesta máquina, não num ambiente neutro. Por isso três
+ * guardas: só com árvore limpa (senão o verde seria de um código que não é o que subiu), só para o
+ * SHA que já está no remoto (status em commit que ninguém tem não serve de nada), e `failure`
+ * quando o gate reprova — caminho que não sabe dizer não não é portão.
+ *
+ * A descrição diz de onde veio o verde, para quem abrir o PR daqui a seis meses saber.
+ */
+function reportStatus(state) {
+  const dirty = capture("git status --porcelain");
+  if (dirty) return console.warn("\n⚠ árvore suja: status não publicado (o verde seria de um código diferente do que subiu).");
+  const sha = capture("git rev-parse HEAD");
+  const onRemote = capture(`git branch -r --contains ${sha} 2>/dev/null`);
+  if (!onRemote) return console.warn(`\n⚠ ${sha.slice(0, 7)} ainda não está no remoto: rode 'git push' e depois 'pnpm ship:gate'.`);
+  const repo = capture("gh repo view --json nameWithOwner --jq .nameWithOwner");
+  if (!repo) return console.warn("\n⚠ gh não disponível: status não publicado.");
+  const code = run(
+    `gh api -X POST repos/${repo}/statuses/${sha} -f state=${state} -f context=summary -f description=${JSON.stringify("quality gate local (máquina do dev)")}`,
+    { quiet: true, allowFail: true },
+  );
+  console.log(code === 0 ? `\n✓ Status 'summary' = ${state} publicado em ${sha.slice(0, 7)}.` : "\n⚠ falha ao publicar o status.");
+}
+
+function gate({ report = false } = {}) {
   console.log("\n── Quality gate ────────────────────────────────────────────");
   if (!process.env.TEST_DATABASE_URL) {
     console.warn("⚠ TEST_DATABASE_URL não definida: os testes de banco são pulados e a cobertura cai.");
@@ -89,6 +115,7 @@ function gate() {
     console.warn("  export TEST_DATABASE_URL=postgres://albion:albion@localhost:55432/albion_hub");
   }
   const code = run("node scripts/quality-gate.mjs", { allowFail: true });
+  if (report) reportStatus(code === 0 ? "success" : "failure");
   if (code !== 0) die("quality gate reprovou: nada foi publicado.", "Corrija e rode de novo — é o mesmo portão do CI.");
 }
 
@@ -154,7 +181,8 @@ function push() {
 // `gate` roda em qualquer branch — é justamente o que se quer antes de abrir PR. Só publicar exige main.
 if (stage === "gate") {
   // Sem exigir árvore limpa: o gate serve justamente para rodar em cima do que você acabou de escrever.
-  gate();
+  // Com `--report`, publica o status `summary` no commit (é o que destrava o PR sem rodar o Actions).
+  gate({ report: flag("--report") });
   console.log("\n✓ Gate verde.");
 } else if (stage === "deploy") {
   ensureBranch();
