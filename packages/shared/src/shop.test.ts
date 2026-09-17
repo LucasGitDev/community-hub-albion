@@ -1,7 +1,8 @@
 import { describe, expect, it } from "vitest";
-import { defineAbilityFor } from "./permissions.js";
+import { asSubject, defineAbilityFor } from "./permissions.js";
 import {
   ALLOWED_SHOP_ORDER_TRANSITIONS,
+  canOwnerCancelShopOrder,
   canTransitionShopOrder,
   checkShopPurchase,
   isSoldOut,
@@ -11,7 +12,12 @@ import {
   SHOP_ORDER_STATUSES,
   shopItemCreateSchema,
   shopItemUpdateSchema,
+  shopOrderCancelSchema,
+  shopOrderDeliverSchema,
+  shopOrderRefundSchema,
+  shopOrderRejectSchema,
   shopOrderTransitionError,
+  SHOP_ORDER_OWNER_CANCEL_NOTE,
   shopPurchaseSchema,
   shopRefusalMessage,
 } from "./shop.js";
@@ -56,16 +62,44 @@ describe("loja: regras da compra (TASK-059)", () => {
   });
 });
 
-describe("loja: máquina de estados do pedido (AC#5)", () => {
-  it("só `reserved` reserva: de `delivered` em diante o débito já está no ledger", () => {
-    expect(RESERVING_SHOP_ORDER_STATUSES).toEqual(["reserved"]);
+describe("loja: máquina de estados do pedido (TASK-060, F6-21 a F6-24)", () => {
+  it("reserva enquanto não há lançamento: `reserved` e `claimed` (AC#5)", () => {
+    // `claimed` é a staff ter pegado o pedido, não ter cobrado: a Buffunfa continua presa.
+    expect(RESERVING_SHOP_ORDER_STATUSES).toEqual(["reserved", "claimed"]);
+    expect(RESERVING_SHOP_ORDER_STATUSES).not.toContain("delivered");
   });
 
-  it("reserved vai para entregue ou cancelado; os dois são finais", () => {
-    expect(canTransitionShopOrder("reserved", "delivered")).toBe(true);
-    expect(canTransitionShopOrder("reserved", "cancelled")).toBe(true);
+  it("percorre reserved → claimed → delivered, com cancelled e rejected terminais (AC#1)", () => {
+    expect(canTransitionShopOrder("reserved", "claimed")).toBe(true);
+    expect(canTransitionShopOrder("claimed", "delivered")).toBe(true);
+    for (const terminal of ["delivered", "cancelled", "rejected"] as const) {
+      expect(ALLOWED_SHOP_ORDER_TRANSITIONS[terminal]).toEqual([]);
+    }
+  });
+
+  it("entregar sem ter pegado não existe: é o buraco que o claimed fecha (F6-22)", () => {
+    expect(canTransitionShopOrder("reserved", "delivered")).toBe(false);
+  });
+
+  it("claimed volta para reserved: o membro não fica preso a um staff que sumiu (AC#3, F6-22)", () => {
+    expect(canTransitionShopOrder("claimed", "reserved")).toBe(true);
+    // E de reserved não se "desvolta": a fila não tem estado anterior.
+    expect(ALLOWED_SHOP_ORDER_TRANSITIONS.reserved).not.toContain("reserved");
+  });
+
+  it("cancelar e recusar valem nos dois estados abertos, e só neles (AC#6, AC#7)", () => {
+    for (const open of ["reserved", "claimed"] as const) {
+      expect(canTransitionShopOrder(open, "cancelled")).toBe(true);
+      expect(canTransitionShopOrder(open, "rejected")).toBe(true);
+    }
     expect(canTransitionShopOrder("delivered", "cancelled")).toBe(false);
-    expect(canTransitionShopOrder("cancelled", "delivered")).toBe(false);
+    expect(canTransitionShopOrder("rejected", "cancelled")).toBe(false);
+  });
+
+  it("o comprador só cancela enquanto ninguém pegou (F6-24)", () => {
+    expect(canOwnerCancelShopOrder("reserved")).toBe(true);
+    expect(canOwnerCancelShopOrder("claimed")).toBe(false);
+    expect(canOwnerCancelShopOrder("delivered")).toBe(false);
   });
 
   it("todo estado tem transições declaradas", () => {
@@ -74,7 +108,26 @@ describe("loja: máquina de estados do pedido (AC#5)", () => {
 
   it("a recusa da transição explica o que ainda dá para fazer (Q18)", () => {
     expect(shopOrderTransitionError("delivered", "cancelled")).toContain("estado final");
-    expect(shopOrderTransitionError("reserved", "delivered")).toContain("aguardando entrega");
+    expect(shopOrderTransitionError("reserved", "delivered")).toContain("em entrega");
+  });
+});
+
+describe("loja: notas da fila (AC#4)", () => {
+  it("a entrega exige nota: é onde e para quem o item foi entregue", () => {
+    expect(shopOrderDeliverSchema.safeParse({ note: "  " }).success).toBe(false);
+    expect(shopOrderDeliverSchema.parse({ note: " banco de Martlock " })).toEqual({ note: "banco de Martlock" });
+  });
+
+  it("recusa e estorno exigem motivo; a nota tem teto", () => {
+    expect(shopOrderRejectSchema.safeParse({}).success).toBe(false);
+    expect(shopOrderRefundSchema.safeParse({ note: "" }).success).toBe(false);
+    expect(shopOrderDeliverSchema.safeParse({ note: "x".repeat(301) }).success).toBe(false);
+  });
+
+  it("cancelar aceita nota vazia: quem desiste do próprio pedido não preenche formulário", () => {
+    expect(shopOrderCancelSchema.parse({})).toEqual({ note: null });
+    expect(shopOrderCancelSchema.parse({ note: "membro desistiu" })).toEqual({ note: "membro desistiu" });
+    expect(SHOP_ORDER_OWNER_CANCEL_NOTE).toContain("comprador");
   });
 });
 
@@ -123,6 +176,15 @@ describe("loja: capacidades shop:manage e shop:fulfill (AC#6, F6-25)", () => {
   it("membro comum não tem nenhuma das duas", () => {
     const member = ability(["member"]);
     for (const [action, subject] of Object.values(SHOP_CAPABILITIES)) expect(member.can(action, subject)).toBe(false);
+  });
+
+  it("o comprador cancela o próprio pedido; nunca o de outro (AC#6, F6-24)", () => {
+    const member = defineAbilityFor({ id: "u1", roles: ["member"] });
+    expect(member.can("cancel", asSubject("ShopOrder", { userId: "u1" }))).toBe(true);
+    expect(member.can("cancel", asSubject("ShopOrder", { userId: "u2" }))).toBe(false);
+    // A staff encerra o pedido de qualquer um: depois de `claimed` é ela que cancela.
+    const staff = ability(["member", "staff"]);
+    expect(staff.can("cancel", asSubject("ShopOrder", { userId: "u2" }))).toBe(true);
   });
 
   it("membro vê o catálogo e compra; o pedido dos outros não é dele", () => {

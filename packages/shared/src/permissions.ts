@@ -79,6 +79,9 @@ export function defineAbilityFor(user: AbilityUser): AppAbility {
     can("read", "ShopItem");
     can("create", "ShopOrder");
     can("read", "ShopOrder", own);
+    // Desistir do próprio pedido (F6-24). Só vale enquanto ninguém da staff pegou — quem decide isso é a
+    // regra da fila (`canOwnerCancelShopOrder`), dentro da transação; o CASL só diz "é seu pedido".
+    can("cancel", "ShopOrder", own);
   }
 
   if (roles.has("caller")) {
@@ -108,7 +111,9 @@ export function defineAbilityFor(user: AbilityUser): AppAbility {
      * em `SHOP_CAPABILITIES` para a F7 — quando ela chegar, viram permissões atribuíveis uma a uma.
      */
     can("manage", "ShopItem");
-    can(["read", "fulfill"], "ShopOrder");
+    // `fulfill` é pegar, entregar, recusar e estornar; `cancel` é encerrar o pedido pelo membro depois de
+    // `claimed`, quando ele já não pode mais (F6-24).
+    can(["read", "fulfill", "cancel"], "ShopOrder");
   }
 
   if (roles.has("admin")) {
