@@ -11,7 +11,7 @@ import { and, eq, isNull, sql } from "drizzle-orm";
 import type { Database } from "./client.js";
 import type { EventTx } from "./events-repo.js";
 import { insertLedgerEntry } from "./ledger-repo.js";
-import { listEventPresence } from "./loot-split-repo.js";
+import { eventCallWindowMs, listEventPresence } from "./loot-split-repo.js";
 import { eventRoleSlots, events } from "./schema.js";
 
 /**
@@ -110,8 +110,7 @@ export async function previewEventAttendance(db: Database, eventId: string): Pro
     .from(events)
     .where(eq(events.id, eventId));
   if (!event) return null;
-  const [present, slots] = await Promise.all([listEventPresence(db, eventId), listEventRoleBuffunfa(db, eventId)]);
-  const windowMs = event.startedAt && event.finishedAt ? Math.max(0, event.finishedAt.getTime() - event.startedAt.getTime()) : 0;
+  const [present, slots, windowMs] = await Promise.all([listEventPresence(db, eventId), listEventRoleBuffunfa(db, eventId), eventCallWindowMs(db, eventId)]);
   const rows = attendanceRows(present.map(toPresence), {
     windowMs,
     measured: event.channelId !== null,
@@ -147,8 +146,7 @@ export async function payEventAttendance(db: Database, eventId: string, options:
     if (event.paidAt) return { ok: true as const, alreadyPaid: true };
     if (!event.channelId) return { ok: false as const, reason: "not_measured" as const };
 
-    const [present, slots] = await Promise.all([listEventPresence(tx, eventId), listEventRoleBuffunfa(tx, eventId)]);
-    const windowMs = event.startedAt && event.finishedAt ? Math.max(0, event.finishedAt.getTime() - event.startedAt.getTime()) : 0;
+    const [present, slots, windowMs] = await Promise.all([listEventPresence(tx, eventId), listEventRoleBuffunfa(tx, eventId), eventCallWindowMs(tx, eventId)]);
     const rows = attendanceRows(present.map(toPresence), { windowMs, measured: true, valueByRole: new Map(slots.map((s) => [s.name, s.value])) });
 
     for (const row of rows) {

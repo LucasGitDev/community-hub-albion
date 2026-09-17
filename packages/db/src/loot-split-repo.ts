@@ -12,7 +12,7 @@ import {
   type SplitConfirmRefusal,
   type SplitPresence,
 } from "@albion-hub/shared";
-import { and, asc, eq, gte, inArray, isNull, lte, ne, or, type SQL } from "drizzle-orm";
+import { and, asc, eq, gte, inArray, isNull, lte, ne, or, sql, type SQL } from "drizzle-orm";
 import type { Database } from "./client.js";
 import type { EventTx } from "./events-repo.js";
 import { listLedgerEntriesByReference, reverseLedgerEntry } from "./ledger-repo.js";
@@ -35,6 +35,40 @@ interface Candidate extends SplitPresence {
   userId: string | null;
   nick: string | null;
   roleName: string | null;
+}
+
+/**
+ * Quando a call **de fato** começou, para servir de denominador do corte de presença (TASK-073).
+ *
+ * O início do evento não serve: entre ele e a primeira pessoa entrar existe o tempo de o bot criar o
+ * canal e arrastar gente da sala de espera, e nesse intervalo ninguém poderia estar na call. Contar
+ * isso contra todo mundo derrubava até quem ficou o evento inteiro — numa call de um minuto, uns
+ * segundos de arrasto viraram 27% de presença perdida, que foi como o defeito apareceu.
+ *
+ * A janela então começa na primeira entrada registrada no canal, **nunca antes** do início do evento
+ * (sessão que já estava aberta antes conta só do start em diante, igual ao `overlapMs` do rateio).
+ * Sem sessão nenhuma, a janela é zero: não há call medida, e ninguém bate um corte de zero.
+ */
+export async function eventCallWindowMs(db: Database | EventTx, eventId: string): Promise<number> {
+  const [event] = await db
+    .select({ startedAt: events.startedAt, finishedAt: events.finishedAt, channelId: events.presenceChannelId })
+    .from(events)
+    .where(eq(events.id, eventId));
+  if (!event?.startedAt || !event.finishedAt || !event.channelId) return 0;
+  const { startedAt, finishedAt, channelId } = event;
+  const [first] = await db
+    .select({ at: sql<Date | null>`min(${voiceSessions.startedAt})` })
+    .from(voiceSessions)
+    .where(
+      and(
+        eq(voiceSessions.channelId, channelId),
+        lte(voiceSessions.startedAt, finishedAt),
+        or(isNull(voiceSessions.endedAt), gte(voiceSessions.endedAt, startedAt)),
+      ),
+    );
+  if (!first?.at) return 0;
+  const opensAt = Math.max(startedAt.getTime(), new Date(first.at).getTime());
+  return Math.max(0, finishedAt.getTime() - opensAt);
 }
 
 /**

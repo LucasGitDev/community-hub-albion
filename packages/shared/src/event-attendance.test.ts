@@ -5,7 +5,6 @@ import {
   attendancePresenceBp,
   attendanceRows,
   attendanceTotal,
-  attendanceWindowMs,
   eventRoleBuffunfaSchema,
   meetsAttendance,
   type AttendanceInput,
@@ -60,12 +59,6 @@ describe("faixa de Buffunfa da role (F6-8)", () => {
 });
 
 describe("corte de presença (F6-10)", () => {
-  it("a janela é o tempo de vida da call", () => {
-    expect(attendanceWindowMs("2026-01-01T20:00:00Z", "2026-01-01T21:00:00Z")).toBe(HOUR);
-    expect(attendanceWindowMs(null, "2026-01-01T21:00:00Z")).toBe(0);
-    expect(attendanceWindowMs("2026-01-01T21:00:00Z", "2026-01-01T20:00:00Z")).toBe(0);
-  });
-
   it("90% em ponto é dentro; um milissegundo abaixo é fora", () => {
     expect(ATTENDANCE_MIN_PRESENCE_BP).toBe(9000);
     expect(meetsAttendance(HOUR * 0.9, HOUR)).toBe(true);
