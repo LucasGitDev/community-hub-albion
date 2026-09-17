@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useEffect, useState } from "react";
 import { Coins, Loader2, Lock, Receipt, RefreshCw, TriangleAlert, Wallet } from "lucide-react";
 import { fetchMemberLedger, type MemberLedgerEntry, type MemberLedgerPage } from "@/api/member-ledger";
 import { errorText } from "@/api/http";
@@ -34,25 +34,31 @@ function MemberLedger({ member }: { member: { id: string; name: string } }) {
   const [error, setError] = useState<string | null>(null);
   const [loadingMore, setLoadingMore] = useState(false);
 
-  // Primeira página. Trocar de membro remonta o componente inteiro (`key`), então não há estado a zerar.
-  const load = useCallback(() => {
-    setError(null);
-    setPage(null);
-    setEntries([]);
+  const [attempt, setAttempt] = useState(0);
+
+  // Primeira página. Trocar de membro remonta o componente inteiro (`key`), então o estado já nasce
+  // vazio e não há o que zerar aqui; quem zera é o `retry`, que é o único caminho que reaproveita a tela.
+  useEffect(() => {
     let alive = true;
     fetchMemberLedger(member.id, { limit: PAGE_SIZE })
       .then((result) => {
         if (!alive) return;
         setPage(result);
         setEntries(result.entries);
+        setError(null);
       })
       .catch((e: unknown) => alive && setError(errorText(e, "Não foi possível carregar o extrato")));
     return () => {
       alive = false;
     };
-  }, [member.id]);
+  }, [member.id, attempt]);
 
-  useEffect(() => load(), [load]);
+  function retry() {
+    setError(null);
+    setPage(null);
+    setEntries([]);
+    setAttempt((n) => n + 1);
+  }
 
   async function loadMore() {
     if (!page?.nextCursor || loadingMore) return;
@@ -107,7 +113,7 @@ function MemberLedger({ member }: { member: { id: string; name: string } }) {
             <p role="alert" className="mb-3 text-sm text-destructive">
               {error}
             </p>
-            <Button variant="outline" size="sm" onClick={load}>
+            <Button variant="outline" size="sm" onClick={retry}>
               <RefreshCw />
               Tentar de novo
             </Button>

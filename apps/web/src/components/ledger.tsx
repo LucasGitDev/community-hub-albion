@@ -7,7 +7,7 @@ import { formatDateTime } from "@/lib/format";
 import { cn } from "@/lib/utils";
 
 /** Origem do lançamento: ícone + rótulo PT-BR + tom, nunca só cor. */
-export const LEDGER_KIND_META: Record<LedgerEntryKind, { icon: ReactNode; tone: Tone }> = {
+const LEDGER_KIND_META: Record<LedgerEntryKind, { icon: ReactNode; tone: Tone }> = {
   split_payout: { icon: <ArrowDownLeft />, tone: "neutral" },
   split_fee: { icon: <Scissors />, tone: "neutral" },
   withdrawal: { icon: <ArrowUpRight />, tone: "info" },
