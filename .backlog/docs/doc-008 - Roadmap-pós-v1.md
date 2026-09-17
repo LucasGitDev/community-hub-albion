@@ -3,7 +3,7 @@ id: doc-008
 title: Roadmap pós-v1
 type: other
 created_date: '2026-09-17 14:25'
-updated_date: '2026-09-17 17:05'
+updated_date: '2026-09-17 19:09'
 ---
 
 Status: **rascunho para debate** (2026-09-17). Sucede o doc "Roadmap", cuja v1 (F0–F5) está
@@ -23,32 +23,25 @@ que só existe para habilitar a próxima não entra sozinha no board — entra c
 
 ---
 
-## F6 — Moeda Buffunfa, taxa de entrada e loja — **grelhada, pronta para executar**
+## F6 — Moeda Buffunfa, taxa de entrada e loja — **entregue (2026-09-17)**
 
-Decisões fechadas em 2026-09-17 (doc "Decisões v1", bloco F6-1 a F6-29) e identidade no doc
-"Identidade: Toca da Turma e Buffunfa". **Entram juntas de propósito:** moeda sem onde gastar é
-número morto na tela; loja sem moeda não tem o que cobrar. O sink precisa nascer no mesmo dia que
-a fonte.
+As seis tasks estão na `main`. Decisões em doc-005 (F6-1 a F6-57), identidade em doc-009.
 
-**Seis tasks, nesta ordem de merge** (TASK-056 e TASK-057 são o núcleo):
+| Task | Entregou |
+|---|---|
+| TASK-055 | Três papéis, três matizes: ouro = Buffunfa, âmbar = CTA, prata = neutro |
+| TASK-056 | Coluna `currency` no ledger, saldo e extrato por moeda, `/api/maintenance/buffunfa`, emoji do bot |
+| TASK-057 | Ganho por presença: faixa por role, valor do fechamento, corte de 90% |
+| TASK-058 | Taxa de entrada cobrada na inscrição, sink puro, devolução por estorno |
+| TASK-059 | Loja: catálogo de item de texto livre, estoque opcional, compra que reserva |
+| TASK-060 | Fila de pedidos: `reserved → claimed → delivered`, entrega lança o débito |
 
-| Ordem | Task | Entrega |
-|---|---|---|
-| 1 | TASK-055 | Inverter a paleta: dourado vira Buffunfa, âmbar vira CTA, prata vira prateada |
-| 2 | TASK-056 | Buffunfa no ledger: coluna `currency`, saldo e extrato por moeda, emoji do bot |
-| 3 | TASK-057 | Ganho por participação em evento (valor por role, presença ≥ 90%) |
-| 4 | TASK-058 | Taxa de entrada em Buffunfa, cobrada na inscrição |
-| 5 | TASK-059 | Loja: catálogo de item de texto livre e compra |
-| 6 | TASK-060 | Fila de pedidos com entrega manual pela staff |
-
-TASK-055 não toca lógica e roda em paralelo com o resto, mas vai primeiro: as telas novas da fase
-nascem com a paleta certa em vez de nascerem erradas e serem corrigidas.
-
-**Escala da economia** (define formatação e preços): ganhos na casa da unidade ou da dezena,
-gastos na casa da centena ou do milhar. Muitos eventos por compra, de propósito.
-
-**Pronto quando:** um membro ganha Buffunfa participando de um evento, paga taxa de entrada num
+**Pronto, verificado:** um membro ganha Buffunfa participando de um evento, paga taxa de entrada num
 conteúdo disputado, compra um item na loja e a staff entrega pela fila.
+
+**Duas coisas que a fase deixou para o usuário decidir quando usar:** a prata passou a ser abreviada
+no chip do header (F6-30, saiu de um estouro real de layout em 400px) e quem começa o evento ainda
+na espera recebe a taxa de volta (F6-42).
 
 ---
 

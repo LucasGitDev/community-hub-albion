@@ -1,11 +1,11 @@
 ---
 id: TASK-060
 title: Fila de pedidos da loja com entrega manual pela staff
-status: In Progress
+status: Done
 assignee:
   - '@claude'
 created_date: '2026-09-17 17:05'
-updated_date: '2026-09-17 19:06'
+updated_date: '2026-09-17 19:09'
 labels: []
 milestone: m-6
 dependencies:

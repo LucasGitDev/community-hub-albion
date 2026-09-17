@@ -3,7 +3,7 @@ id: doc-005
 title: Decisões v1
 type: specification
 created_date: '2026-09-15 03:22'
-updated_date: '2026-09-17 19:02'
+updated_date: '2026-09-17 19:09'
 ---
 Resultado do grill (R1–R3, 2026-09-15). Referência pra specs e tasks.
 
@@ -203,3 +203,26 @@ ping comprado com Buffunfa (vai com a F7), automação de cargo do Discord.
 **Ordem de merge, para o histórico:** a 058 (taxa) entrou antes da 057 (ganho) e ficou com o slot `0020`; a 057 foi rebaseada e regerada como `0021`, o que também trocou um `DROP TYPE`/`CREATE TYPE` do enum de lançamentos por `ALTER TYPE ... ADD VALUE` — mais seguro, e sem tocar nos lançamentos existentes.
 
 **Armadilha que custou tempo, registrada para não repetir:** `pnpm db:generate` lê o **compilado** de `packages/shared`, não o fonte. Com o `dist/` velho depois de um rebase, a migration saiu recriando o enum **sem** o `entry_fee` que a 058 tinha acabado de adicionar — teria apagado o tipo de lançamento da taxa de entrada em produção. Rodar `turbo run build --filter=@albion-hub/shared` antes de gerar migration depois de qualquer rebase que toque `packages/shared`.
+
+### Decisões tomadas durante a TASK-060 (fila de pedidos) — fecham a F6
+| # | Decisão |
+|---|---|
+| F6-53 | A transição `reserved → delivered` **não existe**: entregar sem ter pegado reabre exatamente o buraco que o `claimed` fecha (dois da staff entregando o mesmo item). São dois cliques, e o segundo enxerga o primeiro. |
+| F6-54 | **Estorno de pedido entregue mantém o status `delivered`** e marca `reversal_entry_id`. O ledger é append-only: desfazer uma compra é lançamento novo, não estado novo. Virar `cancelled` apagaria da tela que o pedido **foi** entregue e depois corrigido — e é isso que a staff precisa ver. |
+| F6-55 | A **entrega não passa pelo `spendCurrency`** (a F6-39 falava só da compra): aquela porta abre a própria transação, e o débito precisa ser atômico com o carimbo do pedido. Mesmo raciocínio da aprovação do saque. |
+| F6-56 | Cancelamento feito pelo próprio comprador grava **nota escrita pelo servidor**. O banco exige nota em todo cancelamento, mas obrigar o membro a justificar a desistência seria formulário a mais por nada. Staff que cancela escreve o motivo. |
+| F6-57 | Os checks novos comparam `status::text`: usar valor de enum recém-criado na **mesma** transação do `alter type` é recusado pelo Postgres, e a migration faz as duas coisas. |
+
+---
+
+## F6 entregue (2026-09-17)
+
+As seis tasks (055 a 060) estão na `main`. O ciclo fecha: o membro ganha Buffunfa comparecendo a um
+evento, paga taxa para entrar num conteúdo disputado, compra um item na loja e a staff entrega pela
+fila. 57 decisões registradas, todas com o motivo junto.
+
+**O que a fase provou sobre o próprio desenho:** o risco assumido na F6-1 (moedas na mesma tabela)
+apareceu no primeiro dia — "Ganhos no mês" passou a somar Buffunfa com prata — e foi por isso que
+saldo e extrato passaram a exigir moeda explícita na assinatura, sem sobrecarga que aceite a
+omissão. O mesmo padrão se repetiu na mesclagem do PATCH de template, onde taxa e faixa somem por
+serem esquecidas na base: os dois casos são o mesmo erro, e os dois agora têm teste.
