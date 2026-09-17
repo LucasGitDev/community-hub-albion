@@ -11,7 +11,7 @@ import {
   type EventTemplateDto,
   type EventTemplateYaml,
 } from "@albion-hub/shared";
-import { Check, Download, LayoutTemplate, Pencil, Plus, Shield, Sparkles, Trash2, Upload, Users, X } from "lucide-react";
+import { Check, Download, Info, LayoutTemplate, Pencil, Plus, Shield, Sparkles, Trash2, Upload, Users, X } from "lucide-react";
 import { useCallback, useEffect, useId, useMemo, useState } from "react";
 import { NavLink } from "react-router";
 import { toast } from "sonner";
@@ -491,8 +491,21 @@ function ImportDialog({ roles, onClose, onImported }: { roles: EventRoleDto[]; o
   const preview = parsed?.ok ? parsed.template : null;
   const problem = fileError ?? (parsed && !parsed.ok ? parsed.error : null);
 
-  const known = useMemo(() => new Set(roles.map((r) => r.name.toLowerCase())), [roles]);
+  const known = useMemo(() => new Map(roles.map((r) => [r.name.toLowerCase(), r.description?.trim() ?? ""])), [roles]);
   const newRoles = preview ? preview.roles.filter((r) => !known.has(r.name.toLowerCase())).map((r) => r.name) : [];
+  /**
+   * Descrições que o import vai ignorar (TASK-065): a role já existe no catálogo com outra descrição,
+   * e a descrição mora uma vez por role, não por template — aplicar a do arquivo apagaria o texto que
+   * os outros templates mostram. A tela avisa antes de gravar; a API decide de novo.
+   */
+  const keptDescriptions = preview
+    ? preview.roles
+        .filter((r) => {
+          const current = known.get(r.name.toLowerCase());
+          return Boolean(current) && Boolean(r.description?.trim()) && current !== r.description?.trim();
+        })
+        .map((r) => r.name)
+    : [];
 
   async function pickFile(file: File | undefined) {
     if (!file) return;
@@ -510,12 +523,10 @@ function ImportDialog({ roles, onClose, onImported }: { roles: EventRoleDto[]; o
     setBusy(true);
     try {
       const result = await api.importEventTemplateYaml(source);
-      toast.success("Template importado", {
-        description:
-          result.createdRoles.length > 0
-            ? `${result.template.name}: ${result.template.totalSlots} vagas. Roles criadas no catálogo: ${result.createdRoles.join(", ")}.`
-            : `${result.template.name}: ${result.template.totalSlots} vagas.`,
-      });
+      const parts = [`${result.template.name}: ${result.template.totalSlots} vagas.`];
+      if (result.createdRoles.length > 0) parts.push(`Roles criadas no catálogo: ${result.createdRoles.join(", ")}.`);
+      if (result.ignoredDescriptions.length > 0) parts.push(`Descrição do arquivo ignorada (a role já tem descrição no catálogo): ${result.ignoredDescriptions.join(", ")}.`);
+      toast.success("Template importado", { description: parts.join(" "), duration: result.ignoredDescriptions.length > 0 ? 10000 : undefined });
       onImported();
     } catch (err) {
       toast.error(errorText(err, "Não foi possível importar o template."));
@@ -566,7 +577,7 @@ function ImportDialog({ roles, onClose, onImported }: { roles: EventRoleDto[]; o
             </p>
           )}
 
-          {preview && <ImportPreview template={preview} newRoles={newRoles} />}
+          {preview && <ImportPreview template={preview} newRoles={newRoles} keptDescriptions={keptDescriptions} />}
 
           <DialogFooter>
             <Button type="button" variant="ghost" onClick={onClose}>
@@ -584,7 +595,7 @@ function ImportDialog({ roles, onClose, onImported }: { roles: EventRoleDto[]; o
 }
 
 /** O que vai ser criado, antes de gravar: nada de importar às cegas. */
-function ImportPreview({ template, newRoles }: { template: EventTemplateYaml; newRoles: string[] }) {
+function ImportPreview({ template, newRoles, keptDescriptions }: { template: EventTemplateYaml; newRoles: string[]; keptDescriptions: string[] }) {
   const slots = totalSlots(template.roles);
   return (
     <section aria-label="Pré-visualização do template" className="rounded-xl border bg-muted/40 p-3">
@@ -611,6 +622,15 @@ function ImportPreview({ template, newRoles }: { template: EventTemplateYaml; ne
           <Sparkles className="mt-0.5 size-3 shrink-0 text-info" aria-hidden />
           <span>
             {newRoles.length === 1 ? "Esta role será criada" : `Estas ${newRoles.length} roles serão criadas`} no catálogo junto com o template: {newRoles.join(", ")}.
+          </span>
+        </p>
+      )}
+      {keptDescriptions.length > 0 && (
+        <p className="mt-2 flex items-start gap-1.5 text-xs text-muted-foreground">
+          <Info className="mt-0.5 size-3 shrink-0 text-warning" aria-hidden />
+          <span>
+            A descrição do arquivo será ignorada {keptDescriptions.length === 1 ? "nesta role, que já tem descrição no catálogo" : `nestas ${keptDescriptions.length} roles, que já têm descrição no catálogo`}:{" "}
+            {keptDescriptions.join(", ")}. A descrição vale para todos os templates, então o import não escreve por cima dela.
           </span>
         </p>
       )}
