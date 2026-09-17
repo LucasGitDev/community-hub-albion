@@ -1,10 +1,11 @@
 ---
 id: TASK-063
 title: Quem foi para a espera não volta para a vaga livre
-status: To Do
-assignee: []
+status: In Progress
+assignee:
+  - '@claude'
 created_date: '2026-09-17 17:05'
-updated_date: '2026-09-17 17:09'
+updated_date: '2026-09-17 17:30'
 labels:
   - eventos
   - painel
@@ -49,3 +50,14 @@ Escopo: devolver o controle manual. Não mexer na regra de promoção automátic
 - [ ] #7 Notas e final summary com evidências; commits Conventional atômicos sem co-autor
 - [ ] #8 PR merged na main com quality gate verde; branch e worktree removidos
 <!-- DOD:END -->
+
+## Implementation Plan
+
+<!-- SECTION:PLAN:BEGIN -->
+1. Confirmar no código: SignupRow monta destinos com roles.filter(r => r.slotId !== signup.slotId), escondendo o retorno para a própria role; moveEventSignup só recusa already_there quando já está confirmed na vaga.
+2. No painel, calcular os destinos por status: confirmado continua vendo só as outras roles; quem está na espera vê todas as roles, inclusive a própria, com o mesmo tratamento de role lotada (disabled + title).
+3. Mostrar a ordem da espera pela posição na lista renderizada (1º, 2º...), para a espera restante ficar coerente depois que alguém sai dela.
+4. Não tocar em promoteFirstWaiting nem na regra do start.
+5. E2E novo (e2e/staff-waitlist-return.spec.ts): confirmar em Tank, caller manda para a espera, confirma que o botão '→ Tank' aparece, devolve para a vaga, confirma 1/1 e inicia o evento. Verificar que falha antes do fix.
+6. pnpm quality completo com E2E_PORT=4163 e TEST_DATABASE_URL do banco albion_hub_t063.
+<!-- SECTION:PLAN:END -->

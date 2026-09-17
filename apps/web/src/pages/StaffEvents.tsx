@@ -580,10 +580,11 @@ function RoleRoster({
             Lista de espera desta role
           </p>
           <ul className="space-y-1.5">
-            {waitlist.map((signup) => (
+            {waitlist.map((signup, index) => (
               <SignupRow
                 key={signup.id}
                 signup={signup}
+                rank={index + 1}
                 members={members}
                 roles={roles}
                 isOwner={signup.userId === ownerUserId}
@@ -602,6 +603,7 @@ function RoleRoster({
 
 function SignupRow({
   signup,
+  rank,
   members,
   roles,
   isOwner,
@@ -611,6 +613,8 @@ function SignupRow({
   onTransfer,
 }: {
   signup: EventSignupDto;
+  /** Lugar na fila desta role, contado na lista já ordenada: a espera restante nunca mostra buraco. */
+  rank?: number;
   members: EventMemberDto[];
   roles: RoleView[];
   isOwner: boolean;
@@ -620,12 +624,17 @@ function SignupRow({
   onTransfer: (signup: EventSignupDto) => Promise<void>;
 }) {
   const nick = nickOf(signup.userId, members);
-  const others = roles.filter((r) => r.slotId !== signup.slotId);
+  /**
+   * Destinos do caller (TASK-063). Confirmado só vê as outras roles — mandar para a role onde já está
+   * seria um clique sem efeito. Quem está na espera vê **todas**, inclusive a sua própria: devolver
+   * alguém da espera para a vaga livre daquela role é justamente o movimento que faltava.
+   */
+  const targets = signup.status === "waitlist" ? roles : roles.filter((r) => r.slotId !== signup.slotId);
 
   return (
     <li className="flex flex-wrap items-center gap-x-3 gap-y-1.5">
       <span className="min-w-0 flex-1 truncate text-sm">
-        {signup.status === "waitlist" && <span className="num mr-1.5 text-muted-foreground">{signup.position}º</span>}
+        {signup.status === "waitlist" && <span className="num mr-1.5 text-muted-foreground">{rank ?? signup.position}º</span>}
         {nick}
         {isOwner && <Crown className="ml-1.5 inline size-3.5 text-muted-foreground" aria-label="caller do evento" />}
       </span>
@@ -636,7 +645,7 @@ function SignupRow({
               ↓ espera
             </Button>
           )}
-          {others.map((role) => (
+          {targets.map((role) => (
             <Button
               key={role.slotId}
               variant="outline"
