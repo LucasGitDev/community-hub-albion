@@ -1,5 +1,6 @@
 import {
   canTransition,
+  ENTRY_FEE_REFUND_REASONS,
   type EventDto,
   type EventListQuery,
   type EventOwnerChangeDto,
@@ -10,6 +11,7 @@ import {
 import { and, asc, desc, eq, inArray, isNotNull, lte, sql } from "drizzle-orm";
 import { alias } from "drizzle-orm/pg-core";
 import type { Database } from "./client.js";
+import { refundEventEntryFees } from "./entry-fee-repo.js";
 import { memberNick } from "./member-nick.js";
 import { eventOwnerHistory, eventRoleSlots, eventSignups, eventTemplateRoles, eventTemplates, eventRoles as eventRolesCatalog, events, users } from "./schema.js";
 
@@ -104,6 +106,7 @@ async function loadEvents(db: Database, ids?: string[], filters: EventListQuery 
       voiceChannelId: e.voiceChannelId,
       presenceChannelId: e.presenceChannelId,
       fee: { type: e.feeType, value: e.feeValue.toString() },
+      entryFee: e.entryFee.toString(),
       discordMessageId: e.discordMessageId,
       startsAt: iso(e.startsAt),
       signupsCloseAt: iso(e.signupsCloseAt),
@@ -139,7 +142,7 @@ export async function createEvent(db: Database, input: CreateEventInput): Promis
   const { templateId, ownerUserId, createdBy, ...fields } = input;
   const created = await db.transaction(async (tx) => {
     const [template] = await tx
-      .select({ active: eventTemplates.active, feeType: eventTemplates.defaultFeeType, feeValue: eventTemplates.defaultFeeValue })
+      .select({ active: eventTemplates.active, feeType: eventTemplates.defaultFeeType, feeValue: eventTemplates.defaultFeeValue, entryFee: eventTemplates.defaultEntryFee })
       .from(eventTemplates)
       .where(eq(eventTemplates.id, templateId));
     if (!template) return { ok: false as const, reason: "unknown_template" as const };
@@ -154,7 +157,9 @@ export async function createEvent(db: Database, input: CreateEventInput): Promis
     // template depois não muda a taxa de um evento já criado — o caller combinou uma taxa com a galera.
     const [row] = await tx
       .insert(events)
-      .values({ ...fields, templateId, ownerUserId, createdBy, feeType: template.feeType, feeValue: template.feeValue })
+      // A taxa de entrada também é **cópia** (TASK-058): o template só dá o ponto de partida, e daí
+      // em diante quem mexe nela é o caller deste evento, até as inscrições fecharem.
+      .values({ ...fields, templateId, ownerUserId, createdBy, feeType: template.feeType, feeValue: template.feeValue, entryFee: template.entryFee })
       .returning({ id: events.id });
     const eventId = row!.id;
     if (templateRoles.length > 0)
@@ -204,11 +209,20 @@ export async function applyEventTransition(db: Database, id: string, to: EventSt
         ...(to === "cancelled" ? { cancelReason: reason } : {}),
       })
       .where(eq(events.id, id));
-    if (to === "cancelled")
+    if (to === "cancelled") {
+      // Devolve a taxa de entrada a **todos** os inscritos (F6-14) antes de derrubar a lista: depois do
+      // update as inscrições viram `cancelled` e não dá mais para saber quem estava dentro. Estorno
+      // apontando para a cobrança original, na mesma transação do cancelamento.
+      await refundEventEntryFees(tx, id, ["confirmed", "waitlist"], ENTRY_FEE_REFUND_REASONS.cancelled);
       await tx
         .update(eventSignups)
         .set({ status: "cancelled", position: 0, updatedAt: at })
         .where(and(eq(eventSignups.eventId, id), inArray(eventSignups.status, ["confirmed", "waitlist"])));
+    }
+    // O evento começou: quem ficou na espera não jogou, e cobrar por uma vaga que nunca existiu seria
+    // punir quem se inscreveu cedo. Confirmado que desistiu tarde demais **não** recebe nada: era a
+    // vaga dele (F6-13). Decisão da TASK-058 além do doc-005.
+    if (to === "running") await refundEventEntryFees(tx, id, ["waitlist"], ENTRY_FEE_REFUND_REASONS.waitlisted);
     return { ok: true as const, from };
   });
   if (!result.ok) return result;
@@ -282,6 +296,16 @@ export async function setEventFee(db: Database, eventId: string, fee: EventFee):
     .set({ feeType: fee.type, feeValue: fee.value, updatedAt: new Date() })
     .where(eq(events.id, eventId))
     .returning({ id: events.id });
+  return row ? getEvent(db, row.id) : null;
+}
+
+/**
+ * Taxa de entrada do evento (TASK-058). Quem barra o estado errado é o serviço, com `entryFeeEditable`:
+ * a partir de `closed` a lista já foi formada e cobrada, e um preço novo valeria para quem pagou o antigo.
+ * Não mexe em cobrança nenhuma já feita — o ledger não reescreve o passado.
+ */
+export async function setEventEntryFee(db: Database, eventId: string, entryFee: bigint): Promise<EventDto | null> {
+  const [row] = await db.update(events).set({ entryFee, updatedAt: new Date() }).where(eq(events.id, eventId)).returning({ id: events.id });
   return row ? getEvent(db, row.id) : null;
 }
 

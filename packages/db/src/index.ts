@@ -106,6 +106,7 @@ export {
   listEventOwnerHistory,
   listEvents,
   setEventDiscordMessageId,
+  setEventEntryFee,
   setEventFee,
   setEventVoiceChannelId,
   transferEventOwner,
@@ -118,6 +119,7 @@ export {
   type EventTransitionResult,
   type TransferEventOwnerResult,
 } from "./events-repo.js";
+export { refundEntryFee, refundEventEntryFees } from "./entry-fee-repo.js";
 export {
   findEventRoleSlot,
   joinEventRole,
@@ -143,6 +145,7 @@ export {
   listLedgerEntriesWithAuthor,
   reverseLedgerEntry,
   spendCurrency,
+  spendCurrencyTx,
   type CurrencyFilter,
   type LedgerBalances,
   type LedgerEntry,

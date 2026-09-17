@@ -195,6 +195,11 @@ export const eventTemplates = pgTable(
      */
     defaultFeeType: eventFeeTypeEnum("default_fee_type").notNull().default("percent"),
     defaultFeeValue: bigint("default_fee_value", { mode: "bigint" }).notNull().default(sql`0`),
+    /**
+     * Taxa de entrada default em **Buffunfa** (TASK-058, F6-12), copiada para o evento na criação.
+     * Nasce zerada: o template não decide quanto custa entrar no conteúdo, o caller decide.
+     */
+    defaultEntryFee: bigint("default_entry_fee", { mode: "bigint" }).notNull().default(sql`0`),
     createdAt: createdAt(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
   },
@@ -202,6 +207,8 @@ export const eventTemplates = pgTable(
     uniqueIndex("event_templates_name_lower_idx").on(sql`lower(${t.name})`),
     // Sem teto por decisão do usuário; só não pode ser negativa.
     check("event_templates_default_fee_not_negative", sql`${t.defaultFeeValue} >= 0`),
+    // Sem teto (F6-12/decisão do usuário): taxa negativa é que seria crédito disfarçado.
+    check("event_templates_default_entry_fee_not_negative", sql`${t.defaultEntryFee} >= 0`),
     check("event_templates_party_size", sql`${t.minPartySize} >= 1 and (${t.maxPartySize} is null or ${t.maxPartySize} >= ${t.minPartySize})`),
   ],
 );
@@ -263,6 +270,12 @@ export const events = pgTable(
      */
     feeType: eventFeeTypeEnum("fee_type").notNull().default("percent"),
     feeValue: bigint("fee_value", { mode: "bigint" }).notNull().default(sql`0`),
+    /**
+     * Taxa de entrada em Buffunfa (TASK-058, F6-12): copiada do template na criação e definida pelo
+     * caller até as inscrições fecharem. Cobrada na inscrição (F6-13) e **queimada** — nenhum
+     * lançamento credita alguém com ela (F6-16). Zero = entrada gratuita.
+     */
+    entryFee: bigint("entry_fee", { mode: "bigint" }).notNull().default(sql`0`),
     /** Mensagem do embed de inscrição no canal de eventos (TASK-022); null até o evento abrir. */
     discordMessageId: text("discord_message_id"),
     openedAt: timestamp("opened_at", { withTimezone: true }),
@@ -285,6 +298,7 @@ export const events = pgTable(
     index("events_signups_close_idx").on(t.signupsCloseAt).where(sql`${t.status} = 'open'`),
     check("events_name_not_blank", sql`length(trim(${t.name})) > 0`),
     check("events_fee_not_negative", sql`${t.feeValue} >= 0`),
+    check("events_entry_fee_not_negative", sql`${t.entryFee} >= 0`),
     // Estado e carimbo andam juntos: running só existe com started_at, finished/archived com finished_at,
     // cancelled com cancelled_at e archived com archived_at.
     // `archived` vem por `::text` de propósito: comparar com o literal do enum recém-criado quebraria a
@@ -375,6 +389,13 @@ export const eventSignups = pgTable(
     position: integer("position").notNull().default(0),
     /** Caller/owner ou staff que moveu a pessoa (AC#4); null quando ela mesma se inscreveu. */
     decidedBy: uuid("decided_by").references(() => users.id, { onDelete: "set null" }),
+    /**
+     * Lançamento da taxa de entrada paga por esta inscrição (TASK-058); null quando o evento não
+     * cobra. É ele, e não uma busca por evento+usuário, que diz o que estornar: quem entra, sai e
+     * entra de novo gera vários lançamentos, e a devolução precisa apontar para o certo (F6-14).
+     * `restrict`: o lançamento é a prova do que foi cobrado e não some por causa da inscrição.
+     */
+    feeEntryId: uuid("fee_entry_id").references((): AnyPgColumn => ledgerEntries.id, { onDelete: "restrict" }),
     createdAt: createdAt(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
   },

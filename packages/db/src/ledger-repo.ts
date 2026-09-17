@@ -278,6 +278,32 @@ export type SpendResult =
   | { ok: false; reason: "insufficient_funds"; balance: bigint };
 
 /**
+ * O núcleo do gasto, **dentro de uma transação de quem chama**. Existe separado de `spendCurrency`
+ * porque a taxa de entrada (TASK-058) precisa cobrar e dar a vaga na **mesma** transação da inscrição:
+ * abrir uma transação nova aqui deixaria a janela em que o débito passou e a vaga não.
+ *
+ * Ordem de travas em todo caminho que usa isto: **evento primeiro, usuário depois**. É a mesma em
+ * `joinEventRole`, então dois inscritos concorrentes nunca travam em ordens opostas.
+ */
+export async function spendCurrencyTx(tx: EventTx, input: SpendInput): Promise<SpendResult> {
+  if (input.amount <= 0n) return { ok: false, reason: "invalid_amount" };
+  const [owner] = await tx.select({ id: users.id }).from(users).where(eq(users.id, input.userId)).for("update");
+  if (!owner) return { ok: false as const, reason: "unknown_user" as const };
+  const balance = await getLedgerBalance(tx, input.userId, input.currency);
+  if (balance < input.amount) return { ok: false as const, reason: "insufficient_funds" as const, balance };
+  const entry = await insertLedgerEntry(tx, {
+    userId: input.userId,
+    currency: input.currency,
+    amount: -input.amount,
+    kind: input.kind,
+    reference: input.reference,
+    createdBy: input.createdBy,
+    memo: input.memo,
+  });
+  return { ok: true as const, entry, balance: balance - input.amount };
+}
+
+/**
  * Gasto que **não pode deixar o saldo negativo** (F6-7): compra na loja e taxa de entrada recusam em vez
  * de deixar o membro devendo por conta própria.
  *
@@ -290,21 +316,5 @@ export type SpendResult =
  * `insertLedgerEntry`, porque quem ganhou por engano e já gastou precisa poder ficar devendo.
  */
 export async function spendCurrency(db: Database, input: SpendInput): Promise<SpendResult> {
-  if (input.amount <= 0n) return { ok: false, reason: "invalid_amount" };
-  return db.transaction(async (tx) => {
-    const [owner] = await tx.select({ id: users.id }).from(users).where(eq(users.id, input.userId)).for("update");
-    if (!owner) return { ok: false as const, reason: "unknown_user" as const };
-    const balance = await getLedgerBalance(tx, input.userId, input.currency);
-    if (balance < input.amount) return { ok: false as const, reason: "insufficient_funds" as const, balance };
-    const entry = await insertLedgerEntry(tx, {
-      userId: input.userId,
-      currency: input.currency,
-      amount: -input.amount,
-      kind: input.kind,
-      reference: input.reference,
-      createdBy: input.createdBy,
-      memo: input.memo,
-    });
-    return { ok: true as const, entry, balance: balance - input.amount };
-  });
+  return db.transaction((tx) => spendCurrencyTx(tx, input));
 }
