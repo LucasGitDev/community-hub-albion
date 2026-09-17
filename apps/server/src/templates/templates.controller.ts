@@ -124,8 +124,24 @@ export class EventTemplatesController {
     const patch = parseBody(eventTemplatePatchSchema, body);
     const current = await getEventTemplate(this.handle.db, templateId);
     if (!current) throw new NotFoundException("Template não encontrado.");
-    const base = { name: current.name, description: current.description, minPartySize: current.minPartySize, maxPartySize: current.maxPartySize, active: current.active, roles: current.roles.map(({ roleId, slots }) => ({ roleId, slots })) };
-    const merged = parseBody(eventTemplateInputSchema, { ...base, ...patch });
+    const base = {
+      name: current.name,
+      description: current.description,
+      minPartySize: current.minPartySize,
+      maxPartySize: current.maxPartySize,
+      active: current.active,
+      // A taxa de entrada entra na base pelo valor atual: sem isso, um PATCH de nome zeraria a taxa
+      // do template em silêncio, e o caller descobriria na hora em que ninguém pagou para entrar.
+      defaultEntryFee: current.defaultEntryFee,
+      roles: current.roles.map(({ roleId, slots }) => ({ roleId, slots })),
+    };
+    // O patch já traz `defaultEntryFee` como bigint (o schema converte); a revalidação abaixo espera
+    // a string do fio de novo, então ele volta a texto antes de entrar na mesclagem.
+    const merged = parseBody(eventTemplateInputSchema, {
+      ...base,
+      ...patch,
+      ...(patch.defaultEntryFee === undefined ? {} : { defaultEntryFee: patch.defaultEntryFee.toString() }),
+    });
     return templateOrThrow(await saveEventTemplate(this.handle.db, merged, templateId));
   }
 
