@@ -158,7 +158,7 @@ export async function saveEventTemplate(db: Database, input: EventTemplateInput,
   }
 }
 
-export type EventTemplateImportDbResult = { ok: true; template: EventTemplateDto; createdRoles: string[] } | { ok: false; reason: "duplicate" | "role_race" };
+export type EventTemplateImportDbResult = { ok: true; template: EventTemplateDto; createdRoles: string[]; ignoredDescriptions: string[] } | { ok: false; reason: "duplicate" | "role_race" };
 
 /**
  * Importa um template vindo de YAML (TASK-038, AC#2/AC#4) numa transação só: ou entra template,
@@ -168,6 +168,15 @@ export type EventTemplateImportDbResult = { ok: true; template: EventTemplateDto
  * as que faltam são **criadas** — o arquivo existe pra levar template de um servidor pro outro, e um
  * servidor novo não tem o catálogo do antigo. Os nomes criados voltam pra tela avisar a staff.
  * Nome de template repetido → `duplicate` (a API devolve 409): renomear é decisão da staff, não do sistema.
+ *
+ * Descrição de role (TASK-065): no arquivo YAML ela é escrita por template, mas no banco o catálogo
+ * `event_roles` guarda **uma** descrição global por role — não há coluna por par (template, role), e
+ * a decisão de criar uma está congelada na TASK-064. Enquanto isso o import é **defensivo**:
+ * - role que ainda não existe nasce com a descrição do arquivo (é o único texto disponível);
+ * - role que existe **sem** descrição é preenchida com a do arquivo (não há dado a perder);
+ * - role que existe **com** descrição diferente é deixada como está, e o nome volta em
+ *   `ignoredDescriptions` para a tela dizer o que foi ignorado. Sobrescrever calado tiraria a
+ *   descrição de "Tank" de todos os outros templates por causa de um import de ZvZ.
  */
 export async function importEventTemplate(db: Database, input: EventTemplateYaml): Promise<EventTemplateImportDbResult> {
   try {
@@ -179,10 +188,11 @@ export async function importEventTemplate(db: Database, input: EventTemplateYaml
 
       const wanted = input.roles.map((r) => ({ ...r, key: r.name.toLowerCase() }));
       const existing = await tx
-        .select({ id: eventRoles.id, key: sql<string>`lower(${eventRoles.name})` })
+        .select({ id: eventRoles.id, key: sql<string>`lower(${eventRoles.name})`, description: eventRoles.description })
         .from(eventRoles)
         .where(inArray(sql`lower(${eventRoles.name})`, wanted.map((r) => r.key)));
       const byKey = new Map(existing.map((r) => [r.key, r.id]));
+      const descriptionByKey = new Map(existing.map((r) => [r.key, r.description?.trim() ?? ""]));
 
       const missing = wanted.filter((r) => !byKey.has(r.key));
       if (missing.length > 0) {
@@ -193,10 +203,26 @@ export async function importEventTemplate(db: Database, input: EventTemplateYaml
         for (const role of created) byKey.set(role.name.toLowerCase(), role.id);
       }
 
+      // Só as roles que já estavam no catálogo entram nesta conta: as criadas acima já nasceram com o texto do arquivo.
+      const ignoredDescriptions: string[] = [];
+      for (const role of wanted) {
+        const fileDescription = role.description?.trim() ?? "";
+        if (!fileDescription || !descriptionByKey.has(role.key)) continue;
+        const catalogDescription = descriptionByKey.get(role.key)!;
+        if (catalogDescription === fileDescription) continue;
+        if (catalogDescription) {
+          ignoredDescriptions.push(role.name);
+          continue;
+        }
+        // Catálogo vazio: preencher não apaga nada de ninguém.
+        await tx.update(eventRoles).set({ description: fileDescription }).where(eq(eventRoles.id, byKey.get(role.key)!));
+        descriptionByKey.set(role.key, fileDescription);
+      }
+
       await tx.insert(eventTemplateRoles).values(wanted.map((r, i) => ({ templateId: template!.id, roleId: byKey.get(r.key)!, slots: r.slots, sortOrder: i })));
-      return { id: template!.id, createdRoles: missing.map((r) => r.name) };
+      return { id: template!.id, createdRoles: missing.map((r) => r.name), ignoredDescriptions };
     });
-    return { ok: true, template: (await getEventTemplate(db, saved.id))!, createdRoles: saved.createdRoles };
+    return { ok: true, template: (await getEventTemplate(db, saved.id))!, createdRoles: saved.createdRoles, ignoredDescriptions: saved.ignoredDescriptions };
   } catch (error) {
     if (pgCode(error) === UNIQUE_VIOLATION) return { ok: false, reason: pgConstraint(error) === "event_roles_name_lower_idx" ? "role_race" : "duplicate" };
     throw error;
