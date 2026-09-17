@@ -1,6 +1,7 @@
 import { escapeLike, type MemberFilter, type Role } from "@albion-hub/shared";
-import { and, asc, eq, inArray, isNull, or, sql, type SQL } from "drizzle-orm";
+import { and, asc, eq, inArray, isNotNull, isNull, or, sql, type SQL } from "drizzle-orm";
 import type { Database } from "./client.js";
+import { alias } from "drizzle-orm/pg-core";
 import { roleEnum, userRoles, users } from "./schema.js";
 
 /** Uma linha da tabela de membros do admin (TASK-043, AC#1/AC#2). */
@@ -15,6 +16,8 @@ export interface AdminMember {
   createdAt: Date;
   /** Última conferência do nick na API do Albion (TASK-042). `status` null = nunca conferido. */
   albion: { status: string | null; playerId: string | null; guildName: string | null; checkedAt: Date | null };
+  /** Banimento vigente (TASK-050). `null` = conta ativa. A conta banida continua na lista, marcada. */
+  ban: { bannedAt: Date; reason: string; byName: string | null } | null;
 }
 
 export interface AdminMembersQuery {
@@ -30,8 +33,11 @@ export interface AdminMembersPage {
   /** Total de membros no filtro atual (com a busca aplicada): é o que a paginação usa. */
   total: number;
   /** Contagem de cada chip com a busca aplicada e sem o filtro, para o admin ver o que ganha ao trocar de chip. */
-  counts: { todos: number; nao_encontrados: number; sem_nick: number };
+  counts: { todos: number; nao_encontrados: number; sem_nick: number; banidos: number };
 }
+
+/** Autor do banimento, para mostrar "banido por" sem uma consulta por linha (TASK-050). */
+const bannedBy = alias(users, "banned_by_user");
 
 /** Nick vazio no banco conta como "sem nick" igual a null: quem importou sem apelido não fica escondido. */
 const withoutNick = () => or(isNull(users.gameNick), eq(users.gameNick, ""));
@@ -46,7 +52,13 @@ function searchCondition(search: string): SQL {
 }
 
 const filterCondition = (filter: MemberFilter): SQL | undefined =>
-  filter === "nao_encontrados" ? eq(users.albionStatus, "not_found") : filter === "sem_nick" ? withoutNick() : undefined;
+  filter === "nao_encontrados"
+    ? eq(users.albionStatus, "not_found")
+    : filter === "sem_nick"
+      ? withoutNick()
+      : filter === "banidos"
+        ? isNotNull(users.bannedAt)
+        : undefined;
 
 /**
  * Página da lista de membros do admin, com total e contagem por chip.
@@ -64,11 +76,12 @@ export async function listAdminMembers(db: Database, query: AdminMembersQuery): 
       todos: sql<number>`count(*)::int`,
       nao_encontrados: sql<number>`count(*) filter (where ${notFound})::int`,
       sem_nick: sql<number>`count(*) filter (where ${withoutNick()})::int`,
+      banidos: sql<number>`count(*) filter (where ${isNotNull(users.bannedAt)})::int`,
     })
     .from(users)
     .where(search);
 
-  const page = counts ?? { todos: 0, nao_encontrados: 0, sem_nick: 0 };
+  const page = counts ?? { todos: 0, nao_encontrados: 0, sem_nick: 0, banidos: 0 };
   const total = page[query.filter];
   if (total === 0) return { members: [], total, counts: page };
 
@@ -85,8 +98,12 @@ export async function listAdminMembers(db: Database, query: AdminMembersQuery): 
       albionPlayerId: users.albionPlayerId,
       albionGuildName: users.albionGuildName,
       albionCheckedAt: users.albionCheckedAt,
+      bannedAt: users.bannedAt,
+      banReason: users.banReason,
+      bannedByName: sql<string | null>`coalesce(${bannedBy.displayName}, ${bannedBy.discordUsername})`,
     })
     .from(users)
+    .leftJoin(bannedBy, eq(bannedBy.id, users.bannedBy))
     .where(and(search, filterCondition(query.filter)))
     .orderBy(asc(sql`lower(coalesce(${users.gameNick}, ${users.discordUsername}))`), asc(users.id))
     .limit(query.pageSize)
@@ -98,10 +115,11 @@ export async function listAdminMembers(db: Database, query: AdminMembersQuery): 
   const rolesByUser = new Map<string, Role[]>();
   for (const { userId, role } of roleRows) rolesByUser.set(userId, [...(rolesByUser.get(userId) ?? []), role]);
 
-  const members = rows.map(({ albionStatus, albionPlayerId, albionGuildName, albionCheckedAt, ...user }) => ({
+  const members = rows.map(({ albionStatus, albionPlayerId, albionGuildName, albionCheckedAt, bannedAt, banReason, bannedByName, ...user }) => ({
     ...user,
     roles: (rolesByUser.get(user.id) ?? []).sort((a, b) => order.indexOf(a) - order.indexOf(b)),
     albion: { status: albionStatus, playerId: albionPlayerId, guildName: albionGuildName, checkedAt: albionCheckedAt },
+    ban: bannedAt ? { bannedAt, reason: banReason ?? "", byName: bannedByName } : null,
   }));
 
   return { members, total, counts: page };
