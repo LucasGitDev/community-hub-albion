@@ -92,7 +92,16 @@ async function loadEvents(db: Database, ids?: string[], filters: EventListQuery 
   return rows.map(({ event: e, templateName, ownerNick }) => {
     const own: EventRoleSlotDto[] = slots
       .filter((s) => s.slot.eventId === e.id)
-      .map(({ slot, description }) => ({ id: slot.id, roleId: slot.roleId, name: slot.name, description, slots: slot.slots }));
+      .map(({ slot, description }) => ({
+        id: slot.id,
+        roleId: slot.roleId,
+        name: slot.name,
+        description,
+        slots: slot.slots,
+        buffunfaMin: slot.buffunfaMin.toString(),
+        buffunfaMax: slot.buffunfaMax.toString(),
+        buffunfaValue: slot.buffunfaValue.toString(),
+      }));
     return {
       id: e.id,
       templateId: e.templateId,
@@ -116,6 +125,7 @@ async function loadEvents(db: Database, ids?: string[], filters: EventListQuery 
       finishedAt: iso(e.finishedAt),
       cancelledAt: iso(e.cancelledAt),
       archivedAt: iso(e.archivedAt),
+      buffunfaPaidAt: iso(e.buffunfaPaidAt),
       cancelReason: e.cancelReason,
       roles: own,
       totalSlots: own.reduce((sum, r) => sum + r.slots, 0),
@@ -148,7 +158,13 @@ export async function createEvent(db: Database, input: CreateEventInput): Promis
     if (!template) return { ok: false as const, reason: "unknown_template" as const };
     if (!template.active) return { ok: false as const, reason: "inactive_template" as const };
     const templateRoles = await tx
-      .select({ roleId: eventTemplateRoles.roleId, name: eventRolesCatalog.name, slots: eventTemplateRoles.slots })
+      .select({
+        roleId: eventTemplateRoles.roleId,
+        name: eventRolesCatalog.name,
+        slots: eventTemplateRoles.slots,
+        buffunfaMin: eventTemplateRoles.buffunfaMin,
+        buffunfaMax: eventTemplateRoles.buffunfaMax,
+      })
       .from(eventTemplateRoles)
       .innerJoin(eventRolesCatalog, eq(eventRolesCatalog.id, eventTemplateRoles.roleId))
       .where(eq(eventTemplateRoles.templateId, templateId))
@@ -163,7 +179,20 @@ export async function createEvent(db: Database, input: CreateEventInput): Promis
       .returning({ id: events.id });
     const eventId = row!.id;
     if (templateRoles.length > 0)
-      await tx.insert(eventRoleSlots).values(templateRoles.map((r, i) => ({ eventId, roleId: r.roleId, name: r.name, slots: r.slots, sortOrder: i })));
+      await tx.insert(eventRoleSlots).values(
+        // A faixa de Buffunfa é copiada junto com as vagas, e o valor nasce no **mínimo** dela
+        // (TASK-057, F6-8): subir para preencher vaga escassa é decisão do caller, não default.
+        templateRoles.map((r, i) => ({
+          eventId,
+          roleId: r.roleId,
+          name: r.name,
+          slots: r.slots,
+          sortOrder: i,
+          buffunfaMin: r.buffunfaMin,
+          buffunfaMax: r.buffunfaMax,
+          buffunfaValue: r.buffunfaMin,
+        })),
+      );
     await tx.insert(eventOwnerHistory).values({ eventId, fromUserId: null, toUserId: ownerUserId, changedBy: createdBy });
     return { ok: true as const, eventId };
   });

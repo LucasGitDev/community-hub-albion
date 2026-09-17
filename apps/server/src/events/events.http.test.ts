@@ -73,7 +73,7 @@ describe.skipIf(!baseUrl)("eventos e máquina de estados HTTP (TASK-021, Q9/Q21/
       name: "Roads",
       minPartySize: 1,
       maxPartySize: null,
-      roles: [{ roleId: roles.find((r) => r.name === "Tank")!.id, slots: 1 }, { roleId: roles.find((r) => r.name === "Healer")!.id, slots: 2 }],
+      roles: [{ roleId: roles.find((r) => r.name === "Tank")!.id, slots: 1, buffunfaMin: 0, buffunfaMax: 0 }, { roleId: roles.find((r) => r.name === "Healer")!.id, slots: 2, buffunfaMin: 0, buffunfaMax: 0 }],
     });
     templateId = template.body.id;
   }, 60_000);
@@ -170,7 +170,7 @@ describe.skipIf(!baseUrl)("eventos e máquina de estados HTTP (TASK-021, Q9/Q21/
     expect((await create(caller, { templateId: "nao-uuid" })).status).toBe(400);
 
     const roles = (await http().get("/api/event-roles").set("Cookie", staff)).body.roles as { id: string }[];
-    const inativo = await send("post", "/api/event-templates", staff, { name: "Aposentado", minPartySize: 1, maxPartySize: null, active: false, roles: [{ roleId: roles[0]!.id, slots: 1 }] });
+    const inativo = await send("post", "/api/event-templates", staff, { name: "Aposentado", minPartySize: 1, maxPartySize: null, active: false, roles: [{ roleId: roles[0]!.id, slots: 1, buffunfaMin: 0, buffunfaMax: 0 }] });
     const blocked = await create(caller, { templateId: inativo.body.id });
     expect(blocked.status).toBe(409);
     expect(blocked.body.message).toContain("inativo");

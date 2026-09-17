@@ -35,7 +35,7 @@ async function createTemplate(page: Page, name: string): Promise<void> {
   const healer = roles.roles.find((r) => r.name === "Healer")!;
   const res = await page.request.post("/api/event-templates", {
     headers: { Origin: ORIGIN },
-    data: { name, description: null, minPartySize: 2, maxPartySize: 2, active: true, roles: [{ roleId: tank.id, slots: 1 }, { roleId: healer.id, slots: 1 }] },
+    data: { name, description: null, minPartySize: 2, maxPartySize: 2, active: true, roles: [{ roleId: tank.id, slots: 1, buffunfaMin: 0, buffunfaMax: 0 }, { roleId: healer.id, slots: 1, buffunfaMin: 0, buffunfaMax: 0 }] },
   });
   expect(res.status()).toBe(201);
 }

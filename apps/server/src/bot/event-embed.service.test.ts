@@ -91,8 +91,8 @@ describe.skipIf(!baseUrl)("embed de inscrição no Discord (TASK-022, Postgres r
       maxPartySize: null,
       active: true,
       roles: [
-        { roleId: roles.find((r) => r.name === "Tank")!.id, slots: 1 },
-        { roleId: roles.find((r) => r.name === "Healer")!.id, slots: 2 },
+        { roleId: roles.find((r) => r.name === "Tank")!.id, slots: 1, buffunfaMin: 0n, buffunfaMax: 0n },
+        { roleId: roles.find((r) => r.name === "Healer")!.id, slots: 2, buffunfaMin: 0n, buffunfaMax: 0n },
       ],
     });
     if (!saved.ok) throw new Error(saved.reason);

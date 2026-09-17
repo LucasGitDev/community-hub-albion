@@ -234,6 +234,14 @@ export interface EventRoleSlotDto {
    */
   description: string | null;
   slots: number;
+  /**
+   * Faixa de Buffunfa copiada do template junto com as vagas (F6-8) e o valor vigente dentro dela
+   * (F6-9). Strings: bigint não existe em JSON (Q20). Editar o template depois não mexe aqui, pelo
+   * mesmo motivo das vagas — o inscrito não pode ver o prêmio mudar por baixo dele.
+   */
+  buffunfaMin: string;
+  buffunfaMax: string;
+  buffunfaValue: string;
 }
 
 export interface EventDto {
@@ -276,6 +284,8 @@ export interface EventDto {
   cancelReason: string | null;
   roles: EventRoleSlotDto[];
   totalSlots: number;
+  /** Quando a Buffunfa por presença foi paga (TASK-057); a partir daqui os valores por role não mudam mais. */
+  buffunfaPaidAt: string | null;
   createdAt: string;
   updatedAt: string;
 }

@@ -73,8 +73,8 @@ describe.skipIf(!baseUrl)("inscrição em evento HTTP (TASK-022, Q27)", () => {
       minPartySize: 1,
       maxPartySize: null,
       roles: [
-        { roleId: roles.find((r) => r.name === "Tank")!.id, slots: 1 },
-        { roleId: roles.find((r) => r.name === "Healer")!.id, slots: 2 },
+        { roleId: roles.find((r) => r.name === "Tank")!.id, slots: 1, buffunfaMin: 0, buffunfaMax: 0 },
+        { roleId: roles.find((r) => r.name === "Healer")!.id, slots: 2, buffunfaMin: 0, buffunfaMax: 0 },
       ],
     });
     templateId = template.body.id;

@@ -85,7 +85,7 @@ describe.skipIf(!baseUrl)("loot split HTTP (TASK-027)", () => {
       name: "Roads",
       minPartySize: 1,
       maxPartySize: null,
-      roles: [{ roleId: roles.find((r) => r.name === "Tank")!.id, slots: 5 }],
+      roles: [{ roleId: roles.find((r) => r.name === "Tank")!.id, slots: 5, buffunfaMin: 0, buffunfaMax: 0 }],
     });
     templateId = template.body.id;
   }, 60_000);

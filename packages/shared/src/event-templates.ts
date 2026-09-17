@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { amountSchema } from "./currency.js";
 import { entryFeeSchema, NO_ENTRY_FEE } from "./entry-fee.js";
 
 /**
@@ -49,10 +50,43 @@ export type EventRolePatch = z.output<typeof eventRolePatchSchema>;
 
 const uuid = z.uuid("Role inválida.");
 
-export const eventTemplateRoleInputSchema = z.object({
-  roleId: uuid,
-  slots: count("Vagas"),
-});
+/**
+ * Teto da faixa de Buffunfa por role. Existe porque Buffunfa é criada do nada (F6-8): sem um teto no
+ * schema, um zero a mais digitado no template viraria inflação que o ledger não desfaz.
+ */
+export const BUFFUNFA_ROLE_MAX = 10_000n;
+
+const buffunfaValue = (label: string) =>
+  amountSchema(label, " de Buffunfa").refine((v) => v <= BUFFUNFA_ROLE_MAX, `${label} vai até ${BUFFUNFA_ROLE_MAX} de Buffunfa.`);
+
+/**
+ * Role do template com vagas e **faixa obrigatória de Buffunfa** (TASK-057, F6-8). Os dois extremos
+ * são exigidos: não existe faixa aberta, porque o caller ajusta o valor dentro dela até o fechamento
+ * e o único freio contra o caller generoso demais é o teto que a staff escreveu aqui.
+ */
+export const eventTemplateRoleInputSchema = z
+  .object({
+    roleId: uuid,
+    slots: count("Vagas"),
+    buffunfaMin: buffunfaValue("O mínimo de Buffunfa"),
+    buffunfaMax: buffunfaValue("O máximo de Buffunfa"),
+  })
+  .refine((r) => r.buffunfaMax >= r.buffunfaMin, { path: ["buffunfaMax"], message: "O máximo de Buffunfa não pode ser menor que o mínimo." });
+
+/** Faixa de Buffunfa de uma role, já em bigint. */
+export interface BuffunfaRange {
+  min: bigint;
+  max: bigint;
+}
+
+/** O valor cabe na faixa? É a mesma checagem no template, no evento e na tela (F6-8). */
+export const inBuffunfaRange = (value: bigint, range: BuffunfaRange): boolean => value >= range.min && value <= range.max;
+
+/** Faixa escrita para gente: `10 a 40 BUF`, ou `sem Buffunfa` quando a staff fechou em zero. */
+export function formatBuffunfaRange(range: BuffunfaRange): string {
+  if (range.max === 0n) return "sem Buffunfa";
+  return range.min === range.max ? `${range.min} BUF` : `${range.min} a ${range.max} BUF`;
+}
 
 const templateFields = {
   name: requiredText("o nome do template", EVENT_TEMPLATE_NAME_MAX),
@@ -127,6 +161,9 @@ export interface EventTemplateRoleDto {
   name: string;
   description: string | null;
   slots: number;
+  /** Faixa de Buffunfa por presença (F6-8), como string: bigint não existe em JSON (Q20). */
+  buffunfaMin: string;
+  buffunfaMax: string;
 }
 
 export interface EventTemplateDto {

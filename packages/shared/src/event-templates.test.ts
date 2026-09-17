@@ -18,7 +18,7 @@ const template = (over: Record<string, unknown> = {}) => ({
   minPartySize: 4,
   maxPartySize: 9,
   roles: [
-    { roleId: TANK, slots: 1 },
+    { roleId: TANK, slots: 1, buffunfaMin: 0n, buffunfaMax: 0n },
     { roleId: HEAL, slots: 3 },
   ],
   ...over,
@@ -54,15 +54,15 @@ describe("eventTemplateInputSchema (TASK-020 AC#2, Q8)", () => {
 
   it.each([
     [{ roles: [] }, "pelo menos uma role"],
-    [{ roles: [{ roleId: TANK, slots: 0 }] }, "Vagas precisa ser pelo menos 1"],
-    [{ roles: [{ roleId: TANK, slots: 1.5 }] }, "inteiro"],
-    [{ roles: [{ roleId: "x", slots: 4 }] }, "Role inválida"],
-    [{ roles: [{ roleId: TANK, slots: 2 }, { roleId: TANK, slots: 2 }] }, "Cada role aparece uma vez"],
+    [{ roles: [{ roleId: TANK, slots: 0, buffunfaMin: 0n, buffunfaMax: 0n }] }, "Vagas precisa ser pelo menos 1"],
+    [{ roles: [{ roleId: TANK, slots: 1.5, buffunfaMin: 0n, buffunfaMax: 0n }] }, "inteiro"],
+    [{ roles: [{ roleId: "x", slots: 4, buffunfaMin: 0n, buffunfaMax: 0n }] }, "Role inválida"],
+    [{ roles: [{ roleId: TANK, slots: 2, buffunfaMin: 0n, buffunfaMax: 0n }, { roleId: TANK, slots: 2, buffunfaMin: 0n, buffunfaMax: 0n }] }, "Cada role aparece uma vez"],
     [{ minPartySize: 0 }, "pelo menos 1"],
     [{ maxPartySize: 301 }, "vai até 300"],
     [{ minPartySize: 10, maxPartySize: 9 }, "mínimo de pessoas não pode passar do máximo"],
-    [{ roles: [{ roleId: TANK, slots: 10 }] }, "acima do máximo de 9"],
-    [{ roles: [{ roleId: TANK, slots: 3 }] }, "abaixo do mínimo de 4"],
+    [{ roles: [{ roleId: TANK, slots: 10, buffunfaMin: 0n, buffunfaMax: 0n }] }, "acima do máximo de 9"],
+    [{ roles: [{ roleId: TANK, slots: 3, buffunfaMin: 0n, buffunfaMax: 0n }] }, "abaixo do mínimo de 4"],
     [{ name: "" }, "Digite o nome do template."],
     [{ minPartySize: "4" }, "número inteiro"],
   ])("recusa %j", (over, message) => {
