@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
-import { Ban, Check, CircleDashed, CloudOff, Download, Loader2, Receipt, RefreshCw, Search, ShieldCheck, SlidersHorizontal, UserRoundX, Users } from "lucide-react";
+import { Ban, Check, CircleDashed, CloudOff, Download, Loader2, LogOut, Receipt, RefreshCw, Search, ShieldCheck, SlidersHorizontal, UserRoundX, Users } from "lucide-react";
 import { toast } from "sonner";
 import {
   asSubject,
@@ -338,7 +338,7 @@ function MemberRow({ member, ...actions }: { member: AdminMember } & RowActions)
   return (
     // A linha do banido fica atenuada, mas o selo e o motivo ficam em contraste cheio: o apagado diz
     // "esta conta não está ativa" sem esconder justamente o que a pessoa precisa ler.
-    <TableRow className={member.ban ? "bg-destructive/5" : undefined}>
+    <TableRow className={cn(member.ban && "bg-destructive/5", !member.ban && member.leftGuildAt && "bg-muted/40")}>
       {/* No celular sobram duas colunas (Membro e Albion): guilda e papéis descem para dentro do nome. */}
       <TableCell className="max-w-[12rem] min-w-0 sm:max-w-[14rem]">
         <p className={cn("truncate font-medium", member.ban && "text-muted-foreground line-through decoration-destructive/60")}>{name}</p>
@@ -359,6 +359,15 @@ function MemberRow({ member, ...actions }: { member: AdminMember } & RowActions)
               {formatDateTime(member.ban.bannedAt)}
               {member.ban.byName ? ` · ${member.ban.byName}` : ""}
             </p>
+          </div>
+        )}
+        {member.leftGuildAt && (
+          <div className="mt-1 border-l-2 border-warning/60 pl-2">
+            <Pill tone="warning" icon={<LogOut strokeWidth={2.25} />}>
+              Saiu do servidor
+            </Pill>
+            {/* Sem `truncate`: no celular a coluna é estreita e a autoria ("limpeza automática") é justamente a parte que não pode sumir. */}
+            <p className="num text-xs break-words text-muted-foreground">{formatDateTime(member.leftGuildAt)} · limpeza automática</p>
           </div>
         )}
       </TableCell>

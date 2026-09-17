@@ -15,6 +15,8 @@ export interface AdminMember {
   albion: { status: string | null; playerId: string | null; guildName: string | null; checkedAt: string | null };
   /** Banimento vigente (TASK-050); `null` = conta ativa. */
   ban: { bannedAt: string; reason: string; byName: string | null } | null;
+  /** Data em que a limpeza diária viu a conta fora do servidor do Discord (TASK-049); `null` = está lá. */
+  leftGuildAt: string | null;
 }
 
 export interface AdminMembersPage {
