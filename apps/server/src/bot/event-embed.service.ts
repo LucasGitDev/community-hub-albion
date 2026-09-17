@@ -63,6 +63,7 @@ export class EventEmbedService implements OnModuleInit, OnModuleDestroy {
       startsAt: event.startsAt ? new Date(event.startsAt) : null,
       roles: rolesWithMembers(event, members),
       cancelReason: event.cancelReason,
+      entryFee: BigInt(event.entryFee),
     });
 
     if (event.discordMessageId) {

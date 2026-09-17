@@ -52,10 +52,13 @@ export class EventSignupInteractions {
         if (result.reason === "already_in_role") return { message: EVENT_BUTTON_REPLIES.alreadyInRole(slot.name) };
         if (result.reason === "unknown_role") return { message: EVENT_BUTTON_REPLIES.unknownRole, refresh: eventId };
         if (result.reason === "banned") return { message: bannedSignupReply(result.banReason) };
+        // Taxa de entrada maior que o saldo em Buffunfa (TASK-058, AC#2): recusa com o número que falta.
+        if (result.reason === "insufficient_funds") return { message: EVENT_BUTTON_REPLIES.insufficientFunds(result.fee, result.balance) };
         return { message: EVENT_BUTTON_REPLIES.notFound };
       }
       const { signup } = result;
-      return { message: signup.status === "confirmed" ? EVENT_BUTTON_REPLIES.confirmed(signup.roleName) : EVENT_BUTTON_REPLIES.waitlisted(signup.roleName, signup.position) };
+      const entered = signup.status === "confirmed" ? EVENT_BUTTON_REPLIES.confirmed(signup.roleName) : EVENT_BUTTON_REPLIES.waitlisted(signup.roleName, signup.position);
+      return { message: result.charged ? `${entered}\n${EVENT_BUTTON_REPLIES.charged(result.charged)}` : entered };
     });
   }
 
@@ -63,7 +66,7 @@ export class EventSignupInteractions {
   async onLeave(@Context() [interaction]: [EventButtonInteraction], @ComponentParam("eventId") eventId: string): Promise<void> {
     await this.guarded(interaction, eventId, async (userId) => {
       const result = await this.signups.leave(eventId, userId);
-      if (result.ok) return { message: EVENT_BUTTON_REPLIES.left };
+      if (result.ok) return { message: result.refunded ? `${EVENT_BUTTON_REPLIES.left}\n${EVENT_BUTTON_REPLIES.refunded(result.refunded)}` : EVENT_BUTTON_REPLIES.left };
       if (result.reason === "not_open") return { message: EVENT_BUTTON_REPLIES.notOpen(result.status), refresh: eventId };
       if (result.reason === "not_signed_up") return { message: EVENT_BUTTON_REPLIES.notSignedUp };
       return { message: EVENT_BUTTON_REPLIES.notFound };

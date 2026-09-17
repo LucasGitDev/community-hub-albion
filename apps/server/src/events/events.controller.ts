@@ -1,8 +1,11 @@
 import { BadRequestException, Body, ConflictException, Controller, ForbiddenException, Get, HttpCode, Inject, NotFoundException, Param, Patch, Post, Query, Res, UseGuards } from "@nestjs/common";
 import {
   asSubject,
+  entryFeeEditable,
+  entryFeeFrozenError,
   eventCancelSchema,
   eventCreateSchema,
+  eventEntryFeeSchema,
   eventUpdateSchema,
   eventTransferOwnerSchema,
   firstIssue,
@@ -127,6 +130,28 @@ export class EventsController {
     this.assertCan(auth, "update", event);
     assertEventEditable(event);
     const updated = await this.events.update(event.id, parseBody(eventUpdateSchema, body));
+    if (!updated) throw new NotFoundException("Evento não encontrado.");
+    return updated;
+  }
+
+  /**
+   * Taxa de entrada em Buffunfa (TASK-058, F6-12). **Sem teto**: quem calibra o filtro do conteúdo
+   * disputado é o caller, e um limite escrito aqui só apareceria como surpresa na hora errada.
+   *
+   * Vale enquanto as inscrições estão abertas (`entryFeeEditable`). Depois disso, mudar o preço
+   * mudaria o que já foi cobrado de quem entrou — e o ledger não reescreve lançamento (só estorna).
+   */
+  @Patch(":id/entry-fee")
+  @HttpCode(200)
+  @UseGuards(SameOriginGuard)
+  @Authorize("update", "Event")
+  async setEntryFee(@Param("id") id: string, @Body() body: unknown, @CurrentAuth() auth: Auth): Promise<EventDto> {
+    const { entryFee } = parseBody(eventEntryFeeSchema, body);
+    const event = await this.load(id);
+    this.assertCan(auth, "update", event);
+    assertEventEditable(event);
+    if (!entryFeeEditable(event.status)) throw new ConflictException(entryFeeFrozenError(event.status));
+    const updated = await this.events.setEntryFee(event.id, entryFee);
     if (!updated) throw new NotFoundException("Evento não encontrado.");
     return updated;
   }
