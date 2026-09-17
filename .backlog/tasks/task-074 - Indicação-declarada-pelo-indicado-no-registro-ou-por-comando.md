@@ -4,7 +4,7 @@ title: 'Indicação declarada pelo indicado, no registro ou por comando'
 status: To Do
 assignee: []
 created_date: '2026-09-17 22:17'
-updated_date: '2026-09-17 22:21'
+updated_date: '2026-09-17 22:22'
 labels: []
 milestone: m-11
 dependencies: []
@@ -40,6 +40,8 @@ O custo da troca, que os critérios cobrem: a chave passa a ser **digitada**, n�
 - [ ] #9 A partir da décima primeira indicação recompensada no mês, a indicação é registrada sem pagar
 - [ ] #10 Indicador banido ou que saiu do servidor não recebe; a indicação fica registrada
 - [ ] #11 A staff enxerga as indicações de um membro e consegue estornar uma paga por engano
+- [ ] #12 O indicador recebe 10 BUF e o indicado recebe 2 BUF, no mesmo evento de pagamento
+- [ ] #13 O teto mensal vale para o indicador; o indicado recebe os 2 BUF dele mesmo quando o indicador já estourou o teto
 <!-- AC:END -->
 
 ## Definition of Done
