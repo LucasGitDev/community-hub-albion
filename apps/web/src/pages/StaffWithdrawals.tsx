@@ -1,13 +1,13 @@
 import { useState } from "react";
 import { Check, Hourglass, Inbox, PackageCheck, Truck } from "lucide-react";
-import { formatSilver, type WithdrawalDto, type WithdrawalStatus } from "@albion-hub/shared";
+import { formatAmount, type WithdrawalDto, type WithdrawalStatus } from "@albion-hub/shared";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Textarea } from "@/components/ui/textarea";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { EmptyState, PageHeader, Silver, StatCard, StatusBadge } from "@/components/display";
+import { EmptyState, PageHeader, Amount, StatCard, StatusBadge } from "@/components/display";
 import { ErrorState } from "@/pages/MyWithdrawals";
 import { cn } from "@/lib/utils";
 import { formatDateTime } from "@/lib/format";
@@ -56,12 +56,12 @@ export function StaffWithdrawals() {
           emphasis
           label="Em análise"
           icon={<Hourglass />}
-          value={<Silver value={sum(pending)} />}
+          value={<Amount currency="silver" value={sum(pending)} />}
           hint={`${pending.length} ${pending.length === 1 ? "pedido esperando decisão" : "pedidos esperando decisão"}`}
           className="col-span-2 lg:col-span-1"
         />
-        <StatCard label="A entregar" icon={<Truck />} value={<Silver value={sum(approved)} />} hint={`${approved.length} ${approved.length === 1 ? "aprovado" : "aprovados"}, prata a transferir`} />
-        <StatCard label="Entregue" icon={<PackageCheck />} value={<Silver value={sum(settled)} />} hint={`${settled.length} ${settled.length === 1 ? "saque concluído" : "saques concluídos"}`} />
+        <StatCard label="A entregar" icon={<Truck />} value={<Amount currency="silver" value={sum(approved)} />} hint={`${approved.length} ${approved.length === 1 ? "aprovado" : "aprovados"}, prata a transferir`} />
+        <StatCard label="Entregue" icon={<PackageCheck />} value={<Amount currency="silver" value={sum(settled)} />} hint={`${settled.length} ${settled.length === 1 ? "saque concluído" : "saques concluídos"}`} />
       </div>
 
       {error ? (
@@ -181,7 +181,7 @@ function StaffRow({ w, onDone, onConflict }: RowProps) {
       </div>
 
       <div className="flex flex-wrap items-center justify-between gap-2 lg:block">
-        <Silver value={w.amount} className={cn("text-2xl font-semibold", w.status === "rejected" && "text-muted-foreground line-through")} />
+        <Amount currency="silver" value={w.amount} className={cn("text-2xl font-semibold", w.status === "rejected" && "text-muted-foreground line-through")} />
         <span className="lg:mt-1 lg:block">
           <StatusBadge status={w.status} />
         </span>
@@ -208,7 +208,7 @@ function StaffRow({ w, onDone, onConflict }: RowProps) {
                 </Button>
                 <Button
                   disabled={busy}
-                  onClick={() => run(() => approveWithdrawal(w.id), { title: "Saque aprovado", description: `${formatSilver(w.amount)} debitados de ${nick}.` })}
+                  onClick={() => run(() => approveWithdrawal(w.id), { title: "Saque aprovado", description: `${formatAmount(w.amount, "silver")} debitados de ${nick}.` })}
                 >
                   <Check />
                   Aprovar saque
@@ -244,7 +244,7 @@ function StaffRow({ w, onDone, onConflict }: RowProps) {
           <Button
             variant="outline"
             disabled={busy || !note.trim()}
-            onClick={() => run(() => settleWithdrawal(w.id, note.trim()), { title: "Marcado como entregue", description: `${formatSilver(w.amount)} entregues a ${nick}.` })}
+            onClick={() => run(() => settleWithdrawal(w.id, note.trim()), { title: "Marcado como entregue", description: `${formatAmount(w.amount, "silver")} entregues a ${nick}.` })}
           >
             Marcar como entregue
           </Button>
@@ -264,11 +264,11 @@ function MemberContext({ w }: { w: QueueItem }) {
   const others = w.balance.reserved - w.amount;
   return (
     <p className="truncate text-xs text-muted-foreground">
-      Saldo <Silver value={w.balance.balance} className="font-medium text-foreground" />
+      Saldo <Amount currency="silver" value={w.balance.balance} className="font-medium text-foreground" />
       {others > 0n && (
         <>
           {" · "}
-          <Silver value={others} /> em outros pedidos
+          <Amount currency="silver" value={others} /> em outros pedidos
         </>
       )}
     </p>

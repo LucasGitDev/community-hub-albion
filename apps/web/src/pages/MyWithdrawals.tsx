@@ -4,7 +4,7 @@ import { useWallet } from "@/api/WalletProvider";
 import type { Withdrawal } from "@/api/wallet";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
-import { EmptyState, PageHeader, Pill, Silver, StatusBadge } from "@/components/display";
+import { EmptyState, PageHeader, Pill, Amount, StatusBadge } from "@/components/display";
 import { WithdrawDialog } from "@/components/WithdrawDialog";
 import { cn } from "@/lib/utils";
 import { formatDateTime } from "@/lib/format";
@@ -53,7 +53,7 @@ export function MyWithdrawals() {
           ))}
           {total > 0n && (
             <span className="text-muted-foreground">
-              Já recebeu <Silver value={total} className="font-semibold text-foreground" /> de prata.
+              Já recebeu <Amount currency="silver" value={total} className="font-semibold text-foreground" /> de prata.
             </span>
           )}
         </div>
@@ -123,7 +123,7 @@ function WithdrawalRow({ w }: { w: Withdrawal }) {
       )}
     >
       <div className="flex flex-wrap items-center justify-between gap-2 md:block">
-        <Silver value={w.amount} className={cn("text-2xl font-semibold", w.status === "rejected" && "text-muted-foreground line-through")} />
+        <Amount currency="silver" value={w.amount} className={cn("text-2xl font-semibold", w.status === "rejected" && "text-muted-foreground line-through")} />
         <span className="md:mt-1 md:block">
           <StatusBadge status={w.status} />
         </span>

@@ -5,9 +5,9 @@ import {
   formatEventFee,
   formatPresence,
   formatShare,
-  formatSilver,
+  formatAmount,
   parsePercentBp,
-  parseSilver,
+  parseAmount,
   type EventDto,
   type EventFee,
   type LootSplitDto,
@@ -19,7 +19,7 @@ import { toast } from "sonner";
 import * as eventsApi from "@/api/events";
 import { errorText } from "@/api/http";
 import * as splitsApi from "@/api/splits";
-import { Silver } from "@/components/display";
+import { Amount } from "@/components/display";
 import { Pill } from "@/components/display";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
@@ -136,7 +136,7 @@ export function EventSettlement({ event, onChanged, onDraftChange }: { event: Ev
         event={event}
         open={open && draft === null}
         hasDraft={draft !== null}
-        total={draft ? BigInt(draft.totalSilver) : (parseSilver(totalText) ?? 0n)}
+        total={draft ? BigInt(draft.totalSilver) : (parseAmount(totalText, "silver") ?? 0n)}
         onChanged={onChanged}
       />
       <SplitStep
@@ -259,7 +259,7 @@ function FeeStep({ event, open, hasDraft, total, onChanged }: { event: EventDto;
   const [value, setValue] = useState(() => initialFeeText(fee));
   const [busy, setBusy] = useState(false);
 
-  const parsed = type === "percent" ? parsePercentBp(value || "0") : parseSilver(value || "0");
+  const parsed = type === "percent" ? parsePercentBp(value || "0") : parseAmount(value || "0", "silver");
   const pending: EventFee | null = parsed === null ? null : { type, value: BigInt(parsed) };
   const dirty = pending !== null && (pending.type !== fee.type || pending.value !== fee.value);
 
@@ -351,7 +351,7 @@ function FeeStep({ event, open, hasDraft, total, onChanged }: { event: EventDto;
 
 const initialFeeText = (fee: EventFee): string => {
   if (fee.value === 0n) return "";
-  return fee.type === "percent" ? formatEventFee(fee).replace("%", "") : formatSilver(fee.value);
+  return fee.type === "percent" ? formatEventFee(fee).replace("%", "") : formatAmount(fee.value, "silver");
 };
 
 /* ----------------------------------------------------------------- passo 3 */
@@ -434,7 +434,7 @@ function NewSplit({
   const [busy, setBusy] = useState(false);
   const fee = eventFee(event);
   const rows = useMemo(() => rowsFromPresence(present), [present]);
-  const total = parseSilver(text) ?? 0n;
+  const total = parseAmount(text, "silver") ?? 0n;
   const totals = settlementTotals(total, fee, rows);
   /*
    * AC#8: taxa maior que o total não chega na API. A frase inteira (a mesma do 409) fica no passo 2,
@@ -512,12 +512,12 @@ function DraftEditor({ event, split, open, onChanged }: { event: EventDto; split
   const totalId = useId();
   // A taxa do rascunho é a que ele congelou no momento em que nasceu, não a que está no evento agora.
   const fee = feeFromDto(split.fee);
-  const [totalText, setTotalText] = useState(() => formatSilver(BigInt(split.totalSilver)));
+  const [totalText, setTotalText] = useState(() => formatAmount(BigInt(split.totalSilver), "silver"));
   const [shares, setShares] = useState<Record<string, number>>(() => Object.fromEntries(split.lines.map((l) => [l.id, l.shareBp])));
   const [busy, setBusy] = useState(false);
   const [confirming, setConfirming] = useState(false);
 
-  const total = parseSilver(totalText) ?? 0n;
+  const total = parseAmount(totalText, "silver") ?? 0n;
   const base = useMemo(() => rowsFromSplit(split), [split]);
   const edited: SettlementRow[] = base.map((row) => ({ ...row, shareBp: shares[row.lineId!] ?? row.shareBp }));
   const totals = settlementTotals(total, fee, edited);
@@ -650,7 +650,7 @@ function ConfirmedSplit({ split, index, ownerNick }: { split: LootSplitDto; inde
           Leva <span className="num">{index}</span> confirmada
           <span className="num text-sm font-normal text-muted-foreground">{split.confirmedAt ? formatDateTime(split.confirmedAt) : ""}</span>
         </p>
-        <Silver value={totals.total} className="text-lg font-semibold" />
+        <Amount currency="silver" value={totals.total} className="text-lg font-semibold" />
       </div>
       <div className="px-2 pb-3 sm:px-3">
         <SettlementTable rows={rows} totals={totals} fee={fee} ownerNick={ownerNick} caption={`Leva ${index}: o que cada um recebeu`} />
@@ -724,7 +724,7 @@ function SettlementTable({
                 )}
               </TableCell>
               <TableCell className="px-2 text-right sm:px-3">
-                <Silver value={row.amount} className={cn("font-semibold", row.amount === 0n && "text-muted-foreground")} />
+                <Amount currency="silver" value={row.amount} className={cn("font-semibold", row.amount === 0n && "text-muted-foreground")} />
               </TableCell>
             </TableRow>
           ))}
@@ -742,7 +742,7 @@ function SettlementTable({
                 <TableCell className="hidden sm:table-cell" />
                 <TableCell />
                 <TableCell className="text-right">
-                  <Silver value={totals.feeSilver} className="font-semibold" />
+                  <Amount currency="silver" value={totals.feeSilver} className="font-semibold" />
                 </TableCell>
               </TableRow>
               <TableRow>
@@ -756,7 +756,7 @@ function SettlementTable({
                 <TableCell className="hidden sm:table-cell" />
                 <TableCell />
                 <TableCell className="text-right">
-                  <Silver value={totals.residual} className="font-semibold" />
+                  <Amount currency="silver" value={totals.residual} className="font-semibold" />
                 </TableCell>
               </TableRow>
               <TableRow className="bg-muted/60 hover:bg-muted/60">
@@ -764,7 +764,7 @@ function SettlementTable({
                 <TableCell className="hidden sm:table-cell" />
                 <TableCell />
                 <TableCell className="text-right">
-                  <Silver value={totals.total} className="text-lg font-semibold" />
+                  <Amount currency="silver" value={totals.total} className="text-lg font-semibold" />
                 </TableCell>
               </TableRow>
             </>
@@ -837,26 +837,26 @@ function ConfirmSplitDialog({
         <dl className="grid grid-cols-[1fr_auto] gap-x-6 gap-y-2 rounded-xl border p-3 text-sm">
           <dt>Total bruto da leva</dt>
           <dd>
-            <Silver value={totals.total} className="font-semibold" />
+            <Amount currency="silver" value={totals.total} className="font-semibold" />
           </dd>
           <dt className="text-muted-foreground">Taxa do evento ({formatEventFee(fee)})</dt>
           <dd className="text-muted-foreground">
-            <Silver value={-totals.feeSilver} />
+            <Amount currency="silver" value={-totals.feeSilver} />
           </dd>
           <dt className="text-muted-foreground">Sobra do arredondamento</dt>
           <dd className="text-muted-foreground">
-            <Silver value={-totals.residual} />
+            <Amount currency="silver" value={-totals.residual} />
           </dd>
           <dt className="border-t pt-2">Dividido entre {paid.length === 1 ? "1 pessoa" : `${paid.length} pessoas`}</dt>
           <dd className="border-t pt-2">
-            <Silver value={totals.paid} className="font-semibold" />
+            <Amount currency="silver" value={totals.paid} className="font-semibold" />
           </dd>
           <dt className="flex items-center gap-1.5">
             <Crown className="size-3.5 text-muted-foreground" aria-hidden />
             {ownerNick ?? "Caller do evento"} recebe
           </dt>
           <dd>
-            <Silver value={totals.ownerSilver} className="font-semibold" />
+            <Amount currency="silver" value={totals.ownerSilver} className="font-semibold" />
           </dd>
         </dl>
 
@@ -866,7 +866,7 @@ function ConfirmSplitDialog({
               <span className="min-w-0 truncate">
                 {row.nick} <span className="num text-muted-foreground">{formatShare(row.shareBp)}</span>
               </span>
-              <Silver value={row.amount} className="font-semibold" />
+              <Amount currency="silver" value={row.amount} className="font-semibold" />
             </li>
           ))}
           {paid.length === 0 && <li className="px-3 py-2 text-muted-foreground">Ninguém recebe prata nesta leva.</li>}

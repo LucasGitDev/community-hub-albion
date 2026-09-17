@@ -3,7 +3,7 @@ import { Check, Hourglass, IdCard, ShieldCheck, UserPen, Wallet, X } from "lucid
 import { useId, useState, type FormEvent, type ReactNode } from "react";
 import { Link } from "react-router";
 import { toast } from "sonner";
-import { PageHeader, Panel, Pill, Silver } from "@/components/display";
+import { PageHeader, Panel, Pill, Amount } from "@/components/display";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -75,12 +75,12 @@ function Identity({ user, state }: { user: ReturnType<typeof useCurrentUser>["us
           <div className="bg-card p-3">
             <dt className="text-xs text-muted-foreground">Disponível pra saque</dt>
             <dd className="mt-1 text-xl font-semibold">
-              {balance ? <Silver value={balance.available} /> : <Skeleton className="h-6 w-20" />}
+              {balance ? <Amount currency="silver" value={balance.available} /> : <Skeleton className="h-6 w-20" />}
             </dd>
           </div>
           <div className="bg-card p-3">
             <dt className="text-xs text-muted-foreground">Reservado</dt>
-            <dd className="mt-1 text-xl font-semibold">{balance ? <Silver value={balance.reserved} /> : <Skeleton className="h-6 w-20" />}</dd>
+            <dd className="mt-1 text-xl font-semibold">{balance ? <Amount currency="silver" value={balance.reserved} /> : <Skeleton className="h-6 w-20" />}</dd>
           </div>
         </dl>
       </div>

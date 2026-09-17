@@ -53,7 +53,7 @@ describe("parseLedgerPageQuery", () => {
 });
 
 describe("describeLedgerAuthor (TASK-051)", () => {
-  const base = { id: "e1", amount: "100", kind: "adjustment", reversalOf: null, memo: null, createdAt: "2026-09-17T00:00:00.000Z" } as const;
+  const base = { id: "e1", amount: "100", currency: "silver" as const, kind: "adjustment", reversalOf: null, memo: null, createdAt: "2026-09-17T00:00:00.000Z" } as const;
 
   it("usa o nome de quem assinou o lançamento", () => {
     expect(describeLedgerAuthor({ ...base, referenceType: null, referenceId: null, author: { id: "u1", name: "Rekk" } })).toBe("Rekk");

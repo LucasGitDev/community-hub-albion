@@ -1,12 +1,12 @@
 import { useState, type FormEvent, type ReactNode } from "react";
 import { toast } from "sonner";
-import { checkWithdrawalRequest, formatSilver, formatSilverShort, parseSilver, withdrawalRefusalMessage } from "@albion-hub/shared";
+import { checkWithdrawalRequest, formatAmount, formatAmountShort, parseAmount, withdrawalRefusalMessage } from "@albion-hub/shared";
 import { errorText } from "@/api/http";
 import { useWallet } from "@/api/WalletProvider";
 import { requestWithdrawal } from "@/api/wallet";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogClose, DialogContent, DialogDescription, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
-import { Silver } from "@/components/display";
+import { Amount } from "@/components/display";
 
 /**
  * Pedido de saque contra a API real (TASK-031, AC#3). Sem valor mínimo e sem taxa (Q12): só recusa valor
@@ -24,7 +24,7 @@ export function WithdrawDialog({ trigger }: { trigger: ReactNode }) {
 
   const available = balance?.available ?? 0n;
   const negative = (balance?.balance ?? 0n) < 0n;
-  const amount = parseSilver(input);
+  const amount = parseAmount(input, "silver");
 
   async function submit(e: FormEvent) {
     e.preventDefault();
@@ -35,7 +35,7 @@ export function WithdrawDialog({ trigger }: { trigger: ReactNode }) {
     setSending(true);
     try {
       apply(await requestWithdrawal(amount));
-      toast.success("Saque pedido", { description: `${formatSilver(amount)} de prata reservados até a staff analisar.` });
+      toast.success("Saque pedido", { description: `${formatAmount(amount, "silver")} de prata reservados até a staff analisar.` });
       setOpen(false);
       setInput("");
       setError(null);
@@ -63,7 +63,7 @@ export function WithdrawDialog({ trigger }: { trigger: ReactNode }) {
 
         {negative ? (
           <p role="alert" className="rounded-lg border border-destructive/40 bg-destructive/10 p-4 text-sm">
-            Seu saldo está negativo (<Silver value={balance?.balance ?? 0n} className="font-semibold" />). Fale com a staff para acertar a conta antes de pedir um saque.
+            Seu saldo está negativo (<Amount currency="silver" value={balance?.balance ?? 0n} className="font-semibold" />). Fale com a staff para acertar a conta antes de pedir um saque.
           </p>
         ) : available <= 0n ? (
           <p className="rounded-lg border bg-muted p-4 text-sm text-muted-foreground">
@@ -80,7 +80,7 @@ export function WithdrawDialog({ trigger }: { trigger: ReactNode }) {
                 autoFocus
                 inputMode="decimal"
                 autoComplete="off"
-                placeholder={formatSilver(available)}
+                placeholder={formatAmount(available, "silver")}
                 value={input}
                 onChange={(e) => {
                   setInput(e.target.value);
@@ -99,11 +99,11 @@ export function WithdrawDialog({ trigger }: { trigger: ReactNode }) {
               ) : (
                 <span className="text-muted-foreground">
                   Sem valor mínimo
-                  {amount !== null && amount > 0n && `, você digitou ${formatSilver(amount)}`}
+                  {amount !== null && amount > 0n && `, você digitou ${formatAmount(amount, "silver")}`}
                 </span>
               )}
-              <button type="button" className="font-medium text-primary underline-offset-4 hover:underline" onClick={() => setInput(formatSilver(available))}>
-                Usar tudo ({formatSilverShort(available)})
+              <button type="button" className="font-medium text-primary underline-offset-4 hover:underline" onClick={() => setInput(formatAmount(available, "silver"))}>
+                Usar tudo ({formatAmountShort(available, "silver")})
               </button>
             </div>
             <div className="mt-6 flex justify-end gap-2">
