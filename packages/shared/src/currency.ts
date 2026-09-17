@@ -1,3 +1,5 @@
+import { z } from "zod";
+
 /**
  * As duas moedas do ledger (F6-1). Prata é a moeda com saque; Buffunfa é a moeda temática da
  * comunidade (doc-009), criada e queimada dentro do hub e sem saque nenhum (F6-6).
@@ -76,3 +78,22 @@ export function parseAmount(input: string, currency: Currency): bigint | null {
   const digits = raw.replace(/\./g, "");
   return /^\d+$/.test(digits) ? BigInt(digits) : null;
 }
+
+/**
+ * Valor inteiro vindo do JSON: aceita número, string ("1500000") ou bigint, e devolve `bigint` (Q20).
+ * String é o caminho recomendado da API — acima de 2^53 o `number` do JSON já perdeu dinheiro.
+ *
+ * Mora aqui, e não no loot split, porque a mesma leitura serve para as duas moedas: a faixa de
+ * Buffunfa do template (F6-8) entra pelo mesmo caminho que a taxa em prata.
+ */
+export const amountSchema = (label: string, unit = "") =>
+  z
+    .union([z.string(), z.number(), z.bigint()], { error: `${label} precisa ser um número inteiro${unit}.` })
+    .transform((v, ctx) => {
+      const raw = typeof v === "string" ? v.trim().replace(/[.\s]/g, "") : String(v);
+      if (!/^\d+$/.test(raw)) {
+        ctx.addIssue({ code: "custom", message: `${label} precisa ser um número inteiro${unit}, sem sinal nem centavos.` });
+        return z.NEVER;
+      }
+      return BigInt(raw);
+    });

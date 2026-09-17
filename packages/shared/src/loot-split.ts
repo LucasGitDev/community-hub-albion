@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { formatAmount } from "./currency.js";
+import { amountSchema, formatAmount } from "./currency.js";
 
 /**
  * Loot split (TASK-027, Q5/Q6/Q7/Q22/Q23) e a taxa do evento.
@@ -47,19 +47,10 @@ export function formatEventFee(fee: EventFee): string {
 
 /**
  * Prata vinda do JSON: aceita número inteiro ou string ("1500000"), devolve `bigint` (Q20).
- * String é o caminho recomendado da API — acima de 2^53 o JSON de `number` já perdeu prata.
+ * A leitura em si é `amountSchema` (currency.ts): ela vale para as duas moedas, e o nome daqui
+ * continua existindo porque neste módulo o assunto é sempre prata.
  */
-export const silverAmountSchema = (label: string) =>
-  z
-    .union([z.string(), z.number(), z.bigint()], { error: `${label} precisa ser um número inteiro de prata.` })
-    .transform((v, ctx) => {
-      const raw = typeof v === "string" ? v.trim().replace(/[.\s]/g, "") : String(v);
-      if (!/^\d+$/.test(raw)) {
-        ctx.addIssue({ code: "custom", message: `${label} precisa ser um número inteiro de prata, sem sinal nem centavos.` });
-        return z.NEVER;
-      }
-      return BigInt(raw);
-    });
+export const silverAmountSchema = (label: string) => amountSchema(label, " de prata");
 
 export const eventFeeSchema = z.object({
   type: z.enum(EVENT_FEE_TYPES, { error: "A taxa é percentual (percent) ou valor fixo (fixed)." }),
