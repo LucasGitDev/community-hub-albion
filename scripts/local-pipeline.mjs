@@ -139,7 +139,9 @@ function deploy() {
     console.warn("\n⚠ EASYPANEL_DEPLOY_WEBHOOK ausente: imagem publicada, deploy não disparado.");
     return;
   }
-  run(`curl -fsS -X POST ${JSON.stringify(webhook)} > /dev/null`);
+  // O comando não é ecoado: a URL do webhook é o segredo inteiro (quem tem ela dispara deploy).
+  run(`curl -fsS -X POST ${JSON.stringify(webhook)} > /dev/null`, { quiet: true });
+  console.log("\n$ curl -fsS -X POST <EASYPANEL_DEPLOY_WEBHOOK>");
   console.log(`\n✓ Deploy disparado no Easypanel (sha-${short}).`);
 }
 
