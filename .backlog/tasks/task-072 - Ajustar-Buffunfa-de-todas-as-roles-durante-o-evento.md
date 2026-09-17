@@ -1,11 +1,11 @@
 ---
 id: TASK-072
 title: Ajustar Buffunfa de todas as roles durante o evento
-status: In Progress
+status: Done
 assignee:
   - '@claude'
 created_date: '2026-09-17 19:59'
-updated_date: '2026-09-17 20:14'
+updated_date: '2026-09-17 21:19'
 labels: []
 milestone: m-12
 dependencies: []

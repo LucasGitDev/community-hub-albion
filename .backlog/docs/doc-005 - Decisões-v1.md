@@ -3,7 +3,7 @@ id: doc-005
 title: Decisões v1
 type: specification
 created_date: '2026-09-15 03:22'
-updated_date: '2026-09-17 20:13'
+updated_date: '2026-09-17 21:19'
 ---
 Resultado do grill (R1–R3, 2026-09-15). Referência pra specs e tasks.
 
@@ -231,3 +231,19 @@ serem esquecidas na base: os dois casos são o mesmo erro, e os dois agora têm 
 | # | Decisão |
 |---|---|
 | F6-58 | O denominador do corte de 90% é a **call**, não o evento: a janela abre na **primeira entrada registrada no canal**, nunca antes do início do evento. A F6-10 dizia "90% do tempo de vida da call" e o código media do `started_at` do evento — mas entre um e outro o bot ainda cria o canal e arrasta gente da sala de espera, e nesse intervalo ninguém pode estar na call. Em call longa o desvio some no arredondamento; em call curta ele decide o pagamento. Relato que expôs: call de menos de 1 minuto, participante presente do começo ao fim marcando **72,66%** e não recebendo nada, com o loot split da mesma tela mostrando 100%. O corte binário de 90% e a medição da prata não mudaram. |
+
+### Revisão de F6-8, F6-48 e F6-51 (TASK-072, 2026-09-17) — a pedido do usuário
+| # | Decisão |
+|---|---|
+| F6-8 *(revisada)* | Valor **por role**, com a faixa do template servindo de **sugestão de partida**, não de teto. O caller ajusta livremente — **em lote** ("todas as roles recebem X") ou role a role — de zero ao teto do sistema, até o fechamento. A faixa obrigatória tinha sido desenhada para conter inflação, mas o freio contra Buffunfa criada do nada é o teto de schema (F6-52), não o template: quem organiza o evento é quem sabe quanto o conteúdo vale naquele dia, e a faixa virou atrito para ele. Pedido do usuário: "pode ser que num geral, todas as roles vão ganhar X Buffunfa desde o início, depois isso mude". |
+| F6-48 *(revisada)* | O valor **nasce no mínimo** da faixa, e dali em diante a faixa não limita mais nada. Nascer no mínimo continua certo porque subir é o gesto que preenche vaga escassa — nascer no máximo tiraria do caller o instrumento. |
+| F6-51 *(esclarecida)* | `0 a 0` no YAML é role que **nasce** sem Buffunfa, não role que **não pode** pagar. O evento criado dela paga normalmente depois de um ajuste. Cai a frase "a obrigatoriedade da F6-8 continua valendo onde alguém decide". |
+| F6-52 *(ganha peso)* | O teto de 10.000 BUF por role passa a ser a **única** regra de teto, e é o banco que garante: o check virou `event_role_slots_buffunfa_bounds` (`value between 0 and 10000`), renomeado de propósito — o nome antigo dizia "range" e passaria a mentir sobre o que ele protege. |
+
+### Decisões tomadas durante a TASK-071 (ícone e identidade)
+| # | Decisão |
+|---|---|
+| F6-59 | O ícone da Buffunfa **acompanha** o texto ` BUF`, não o substitui: é o texto que impede a distinção entre as moedas de depender de cor ou de a imagem carregar (mesma razão da TASK-055). O ícone é `aria-hidden` — senão o leitor de tela repetiria a moeda em cada linha do extrato. |
+| F6-60 | O ícone é um `span` com `background-image`, não um `img`: o Chrome não contava a largura do `img` ao medir a coluna do extrato e o valor vazava a borda do card em 400 px. |
+| F6-61 | A marca do painel continua o **brasão de espadas**; o javali é a **moeda**. Usar o javali como símbolo do servidor misturaria as duas coisas. O nome "Toca da Turma" some do header abaixo de 640 px (fica o brasão) em vez de aparecer cortado. |
+| F6-62 | Assets do painel são gerados a partir do PNG de origem em tamanho de uso (64 px, 9 KB) e entram pelo bundle do Vite — **não** viram dependência de runtime do servidor, ao contrário do PNG do emoji, que o bot lê do disco. |
