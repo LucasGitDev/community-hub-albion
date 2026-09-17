@@ -22,6 +22,7 @@ Skills/tools do agent: doc "Skills" no backlog — **ler antes de qualquer taref
 - RBAC via CASL, separado de cargos Discord.
 
 ## Fluxo de git (toda task)
+- **Exceção**: diff 100% dentro de `.backlog/` (task, doc, decisão, arquivamento) vai **direto na `main`**, sem branch, sem PR e sem CI — o gate ignora `.backlog/**` no push. Qualquer arquivo fora do backlog no mesmo commit derruba a exceção.
 - Nunca commitar direto na `main`. Uma branch por task: `<type>/task-XXX-slug` (ex: `feat/task-026-ledger`).
 - Tasks em paralelo: worktree **sempre** em `.claude/worktrees/task-XXX` (ignorado no git): `git worktree add .claude/worktrees/task-XXX -b <branch> origin/main`, depois `pnpm install` dentro dele.
 - Push + PR via `gh pr create` (título Conventional, corpo com `TASK-XXX`, resumo do gate e evidências).
