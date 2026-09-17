@@ -87,7 +87,7 @@ describe.skipIf(!baseUrl)("gestão de membro do admin (TASK-045)", () => {
   const notes = (cookie: string, id: string) => http().get(`/api/admin/members/${id}/notes`).set("Cookie", cookie);
   const addNote = (cookie: string, id: string, body: object) => http().post(`/api/admin/members/${id}/notes`).set("Cookie", cookie).set("Origin", PUBLIC_URL).send(body);
 
-  it("sem sessão 401; member, caller e staff 403 nas três ações (AC#4)", async () => {
+  it("sem sessão 401; member e caller 403 nas quatro ações (TASK-047 AC#3)", async () => {
     const alvo = await session("450000000000000001", "alvo-perm");
     expect((await http().post(`/api/admin/members/${alvo.id}/albion-check`).set("Origin", PUBLIC_URL)).status).toBe(401);
     expect((await http().get(`/api/admin/members/${alvo.id}/notes`)).status).toBe(401);
@@ -96,18 +96,64 @@ describe.skipIf(!baseUrl)("gestão de membro do admin (TASK-045)", () => {
     for (const [discordId, roles] of [
       ["450000000000000010", []],
       ["450000000000000011", ["caller"]],
-      ["450000000000000012", ["staff"]],
     ] as const) {
       const who = await session(discordId, `curioso-${roles[0] ?? "membro"}`, [...roles]);
       expect((await check(who.cookie, alvo.id)).status).toBe(403);
       expect((await patch(who.cookie, alvo.id, { nick: "Invadido" })).status).toBe(403);
       expect((await notes(who.cookie, alvo.id)).status).toBe(403);
       expect((await addNote(who.cookie, alvo.id, { body: "não devia entrar" })).status).toBe(403);
+      // A lista também: quem não gere ficha de membro não descobre quem existe (TASK-047 AC#3).
+      expect((await http().get("/api/admin/members").set("Cookie", who.cookie)).status).toBe(403);
     }
     // Nada foi gravado por quem levou 403.
     const [row] = await handle.db.select().from(schema.users).where(eq(schema.users.id, alvo.id));
     expect(row!.gameNick).toBeNull();
     expect((await handle.db.select().from(schema.userNotes).where(eq(schema.userNotes.userId, alvo.id))).length).toBe(0);
+  });
+
+  it("staff alcança as quatro capacidades da gestão de usuários (TASK-047 AC#1)", async () => {
+    const chefe = await session("450000000000000015", "staff-gestao", ["staff"]);
+    const alvo = await session("450000000000000016", "alvo-staff");
+    await setNick(alvo.id, "AlvoStaff");
+    albion.result = { status: "found", region: "americas", playerId: "p-staff", name: "AlvoStaff", guildName: "Guilda", checkedAt: "2026-09-17T00:00:00.000Z" };
+
+    // 1. buscar/revalidar o nick na API do Albion.
+    const revalidado = await check(chefe.cookie, alvo.id);
+    expect(revalidado.status).toBe(201);
+    expect(revalidado.body.albion).toMatchObject({ status: "found", playerId: "p-staff" });
+
+    // 2. editar nick e tag de guilda.
+    const editado = await patch(chefe.cookie, alvo.id, { nick: "AlvoRenomeado", guildTag: "ABC" });
+    expect(editado.status).toBe(200);
+    expect(editado.body).toMatchObject({ nick: "AlvoRenomeado", guildTag: "ABC" });
+
+    // 3. escrever nota interna.
+    const escrita = await addNote(chefe.cookie, alvo.id, { body: "conversei com ele no Discord" });
+    expect(escrita.status).toBe(201);
+    expect(escrita.body.note).toMatchObject({ kind: "staff", body: "conversei com ele no Discord" });
+
+    // 4. ler as notas existentes (a do sistema, da edição, e a que a staff acabou de escrever).
+    const lidas = await notes(chefe.cookie, alvo.id);
+    expect(lidas.status).toBe(200);
+    expect(lidas.body.notes.map((n: { body: string }) => n.body)).toContain("conversei com ele no Discord");
+    expect(lidas.body.notes.some((n: { kind: string }) => n.kind === "system")).toBe(true);
+
+    // E a lista de membros, que é por onde ela chega nas quatro.
+    expect((await http().get("/api/admin/members").set("Cookie", chefe.cookie)).status).toBe(200);
+  });
+
+  it("staff não concede nem revoga papel: /admin/users segue só do admin (TASK-047 AC#2)", async () => {
+    const chefe = await session("450000000000000017", "staff-sem-papel", ["staff"]);
+    const alvo = await session("450000000000000018", "alvo-papel");
+
+    // Ler a lista de papéis, conceder e revogar: as três portas que criariam outro admin.
+    expect((await http().get("/api/admin/users").set("Cookie", chefe.cookie)).status).toBe(403);
+    expect((await http().put(`/api/admin/users/${alvo.id}/roles/admin`).set("Cookie", chefe.cookie).set("Origin", PUBLIC_URL)).status).toBe(403);
+    expect((await http().delete(`/api/admin/users/${alvo.id}/roles/caller`).set("Cookie", chefe.cookie).set("Origin", PUBLIC_URL)).status).toBe(403);
+
+    // Nenhum papel foi criado por quem levou 403.
+    const papeis = await handle.db.select().from(schema.userRoles).where(eq(schema.userRoles.userId, alvo.id));
+    expect(papeis.map((r) => r.role)).not.toContain("admin");
   });
 
   it("revalida o nick na API do Albion e grava status, player id, guilda e data (AC#1)", async () => {

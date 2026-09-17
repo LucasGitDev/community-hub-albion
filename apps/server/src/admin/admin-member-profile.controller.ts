@@ -42,10 +42,12 @@ const toNoteDto = (note: UserNote): UserNoteDto => ({ ...note, createdAt: note.c
  * Ações sobre um membro específico do painel (TASK-045): conferir o nick na API do Albion sob demanda,
  * editar nick/tag e escrever notas internas.
  *
- * Permissão: o mesmo subject `UserRole` que guarda a lista `/admin/members` (TASK-043, Q13) — `read` para ler
- * notas, `update` para escrever qualquer coisa. `UserRole` é o único subject que nenhum papel abaixo de admin
- * alcança (staff tem `manage` em evento, saque e pedido de nick, e nada em `UserRole`), então member e caller
- * levam 403 aqui e não veem a tela (AC#4). Toda escrita passa também pelo `SameOriginGuard`, como o resto do painel.
+ * Permissão: subject `MemberProfile` — `read` para ler notas, `update` para escrever qualquer coisa.
+ * Admin e staff alcançam (TASK-047, G3); member e caller não têm nenhuma regra sobre `MemberProfile` e
+ * levam 403 aqui, além de não verem a tela. O subject é separado de `UserRole` de propósito: conceder e
+ * revogar papel é a porta que cria outro admin e continua exclusiva do admin em `/admin/users`. A permissão
+ * da staff aqui é provisória até a TASK-052 separar permissões de papéis.
+ * Toda escrita passa também pelo `SameOriginGuard`, como o resto do painel.
  *
  * Auditoria (AC#2): a edição grava uma nota `kind = 'system'` com quem editou e o que mudou. Não existe coluna
  * "editado por" porque a pergunta real é a linha do tempo do membro, e ela já mora nas notas — append-only (AC#3).
@@ -65,7 +67,7 @@ export class AdminMemberProfileController {
    */
   @Post("albion-check")
   @UseGuards(SameOriginGuard)
-  @Authorize("update", "UserRole")
+  @Authorize("update", "MemberProfile")
   async check(@Param("userId") rawUserId: string): Promise<{ albion: AlbionCheckDto }> {
     return { albion: await this.albionCheck.recheck(parseUserId(rawUserId)) };
   }
@@ -76,7 +78,7 @@ export class AdminMemberProfileController {
    */
   @Patch()
   @UseGuards(SameOriginGuard)
-  @Authorize("update", "UserRole")
+  @Authorize("update", "MemberProfile")
   async edit(
     @Param("userId") rawUserId: string,
     @Body() body: { nick?: unknown; guildTag?: unknown },
@@ -105,7 +107,7 @@ export class AdminMemberProfileController {
 
   /** Histórico do membro, mais antigo primeiro (AC#3). */
   @Get("notes")
-  @Authorize("read", "UserRole")
+  @Authorize("read", "MemberProfile")
   async notes(@Param("userId") rawUserId: string): Promise<{ notes: UserNoteDto[] }> {
     const userId = parseUserId(rawUserId);
     await this.requireMember(userId);
@@ -115,7 +117,7 @@ export class AdminMemberProfileController {
   /** Acrescenta uma nota. Não existe rota de editar nem de apagar: o histórico só cresce (AC#3). */
   @Post("notes")
   @UseGuards(SameOriginGuard)
-  @Authorize("update", "UserRole")
+  @Authorize("update", "MemberProfile")
   async addNote(@Param("userId") rawUserId: string, @Body() body: { body?: unknown }, @CurrentAuth() auth: AuthContext): Promise<{ note: UserNoteDto }> {
     const userId = parseUserId(rawUserId);
     await this.requireMember(userId);
