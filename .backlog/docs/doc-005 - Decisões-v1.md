@@ -3,7 +3,7 @@ id: doc-005
 title: Decisões v1
 type: specification
 created_date: '2026-09-15 03:22'
-updated_date: '2026-09-17 18:14'
+updated_date: '2026-09-17 18:40'
 ---
 Resultado do grill (R1–R3, 2026-09-15). Referência pra specs e tasks.
 
@@ -166,3 +166,15 @@ ping comprado com Buffunfa (vai com a F7), automação de cargo do Discord.
 | F6-35 | `BUFFUNFA_EMOJI_FILE` é env com default apontando para `assets/` do repo (mesmo padrão do `WEB_DIST_DIR`), e o Dockerfile passou a copiar `assets/`. Sem isso o bot não teria o PNG dentro da imagem para criar o emoji (F6-28). |
 
 **Bug encontrado e corrigido no caminho:** "Ganhos no mês" e "Último split" da Carteira somavam o extrato inteiro e passaram a incluir Buffunfa no instante em que ela existiu. É exatamente o esquecimento que a F6-1 previu ao assumir o risco da tabela única — apareceu no primeiro dia, e é por isso que saldo e extrato passaram a exigir moeda explícita na assinatura (F6-3).
+
+### Decisões tomadas durante a TASK-059 (loja)
+| # | Decisão |
+|---|---|
+| F6-36 | **Um pedido = uma unidade**, sem coluna de quantidade. Quantidade obrigaria decidir cancelamento parcial (devolver 2 de 3?), que ninguém pediu. Comprar duas vezes resolve o caso real. |
+| F6-37 | A loja **não tem coluna de moeda**: `SHOP_CURRENCY` é constante (Buffunfa). Loja aceitando prata competiria com o saque, que é a única saída de valor real do sistema. |
+| F6-38 | **Nome e preço ficam congelados no pedido**, e item **nunca é apagado** — despublicar é o caminho, porque os pedidos antigos apontam para ele. Preço que muda depois não reescreve o que alguém já comprou. |
+| F6-39 | A compra **não passa pelo `spendCurrency`**: aquela porta é do débito, e na loja o débito é da entrega (F6-23). A compra reserva; o lançamento nasce em `delivered`. |
+| F6-40 | Trava sempre na ordem **usuário → item**. Ordem fixa evita deadlock entre dois compradores do mesmo item e de itens diferentes ao mesmo tempo. |
+| F6-41 | **Teto de preço de 1e9 BUF**, com 400 explicado. Origem: o `security-review` apontou que preço acima do `int8` virava 500 mudo. Não é regra de economia, é limite de tipo. |
+
+**Contrato que a TASK-060 consome:** `shop_orders.status = 'reserved'` — Buffunfa reservada (soma dos `reserved` em `getShopBalance`) e estoque já decrementado. Transições em `ALLOWED_SHOP_ORDER_TRANSITIONS` (`reserved → delivered | cancelled`), com checks no banco: `ledger_entry_id` not null **se e somente se** `delivered`; `handled_by`/`handled_at` sempre juntos e nunca em `reserved`; nota obrigatória no cancelamento. O kind `purchase` e o reference_type `shop_order` já existem no ledger sem consumidor — mesmo precedente do `spendCurrency` (F6-33).

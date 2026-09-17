@@ -1,11 +1,11 @@
 ---
 id: TASK-059
 title: 'Loja: catálogo de itens e compra com Buffunfa'
-status: In Progress
+status: Done
 assignee:
   - '@claude'
 created_date: '2026-09-17 17:04'
-updated_date: '2026-09-17 18:35'
+updated_date: '2026-09-17 18:39'
 labels: []
 milestone: m-6
 dependencies:
