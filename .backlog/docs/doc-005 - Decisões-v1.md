@@ -80,3 +80,15 @@ Resultado do grill (R1–R3, 2026-09-15). Referência pra specs e tasks.
 | G11 | `main` protegida por ruleset do GitHub (PR + check `summary`, sem push forçado, sem deleção, sem exceção). |
 | G12 | **Saque sem mínimo** confirmado. Plano B, se a fila entupir: um pedido pendente por membro — nunca ressuscitar o mínimo. |
 | G13 | UI: descrição da role não entra no formulário de criação (criar é em lote, descrever é reflexivo); perfil mostra saldo disponível **e** reservado. |
+
+## Grelha de 2026-09-17 (leva 047-051)
+| # | Decisão |
+|---|---|
+| N1 | Ajuste da manutenção **não** ganha usuário de sistema no banco: autoria fica na origem `manual/maintenance`, no motivo e na nota do perfil. Usuário de sistema seria entidade a proteger sem ganho. |
+| N2 | **Staff não bane staff nem admin** (confirmado): impede conta de staff comprometida de derrubar todos os admins. Staff bane member e caller. |
+| N3 | Membro **vê o autor** do ajuste no próprio extrato lido pela rota de staff. Prata é dele; motivo sem responsável gera desconfiança. Autoria de terceiros continua fora. |
+| N4 | Quem sai e volta ao servidor **não recupera papéis** automaticamente: reconceder é ato de alguém. Evita que sair-e-voltar vire caminho de recuperação de acesso. |
+| N5 | "Papéis" na limpeza = `user_roles` (RBAC), não cargo do Discord. |
+| N6 | Filtro "Saiu do servidor" **fica para depois**, junto com uma passada em todos os filtros da lista de membros (TASK-053). Hoje só o selo. |
+| N7 | Mudança apenas de **visibilidade** não exige as skills de design; exige **revisão visual por screenshot no papel afetado**. Ritual não pega bug; olhar a tela no papel novo pega. |
+

@@ -4,92 +4,24 @@ Tudo que depende de uma decisão ou de uma ação do Lucas, em um lugar só. O a
 não resolve nada daqui sozinho. O backlog (`backlog task list --plain`) fica
 reservado para trabalho que o agent executa.
 
-Atualizado em 2026-09-17, com as tasks 047 a 051 mergeadas.
+Atualizado em 2026-09-17, depois da grelha que resolveu N1–N7.
 
 Responda por número (ex.: "N1 mantém; N3 muda pra staff-only"). O que virar
 trabalho vira task; o que for decisão vai para o doc "Decisões v1" do backlog.
 
 ---
 
-## Decisões novas (leva de 047 a 051)
+## Decisões novas: todas resolvidas em 2026-09-17
 
-### N1 — Autoria "manutenção" no banco
+As sete (N1–N7) foram respondidas na grelha e estão no doc "Decisões v1" do
+backlog, bloco "Grelha de 2026-09-17". Resumo: autoria da manutenção fica sem
+usuário de sistema; staff não bane staff nem admin; membro vê o autor do ajuste no
+próprio extrato; quem sai e volta não recupera papéis; "papéis" na limpeza é RBAC;
+o filtro de quem saiu virou a TASK-054, junto com uma passada em todos os filtros;
+e mudança só de visibilidade exige revisão visual por screenshot no papel afetado,
+não as skills de design (já escrito no CLAUDE.md).
 
-O ajuste de prata feito pelo namespace de manutenção registra a autoria na origem
-do lançamento (`manual/maintenance`), no motivo e numa nota no perfil do jogador —
-mas o **campo de autor no banco fica vazio**, porque ele aponta para um usuário
-real e não existe um usuário "manutenção".
-
-**Está rastreável assim.** A alternativa é criar um usuário de sistema no banco
-para figurar como autor. É task curta.
-
-**Decisão:**
-
----
-
-### N2 — Staff não bane staff nem admin
-
-Veio do security-review da TASK-050, não do seu pedido: sem essa trava, uma conta
-de staff comprometida bane todos os admins menos um e neutraliza quem poderia
-reagir. **Staff continua banindo member e caller**, como você decidiu.
-
-**Decisão:** (confirmar ou derrubar)
-
----
-
-### N3 — Membro vê quem fez o ajuste na prata dele
-
-O extrato do jogador lido pela staff (TASK-051) mostra o autor de cada lançamento.
-Como a mesma rota aceita o próprio id, **um membro consultando o próprio extrato
-por ali vê qual staff fez um ajuste** — algo que `/api/me/ledger` não expõe.
-
-É dado dele e não vaza nada sobre terceiros, então ficou. Se a intenção for que
-autoria seja coisa de staff, é uma linha.
-
-**Decisão:**
-
----
-
-### N4 — Quem sai e volta ao servidor perde os papéis
-
-A limpeza diária remove os papéis de RBAC (staff, caller) de quem saiu. Voltar ao
-servidor **limpa a marca de saída, mas não devolve os papéis**: devolver acesso é
-ato de alguém, nunca de um timer.
-
-Efeito prático: um caller que saiu e voltou precisa de nova concessão pela tela de
-papéis.
-
-**Decisão:**
-
----
-
-### N5 — "Papéis" na limpeza = RBAC, não cargo do Discord
-
-A limpeza remove `user_roles` (as permissões do painel). Não mexe no cargo Membro
-do Discord — quem já saiu da guild não tem cargo nenhum para remover.
-
-**Decisão:** (só confirmar que é o entendimento certo)
-
----
-
-### N6 — Sem filtro "Saiu do servidor" na lista
-
-Quem saiu ganhou selo na linha, mas **não** ganhou um chip de filtro próprio, para
-não mexer no filtro compartilhado e nas contagens. Se você quiser filtrar por isso,
-vira task.
-
-**Decisão:**
-
----
-
-### N7 — Skills de design em mudança de visibilidade
-
-Na TASK-047 o agent não invocou as skills de design, porque nenhum componente ou
-texto foi escrito — só mudou **quem enxerga** controles que já existiam. Faz
-sentido, mas a tela renderizada muda para um papel inteiro.
-
-**Decisão:** exigir as skills sempre que a tela muda para algum papel, ou manter o
-critério atual (só quando há componente/texto novo)?
+**Nenhuma decisão em aberto.**
 
 ---
 
