@@ -34,6 +34,8 @@ describe("parseEnv", () => {
         RUN_MIGRATIONS: true,
         AUTH_DEV_LOGIN: false,
         WEB_DIST_DIR: expect.stringMatching(/apps[\\/]web[\\/]dist$/),
+      // PNG do emoji da Buffunfa (F6-28): default no assets/ do repo, o Docker sobrescreve.
+      BUFFUNFA_EMOJI_FILE: expect.stringMatching(/assets[\\/]buffunfa_emoji_simples_128\.png$/),
       },
     });
   });

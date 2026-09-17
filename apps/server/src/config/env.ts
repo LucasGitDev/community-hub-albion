@@ -68,6 +68,22 @@ const envSchema = z.object({
     .regex(SNOWFLAKE, { error: "formato inválido (esperado snowflake numérico de 17 a 20 dígitos)" })
     .optional()
     .or(z.literal("").transform(() => undefined)),
+  /**
+   * Id do emoji da Buffunfa no Discord (F6-28, doc-009). Vazio = o bot procura na guild pelo nome e, se
+   * não achar, tenta criar a partir do PNG. Emoji é por servidor, então nunca existe id default aqui.
+   */
+  DISCORD_BUFFUNFA_EMOJI_ID: z
+    .string()
+    .trim()
+    .regex(SNOWFLAKE, { error: "formato inválido (esperado snowflake numérico de 17 a 20 dígitos)" })
+    .optional()
+    .or(z.literal("").transform(() => undefined)),
+  // PNG versionado do emoji da Buffunfa. Default: assets/ relativo ao dist do server (monorepo); o Docker define explícito.
+  BUFFUNFA_EMOJI_FILE: z
+    .string()
+    .trim()
+    .min(1)
+    .default(fileURLToPath(new URL("../../../../assets/buffunfa_emoji_simples_128.png", import.meta.url))),
   // Build da SPA servida na raiz. Default: apps/web/dist relativo ao dist do server (monorepo). Docker define explícito.
   WEB_DIST_DIR: z
     .string()

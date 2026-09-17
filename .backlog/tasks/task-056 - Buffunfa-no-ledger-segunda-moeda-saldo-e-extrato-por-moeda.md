@@ -1,10 +1,11 @@
 ---
 id: TASK-056
 title: 'Buffunfa no ledger: segunda moeda, saldo e extrato por moeda'
-status: To Do
-assignee: []
+status: In Progress
+assignee:
+  - '@claude'
 created_date: '2026-09-17 17:04'
-updated_date: '2026-09-17 17:08'
+updated_date: '2026-09-17 17:30'
 labels: []
 milestone: m-6
 dependencies:
@@ -50,3 +51,16 @@ Buffunfa não tem saque, mas tem ajuste da staff pela rota de manutenção (F6-6
 - [ ] #7 Notas e final summary com evidências; commits Conventional atômicos sem co-autor
 - [ ] #8 PR merged na main com quality gate verde; branch e worktree removidos
 <!-- DOD:END -->
+
+## Implementation Plan
+
+<!-- SECTION:PLAN:BEGIN -->
+1. shared/currency.ts: CURRENCIES ['silver','buffunfa'], Currency, CURRENCY_LABELS/ABBREV ('BUF'), alias 'bufunfa' só na entrada; formatAmount/formatAmountShort/parseAmount por moeda (F6-4/F6-5: buffunfa nunca abrevia). silver.ts vira re-export fino ou some, com todas as chamadas migradas.
+2. packages/db: schema ledgerEntries ganha currency (enum ledger_currency); migration 0018 escrita à mão a partir do drizzle-kit generate — coluna NOT NULL DEFAULT 'silver' e DROP DEFAULT na MESMA migration (F6-2, triggers append-only recusam UPDATE); índice de extrato passa a (user_id, currency, created_at, id) (F6-3).
+3. ledger-repo: LedgerEntry/LedgerEntryInput com currency obrigatória; getLedgerBalance(db,userId,currency) e getLedgerBalancesByCurrency (dois saldos separados, nunca somados); listLedgerEntries/WithAuthor com filtro de moeda explícito ('all' só na leitura de extrato). withdrawals-repo filtra currency='silver' em toda soma.
+4. Trava de negativo (F6-7/AC#6): spendCurrency em transação com lockUser + releitura do saldo dentro dela; ajuste/estorno da staff passa por fora e pode cravar negativo.
+5. server: LedgerService por moeda; /api/me/ledger com ?currency= e dois saldos no cabeçalho; POST /api/maintenance/buffunfa irmã da de prata, mesmo guard/rate limit/motivo obrigatório (F6-6).
+6. web: <Amount value currency> substitui <Silver> em todas as telas (brand = Buffunfa, foreground = prata); extrato único com filtro de moeda default 'todas' e moeda por linha (F6-27); chip do header com as duas moedas, Buffunfa em destaque (F6-26).
+7. bot: BuffunfaEmojiService no boot — precedência env > emoji descoberto por nome > texto puro; cria a partir de assets/buffunfa_emoji_simples_128.png e loga aviso em falha de permissão/slot, sem derrubar o bot (F6-28).
+8. Testes: unit (formatAmount/parseAmount), integração de banco (default+drop, índice, saldo por moeda, trava de negativo), http (maintenance/buffunfa, me/ledger), e2e do extrato e do chip; screenshots 1280/400.
+<!-- SECTION:PLAN:END -->

@@ -20,6 +20,7 @@ FROM deps AS build
 COPY tsconfig.base.json turbo.json ./
 COPY apps apps
 COPY packages packages
+COPY assets assets
 RUN pnpm exec turbo run build --filter=@albion-hub/server... --filter=@albion-hub/web
 # Pacote do server só com dependências de produção e workspace deps compilados (dist + migrations).
 RUN --mount=type=cache,id=pnpm,target=/pnpm/store \
@@ -28,10 +29,12 @@ RUN --mount=type=cache,id=pnpm,target=/pnpm/store \
 
 # --- runtime ---
 FROM node:22.20-alpine AS runtime
-ENV NODE_ENV=production PORT=3000 WEB_DIST_DIR=/app/web RUN_MIGRATIONS=true
+ENV NODE_ENV=production PORT=3000 WEB_DIST_DIR=/app/web RUN_MIGRATIONS=true BUFFUNFA_EMOJI_FILE=/app/assets/buffunfa_emoji_simples_128.png
 WORKDIR /app
 COPY --from=build --chown=node:node /out ./
 COPY --from=build --chown=node:node /repo/apps/web/dist ./web
+# PNG do emoji da Buffunfa: o bot tenta criá-lo na guild no boot (F6-28).
+COPY --from=build --chown=node:node /repo/assets ./assets
 USER node
 EXPOSE 3000
 HEALTHCHECK --interval=15s --timeout=5s --start-period=20s --retries=5 \

@@ -228,6 +228,49 @@ describe.skipIf(!baseUrl)("/api/maintenance (TASK-048)", () => {
     });
   });
 
+  describe("ajuste de Buffunfa (TASK-056, AC#7)", () => {
+    it("credita e debita atrás do mesmo guard, com motivo obrigatório, sem encostar na prata", async () => {
+      await withApp(async (app) => {
+        const user = await member();
+        await post(app, "/api/maintenance/silver", TOKEN, { userId: user.id, amount: "1000000", reason: "saldo de prata" }).expect(201);
+
+        const credit = await post(app, "/api/maintenance/buffunfa", TOKEN, { userId: user.id, amount: "340", reason: "prêmio do evento 12" }).expect(201);
+        expect(credit.body).toMatchObject({ userId: user.id, currency: "buffunfa", amount: "340", balance: "340" });
+
+        // Ajuste pode cravar negativo (F6-7): é a exceção registrada à trava de saldo.
+        const debit = await post(app, "/api/maintenance/buffunfa", TOKEN, { userId: user.id, amount: "-500", reason: "pagou em duplicidade" }).expect(201);
+        expect(debit.body.balance).toBe("-160");
+
+        expect(await getLedgerBalance(handle.db, user.id, "buffunfa")).toBe(-160n);
+        // A prata não se mexeu: as duas moedas somam separado (F6-1).
+        expect(await getLedgerBalance(handle.db, user.id, "silver")).toBe(1_000_000n);
+
+        const page = await listLedgerEntries(handle.db, user.id, "buffunfa", {});
+        expect(page.entries).toHaveLength(2);
+        for (const entry of page.entries) {
+          expect(entry.currency).toBe("buffunfa");
+          expect(entry.kind).toBe("adjustment");
+          expect(entry.referenceType).toBe("manual");
+          expect(entry.createdBy).toBeNull();
+          expect(entry.memo).toMatch(/^Manutenção: /);
+        }
+        const notes = await listUserNotes(handle.db, user.id);
+        expect(notes.map((n) => n.body).join("\n")).toContain("Ajuste de Buffunfa por manutenção: 340 BUF");
+      });
+    });
+
+    it("está atrás do mesmo token: sem ele é o 404 de rota inexistente", async () => {
+      await withApp(async (app) => {
+        const user = await member();
+        expect((await post(app, "/api/maintenance/buffunfa", null, { userId: user.id, amount: "10", reason: "x" })).status).toBe(404);
+        expect((await post(app, "/api/maintenance/buffunfa", "chute", { userId: user.id, amount: "10", reason: "x" })).status).toBe(404);
+        await post(app, "/api/maintenance/buffunfa", TOKEN, { userId: user.id, amount: "10" }).expect(400);
+        await post(app, "/api/maintenance/buffunfa", TOKEN, { userId: user.id, amount: "0", reason: "nada" }).expect(400);
+        expect(await getLedgerBalance(handle.db, user.id, "buffunfa")).toBe(0n);
+      });
+    });
+  });
+
   describe("revalidação de nick (AC#3)", () => {
     it("consulta o Albion e grava o resultado no membro", async () => {
       await withApp(async (app) => {
