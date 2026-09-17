@@ -1,6 +1,6 @@
 import { Inject, Injectable, Logger } from "@nestjs/common";
-import { findEventRoleSlot, findUserIdByDiscordId, listRoles, type DbHandle } from "@albion-hub/db";
-import { defineAbilityFor, EVENT_JOIN_BUTTON, EVENT_LEAVE_BUTTON, isUuid } from "@albion-hub/shared";
+import { findEventRoleSlot, findUserIdByDiscordId, getBanStatusByDiscordId, listRoles, type DbHandle } from "@albion-hub/db";
+import { bannedSignupReply, defineAbilityFor, EVENT_JOIN_BUTTON, EVENT_LEAVE_BUTTON, isUuid } from "@albion-hub/shared";
 import { MessageFlags } from "discord.js";
 import { Button, ComponentParam, Context } from "necord";
 import { DB_HANDLE } from "../db/db.module.js";
@@ -51,6 +51,7 @@ export class EventSignupInteractions {
         if (result.reason === "not_open") return { message: EVENT_BUTTON_REPLIES.notOpen(result.status), refresh: eventId };
         if (result.reason === "already_in_role") return { message: EVENT_BUTTON_REPLIES.alreadyInRole(slot.name) };
         if (result.reason === "unknown_role") return { message: EVENT_BUTTON_REPLIES.unknownRole, refresh: eventId };
+        if (result.reason === "banned") return { message: bannedSignupReply(result.banReason) };
         return { message: EVENT_BUTTON_REPLIES.notFound };
       }
       const { signup } = result;
@@ -72,9 +73,13 @@ export class EventSignupInteractions {
   /**
    * Discord id → usuário do painel → papéis → CASL (mesma regra da API: `join Event`).
    * Sem conta, cria na hora com a mesma lógica do /registrar (TASK-037): inscrever-se não exige nick
-   * aprovado; o nick só passa a valer quando entra a prata (F5).
+   * aprovado; o nick só passa a valer quando entra a prata (F5). Banido não passa daqui (TASK-050).
    */
   async authorize(user: EventButtonInteraction["user"]): Promise<{ ok: true; userId: string; accountCreated: boolean } | { ok: false; message: string }> {
+    // Banimento primeiro, pelo snowflake (TASK-050): quem está banido não pode virar uma conta nova só
+    // por clicar no botão, então esta checagem vem antes de `ensureFromDiscord`, não depois.
+    const ban = await getBanStatusByDiscordId(this.handle.db, user.id);
+    if (ban) return { ok: false, message: bannedSignupReply(ban.banReason) };
     const existingId = await findUserIdByDiscordId(this.handle.db, user.id);
     let userId = existingId;
     let accountCreated = false;

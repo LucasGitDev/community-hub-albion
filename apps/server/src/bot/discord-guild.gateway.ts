@@ -8,12 +8,17 @@ export const DISCORD_GUILD_ID = Symbol("DISCORD_GUILD_ID");
 export interface DiscordGuildGateway {
   setNickname(discordId: string, nick: string, reason: string): Promise<void>;
   addRole(discordId: string, roleId: string, reason: string): Promise<void>;
+  /** Tira o cargo (TASK-050: cargo Membro sai no banimento). Não expulsa nem bane da guild. */
+  removeRole(discordId: string, roleId: string, reason: string): Promise<void>;
 }
 
 /** Discord não deixa bot alterar apelido do dono da guild. */
 export const GUILD_OWNER_NICKNAME = "GUILD_OWNER_NICKNAME";
 
-type MemberLike = { setNickname(nick: string, reason?: string): Promise<unknown>; roles: { add(roleId: string, reason?: string): Promise<unknown> } };
+type MemberLike = {
+  setNickname(nick: string, reason?: string): Promise<unknown>;
+  roles: { add(roleId: string, reason?: string): Promise<unknown>; remove(roleId: string, reason?: string): Promise<unknown> };
+};
 type GuildLike = { ownerId: string; members: { fetch(id: string): Promise<MemberLike> } };
 export type GuildClientLike = { guilds: { fetch(id: string): Promise<GuildLike> } };
 
@@ -37,5 +42,11 @@ export class DiscordJsGuildGateway implements DiscordGuildGateway {
     const guild = await this.client.guilds.fetch(this.guildId);
     const member = await guild.members.fetch(discordId);
     await member.roles.add(roleId, reason);
+  }
+
+  async removeRole(discordId: string, roleId: string, reason: string): Promise<void> {
+    const guild = await this.client.guilds.fetch(this.guildId);
+    const member = await guild.members.fetch(discordId);
+    await member.roles.remove(roleId, reason);
   }
 }

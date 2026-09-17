@@ -78,13 +78,17 @@ describe.skipIf(!baseUrl)("lista de membros do admin (TASK-043)", () => {
 
   const list = (cookie: string, query = "") => http().get(`/api/admin/members${query}`).set("Cookie", cookie);
 
-  it("sem sessão 401; member e staff 403 na lista e no import (AC#5)", async () => {
+  it("sem sessão 401; member e caller 403 na lista e no import; staff lê para banir mas não importa (AC#5, TASK-050)", async () => {
     expect((await http().get("/api/admin/members")).status).toBe(401);
     expect((await http().post("/api/admin/members/import").set("Origin", PUBLIC_URL)).status).toBe(401);
-    for (const who of [await session("560000000000000001", "membro"), await session("560000000000000002", "staffer", ["staff"])]) {
+    for (const who of [await session("560000000000000001", "membro"), await session("560000000000000003", "caller-qualquer", ["caller"])]) {
       expect((await list(who.cookie)).status).toBe(403);
       expect((await http().post("/api/admin/members/import").set("Cookie", who.cookie).set("Origin", PUBLIC_URL)).status).toBe(403);
     }
+    // Staff bane (TASK-050) e por isso lê a lista; escrever de admin continua fechado para ela.
+    const staffer = await session("560000000000000002", "staffer", ["staff"]);
+    expect((await list(staffer.cookie)).status).toBe(200);
+    expect((await http().post("/api/admin/members/import").set("Cookie", staffer.cookie).set("Origin", PUBLIC_URL)).status).toBe(403);
     expect(importer.calls).toBe(0);
   });
 
@@ -130,7 +134,7 @@ describe.skipIf(!baseUrl)("lista de membros do admin (TASK-043)", () => {
     const semNick = await session("560000000000000032", "filtro-semnick");
 
     const todos = await list(boss.cookie, "?search=filtro-");
-    expect(todos.body.counts).toEqual({ todos: 3, nao_encontrados: 1, sem_nick: 2 });
+    expect(todos.body.counts).toEqual({ todos: 3, nao_encontrados: 1, sem_nick: 2, banidos: 0 });
     expect(todos.body.total).toBe(3);
 
     const naoEncontrados = await list(boss.cookie, "?search=filtro-&filter=nao_encontrados");

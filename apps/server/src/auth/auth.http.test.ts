@@ -1,7 +1,7 @@
 import "reflect-metadata";
 import type { INestApplication } from "@nestjs/common";
 import { Test } from "@nestjs/testing";
-import { createDb, hashSessionToken, listRoles, runMigrations, schema, type DbHandle } from "@albion-hub/db";
+import { banUser, createDb, hashSessionToken, listRoles, runMigrations, schema, unbanUser, type DbHandle } from "@albion-hub/db";
 import { eq, sql } from "drizzle-orm";
 import request from "supertest";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
@@ -169,6 +169,24 @@ describe.skipIf(!baseUrl)("auth Discord OAuth HTTP (TASK-008, Postgres real + Di
     expect(callback.headers.location).toBe("/entrar?erro=nao-membro");
     expect(setCookies(callback).some((c) => c.startsWith("ah_session="))).toBe(false);
     expect(await handle.db.select().from(schema.users).where(eq(schema.users.discordId, OUTSIDER.id))).toHaveLength(0);
+  });
+
+  it("banido é recusado no login com código banido e não ganha sessão nova (TASK-050)", async () => {
+    const primeiro = await login(MEMBER.id);
+    expect(primeiro.callback.headers.location).toBe("/carteira");
+    const [user] = await handle.db.select().from(schema.users).where(eq(schema.users.discordId, MEMBER.id));
+    const [staffer] = await handle.db.insert(schema.users).values({ discordId: "990000000000000001", discordUsername: "staffer-ban" }).returning();
+    expect((await banUser(handle.db, { userId: user!.id, actorId: staffer!.id, reason: "roubou o loot do split" })).ok).toBe(true);
+
+    const { callback } = await login(MEMBER.id);
+    expect(callback.status).toBe(302);
+    expect(callback.headers.location).toBe("/entrar?erro=banido");
+    expect(setCookies(callback).some((c) => c.startsWith("ah_session="))).toBe(false);
+    expect(await handle.db.select().from(schema.sessions).where(eq(schema.sessions.userId, user!.id))).toHaveLength(0);
+
+    // Desbanido, entra de novo pelo caminho normal.
+    expect((await unbanUser(handle.db, user!.id)).ok).toBe(true);
+    expect((await login(MEMBER.id)).callback.headers.location).toBe("/carteira");
   });
 
   it("state divergente ou ausente é recusado sem chamar o Discord (AC#4)", async () => {
