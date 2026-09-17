@@ -1,6 +1,6 @@
 import { useCallback, useState } from "react";
 import { toast } from "sonner";
-import { EyeOff, PackageOpen, Pencil, Plus, ShoppingBag, Sparkles, Store } from "lucide-react";
+import { EyeOff, PackageOpen, Pencil, Plus, ShoppingBag, Store } from "lucide-react";
 import { canOwnerCancelShopOrder, checkShopPurchase, formatAmount, isRefundedShopOrder, isSoldOut, SHOP_CURRENCY, shopRefusalMessage } from "@albion-hub/shared";
 import { useCurrentUser } from "@/auth/AuthProvider";
 import { errorText } from "@/api/http";
@@ -96,7 +96,8 @@ function BalanceStrip({ balance }: { balance: ShopBalance | null }) {
   return (
     <section aria-label="Sua Buffunfa" className="mb-6 flex flex-wrap items-center gap-x-6 gap-y-2 rounded-xl border bg-card px-4 py-3">
       <p className="flex items-center gap-2">
-        <Sparkles className="size-4 text-brand" aria-hidden />
+        {/* Sem `<Sparkles>` aqui: a moeda que o `<Amount>` desenha (TASK-071) já é o símbolo da Buffunfa,
+            e dois símbolos para a mesma moeda na mesma linha não dizem nada a mais. */}
         <span className="text-sm text-muted-foreground">Disponível pra gastar</span>
         {balance ? <Amount value={balance.available} currency={SHOP_CURRENCY} className="text-2xl font-semibold" /> : <Skeleton className="h-7 w-24" />}
       </p>
@@ -144,7 +145,7 @@ function ItemCard({
           {/* Nunca abrevia: `340 BUF`, não `0,3K` (F6-5). */}
           {/* Esgotado recua o card inteiro (F6-18), e o ícone da moeda recua junto: um card cinza com uma
               moeda dourada acesa no canto chamaria atenção justamente para o que não dá pra comprar. */}
-          <Amount value={item.price} currency={SHOP_CURRENCY} className={cn("text-xl font-semibold", soldOut && "text-muted-foreground [&_img]:opacity-45 [&_img]:grayscale")} />
+          <Amount value={item.price} currency={SHOP_CURRENCY} className={cn("text-xl font-semibold", soldOut && "text-muted-foreground [&_[data-currency-icon]]:opacity-45 [&_[data-currency-icon]]:grayscale")} />
           <StockHint item={item} />
         </div>
       </div>
