@@ -425,7 +425,8 @@ export async function confirmLootSplit(db: Database, splitId: string, input: Con
     for (const [index, line] of lines.entries())
       await tx.update(lootSplitLines).set({ amountSilver: amounts[index]! }).where(eq(lootSplitLines.id, line.id));
 
-    const reference = { referenceType: "loot_split" as const, referenceId: splitId, createdBy: input.actorUserId };
+    // Loot split paga **prata** (Q23): a Buffunfa do evento é outra coisa, e não nasce aqui.
+    const reference = { referenceType: "loot_split" as const, referenceId: splitId, createdBy: input.actorUserId, currency: "silver" as const };
     const values: (typeof ledgerEntries.$inferInsert)[] = [];
     for (const [index, line] of lines.entries()) {
       const amount = amounts[index]!;

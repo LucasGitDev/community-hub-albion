@@ -13,7 +13,10 @@ import { memberNick } from "./member-nick.js";
 import { ledgerEntries, users, withdrawals } from "./schema.js";
 
 /**
- * Saque de prata (TASK-030). Tudo que escreve roda numa transação que começa travando a **linha do
+ * Saque de prata (TASK-030). Só existe em prata: Buffunfa não tem saque (F6-6), então toda soma daqui
+ * filtra `currency = 'silver'` — um saldo de saque que somasse as duas moedas ofereceria Buffunfa no caixa.
+ *
+ * Tudo que escreve roda numa transação que começa travando a **linha do
  * usuário** (`select ... for update`), igual às transições de evento (TASK-021) e às inscrições (TASK-022).
  *
  * Por que travar o usuário e não o saque: a regra que precisa ser serializada é sobre o **saldo do
@@ -60,7 +63,8 @@ export async function getWithdrawalBalance(db: Database | Tx, userId: string): P
   );
   const [row] = await db.execute<{ balance: bigint; reserved: bigint }>(sql`
     select
-      (select coalesce(sum(${ledgerEntries.amount}), 0)::int8 from ${ledgerEntries} where ${ledgerEntries.userId} = ${userId}) as balance,
+      (select coalesce(sum(${ledgerEntries.amount}), 0)::int8 from ${ledgerEntries}
+        where ${ledgerEntries.userId} = ${userId} and ${ledgerEntries.currency} = 'silver') as balance,
       (select coalesce(sum(${withdrawals.amount}), 0)::int8 from ${withdrawals}
         where ${withdrawals.userId} = ${userId} and ${withdrawals.status} in (${reserving})) as reserved
   `);
@@ -85,7 +89,7 @@ export async function getWithdrawalBalances(db: Database | Tx, userIds: readonly
   const ledgerRows = await db
     .select({ userId: ledgerEntries.userId, total: sql<bigint>`coalesce(sum(${ledgerEntries.amount}), 0)::int8` })
     .from(ledgerEntries)
-    .where(inArray(ledgerEntries.userId, ids))
+    .where(and(inArray(ledgerEntries.userId, ids), eq(ledgerEntries.currency, "silver")))
     .groupBy(ledgerEntries.userId);
   const reservedRows = await db
     .select({ userId: withdrawals.userId, total: sql<bigint>`coalesce(sum(${withdrawals.amount}), 0)::int8` })
@@ -222,6 +226,8 @@ export async function approveWithdrawal(db: Database, id: string, options: Decid
       .values({
         userId: current.userId,
         amount: -current.amount,
+        // Saque é só de prata (F6-6): Buffunfa não tem saque, e a fila nunca vê a outra moeda.
+        currency: "silver",
         kind: "withdrawal",
         referenceType: "withdrawal",
         referenceId: current.id,

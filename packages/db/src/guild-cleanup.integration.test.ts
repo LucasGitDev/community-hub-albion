@@ -122,14 +122,14 @@ describe.skipIf(!baseUrl)("limpeza diária (TASK-049, Postgres real)", () => {
     await reset();
     const admin = await user(["admin"]);
     const saiu = await user();
-    await insertLedgerEntry(handle.db, { userId: saiu.id, amount: 900_000n, kind: "adjustment", memo: "split", createdBy: admin.id });
+    await insertLedgerEntry(handle.db, { currency: "silver", userId: saiu.id, amount: 900_000n, kind: "adjustment", memo: "split", createdBy: admin.id });
     const saque = await requestWithdrawal(handle.db, { userId: saiu.id, amount: 100_000n });
-    const saldoAntes = await getLedgerBalance(handle.db, saiu.id);
+    const saldoAntes = await getLedgerBalance(handle.db, saiu.id, "silver");
     const lancamentosAntes = await handle.db.select().from(schema.ledgerEntries).where(eq(schema.ledgerEntries.userId, saiu.id));
 
     await present(admin.discordId);
 
-    expect(await getLedgerBalance(handle.db, saiu.id)).toBe(saldoAntes);
+    expect(await getLedgerBalance(handle.db, saiu.id, "silver")).toBe(saldoAntes);
     expect(await handle.db.select().from(schema.ledgerEntries).where(eq(schema.ledgerEntries.userId, saiu.id))).toEqual(lancamentosAntes);
     const saques = await handle.db.select().from(schema.withdrawals).where(eq(schema.withdrawals.userId, saiu.id));
     expect(saques).toHaveLength(1);

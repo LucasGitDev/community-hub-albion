@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { formatSilver } from "./silver.js";
+import { formatAmount } from "./currency.js";
 
 /**
  * Loot split (TASK-027, Q5/Q6/Q7/Q22/Q23) e a taxa do evento.
@@ -40,7 +40,7 @@ export const hasFee = (fee: EventFee): boolean => fee.value > 0n;
 
 /** "12,5%" ou "1.000.000 de prata". Mesma frase no bot e no painel. */
 export function formatEventFee(fee: EventFee): string {
-  if (fee.type === "fixed") return `${formatSilver(fee.value)} de prata`;
+  if (fee.type === "fixed") return `${formatAmount(fee.value, "silver")} de prata`;
   const percent = Number(fee.value) / Number(FEE_PERCENT_SCALE / 100n);
   return `${percent.toLocaleString("pt-BR", { maximumFractionDigits: 2 })}%`;
 }

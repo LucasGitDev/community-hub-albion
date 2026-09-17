@@ -127,6 +127,13 @@
       "when": 1789617229342,
       "tag": "0017_quiet_ezekiel",
       "breakpoints": true
+    },
+    {
+      "idx": 18,
+      "version": "7",
+      "when": 1789666280226,
+      "tag": "0018_square_wraith",
+      "breakpoints": true
     }
   ]
 }

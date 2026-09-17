@@ -163,14 +163,14 @@ describe.skipIf(!baseUrl)("banimento de jogador (TASK-050, Postgres real)", () =
   it("não mexe no ledger: banir e desbanir não criam lançamento nenhum", async () => {
     const actor = await user(["admin"]);
     const alvo = await user();
-    await insertLedgerEntry(handle.db, { userId: alvo.id, amount: 500_000n, kind: "adjustment", memo: "saldo", createdBy: actor.id });
-    const antes = await getLedgerBalance(handle.db, alvo.id);
+    await insertLedgerEntry(handle.db, { currency: "silver", userId: alvo.id, amount: 500_000n, kind: "adjustment", memo: "saldo", createdBy: actor.id });
+    const antes = await getLedgerBalance(handle.db, alvo.id, "silver");
     const lancamentosAntes = await handle.db.select().from(schema.ledgerEntries).where(eq(schema.ledgerEntries.userId, alvo.id));
 
     await banUser(handle.db, { userId: alvo.id, actorId: actor.id, reason: "congela mas não zera" });
     await unbanUser(handle.db, alvo.id);
 
-    expect(await getLedgerBalance(handle.db, alvo.id)).toBe(antes);
+    expect(await getLedgerBalance(handle.db, alvo.id, "silver")).toBe(antes);
     expect(await handle.db.select().from(schema.ledgerEntries).where(eq(schema.ledgerEntries.userId, alvo.id))).toHaveLength(lancamentosAntes.length);
   });
 
