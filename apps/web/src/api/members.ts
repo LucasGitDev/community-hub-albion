@@ -13,6 +13,8 @@ export interface AdminMember {
   roles: Role[];
   createdAt: string;
   albion: { status: string | null; playerId: string | null; guildName: string | null; checkedAt: string | null };
+  /** Banimento vigente (TASK-050); `null` = conta ativa. */
+  ban: { bannedAt: string; reason: string; byName: string | null } | null;
 }
 
 export interface AdminMembersPage {
@@ -62,3 +64,9 @@ export const fetchMemberNotes = (userId: string): Promise<{ notes: UserNote[] }>
 
 export const addMemberNote = (userId: string, body: string): Promise<{ note: UserNote }> =>
   api(`/api/admin/members/${userId}/notes`, { method: "POST", body: JSON.stringify({ body }) });
+
+/** Banimento de jogador (TASK-050). Banir exige motivo; desbanir é o único caminho de volta. */
+export const banMember = (userId: string, reason: string): Promise<{ ban: { bannedAt: string; banReason: string; bannedByName: string | null } }> =>
+  api(`/api/admin/members/${userId}/ban`, { method: "POST", body: JSON.stringify({ reason }) });
+
+export const unbanMember = (userId: string): Promise<void> => api(`/api/admin/members/${userId}/ban`, { method: "DELETE" }) as Promise<void>;

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
-import { Check, CircleDashed, CloudOff, Download, Loader2, RefreshCw, Search, SlidersHorizontal, UserRoundX, Users } from "lucide-react";
+import { Ban, Check, CircleDashed, CloudOff, Download, Loader2, RefreshCw, Search, ShieldCheck, SlidersHorizontal, UserRoundX, Users } from "lucide-react";
 import { toast } from "sonner";
 import {
   describeAlbionCheck,
@@ -13,6 +13,8 @@ import {
 import { checkMemberAlbion, fetchAdminMembers, importDiscordMembers, type AdminMember, type AdminMembersPage, type MemberImportSummary } from "@/api/members";
 import { errorText } from "@/api/http";
 import { usePoll } from "@/api/use-poll";
+import { useCurrentUser } from "@/auth/AuthProvider";
+import { MemberBanDialog } from "@/components/MemberBanDialog";
 import { MemberManageDialog } from "@/components/MemberManageDialog";
 import { EmptyState, PageHeader, Panel, Pill, StatCard, type Tone } from "@/components/display";
 import { Button } from "@/components/ui/button";
@@ -55,6 +57,11 @@ export function AdminMembers() {
   const [importing, setImporting] = useState(false);
   const [summary, setSummary] = useState<MemberImportSummary | null>(null);
   const [managing, setManaging] = useState<string | null>(null);
+  const [banning, setBanning] = useState<string | null>(null);
+  const { user, ability } = useCurrentUser();
+  // Staff entra aqui só para banir (TASK-050): o resto da tela é do admin e fica escondido em vez de dar 403.
+  const canManage = ability.can("read", "UserRole");
+  const canBan = ability.can("ban", "Ban");
   /**
    * O que a tela já sabe e o servidor ainda não repetiu: conferir o nick ou editar o membro troca só a linha,
    * sem recarregar a lista (AC#1/AC#2). O próximo carregamento traz o valor do servidor e o mapa é descartado.
@@ -94,7 +101,7 @@ export function AdminMembers() {
     }
   }
 
-  const counts = data?.counts ?? { todos: 0, nao_encontrados: 0, sem_nick: 0 };
+  const counts: Record<MemberFilter, number> = data?.counts ?? { todos: 0, nao_encontrados: 0, sem_nick: 0, banidos: 0 };
   const pageCount = data ? memberPageCount(data.total, data.pageSize) : 1;
   const members = data?.members.map((m) => ({ ...m, ...edits[m.id] })) ?? [];
   const patch = (id: string, values: Partial<AdminMember>) => setEdits((prev) => ({ ...prev, [id]: { ...prev[id], ...values } }));
@@ -105,10 +112,12 @@ export function AdminMembers() {
         title="Membros"
         description="Quem já tem conta no painel, com o nick conferido na API do Albion. Importar traz de novo quem tem cargo Membro e apelido no Discord."
         action={
-          <Button onClick={() => void runImport()} disabled={importing}>
-            <Download />
-            {importing ? "Importando…" : "Importar membros do Discord"}
-          </Button>
+          canManage ? (
+            <Button onClick={() => void runImport()} disabled={importing}>
+              <Download />
+              {importing ? "Importando…" : "Importar membros do Discord"}
+            </Button>
+          ) : undefined
         }
       />
 
@@ -124,6 +133,13 @@ export function AdminMembers() {
         />
         <StatCard label="Não encontrados no Albion" icon={<UserRoundX />} value={counts.nao_encontrados} hint="Nick provavelmente errado: confira com a pessoa." />
         <StatCard label="Sem nick" icon={<CircleDashed />} value={counts.sem_nick} hint="Ainda não registrou o nick do personagem." />
+        <StatCard
+          label="Banidos"
+          icon={<Ban />}
+          value={counts.banidos}
+          hint="Sem acesso ao painel, a evento e a saque. O saldo fica congelado."
+          className="col-span-2 lg:col-span-1"
+        />
       </div>
 
       <Panel title="Lista de membros" titleId="lista-membros" className="overflow-hidden">
@@ -190,12 +206,12 @@ export function AdminMembers() {
                   >
                     Limpar filtros
                   </Button>
-                ) : (
+                ) : canManage ? (
                   <Button onClick={() => void runImport()} disabled={importing}>
                     <Download />
                     Importar membros do Discord
                   </Button>
-                )
+                ) : undefined
               }
             />
           </div>
@@ -215,7 +231,16 @@ export function AdminMembers() {
             </TableHeader>
             <TableBody>
               {members.map((m) => (
-                <MemberRow key={m.id} member={m} onChecked={(albion) => patch(m.id, { albion })} onManage={() => setManaging(m.id)} />
+                <MemberRow
+                  key={m.id}
+                  member={m}
+                  isSelf={m.id === user.id}
+                  canManage={canManage}
+                  canBan={canBan}
+                  onChecked={(albion) => patch(m.id, { albion })}
+                  onManage={() => setManaging(m.id)}
+                  onBan={() => setBanning(m.id)}
+                />
               ))}
             </TableBody>
           </Table>
@@ -241,6 +266,21 @@ export function AdminMembers() {
 
       <ImportSummaryDialog summary={summary} onClose={() => setSummary(null)} />
 
+      <MemberBanDialog
+        member={members.find((m) => m.id === banning) ?? null}
+        onClose={() => setBanning(null)}
+        // A linha muda na hora pelo `patch`; o `refresh` é pelos números (cartão e chip "Banidos"),
+        // que são contagem do servidor e mentiriam se ficassem para o próximo ciclo do polling.
+        onBanned={(ban) => {
+          if (banning) patch(banning, { ban });
+          refresh();
+        }}
+        onUnbanned={() => {
+          if (banning) patch(banning, { ban: null });
+          refresh();
+        }}
+      />
+
       <MemberManageDialog
         member={members.find((m) => m.id === managing) ?? null}
         onClose={() => setManaging(null)}
@@ -253,22 +293,47 @@ export function AdminMembers() {
   );
 }
 
-function MemberRow({ member, onChecked, onManage }: { member: AdminMember; onChecked: (albion: AdminMember["albion"]) => void; onManage: () => void }) {
+interface RowActions {
+  isSelf: boolean;
+  canManage: boolean;
+  canBan: boolean;
+  onChecked: (albion: AdminMember["albion"]) => void;
+  onManage: () => void;
+  onBan: () => void;
+}
+
+function MemberRow({ member, ...actions }: { member: AdminMember } & RowActions) {
   const name = member.gameNick || member.displayName || member.discordUsername;
   const albion = describeAlbionCheck({ status: member.albion.status, guildName: member.albion.guildName, checkedAt: member.albion.checkedAt });
   const meta = albionMeta[albion.kind];
   const roles = member.roles.map((r) => ROLE_LABELS[r]).join(", ") || "—";
 
   return (
-    <TableRow>
+    // A linha do banido fica atenuada, mas o selo e o motivo ficam em contraste cheio: o apagado diz
+    // "esta conta não está ativa" sem esconder justamente o que a pessoa precisa ler.
+    <TableRow className={member.ban ? "bg-destructive/5" : undefined}>
       {/* No celular sobram duas colunas (Membro e Albion): guilda e papéis descem para dentro do nome. */}
       <TableCell className="max-w-[12rem] min-w-0 sm:max-w-[14rem]">
-        <p className="truncate font-medium">{name}</p>
+        <p className={cn("truncate font-medium", member.ban && "text-muted-foreground line-through decoration-destructive/60")}>{name}</p>
         <p className="truncate text-xs text-muted-foreground">
           @{member.discordUsername}
           <span className="md:hidden">{member.guildTag ? ` · [${member.guildTag}]` : ""}</span>
         </p>
         <p className="truncate text-xs text-muted-foreground sm:hidden">{roles}</p>
+        {member.ban && (
+          <div className="mt-1 border-l-2 border-destructive/60 pl-2">
+            <Pill tone="destructive" icon={<Ban strokeWidth={2.25} />}>
+              Banido
+            </Pill>
+            <p className="mt-0.5 line-clamp-2 text-xs break-words text-foreground/90" title={member.ban.reason}>
+              {member.ban.reason}
+            </p>
+            <p className="num truncate text-xs text-muted-foreground">
+              {formatDateTime(member.ban.bannedAt)}
+              {member.ban.byName ? ` · ${member.ban.byName}` : ""}
+            </p>
+          </div>
+        )}
       </TableCell>
       <TableCell className="hidden md:table-cell">
         {member.guildTag ? <span className="num text-xs font-medium">[{member.guildTag}]</span> : <span className="text-xs text-muted-foreground">—</span>}
@@ -283,7 +348,7 @@ function MemberRow({ member, onChecked, onManage }: { member: AdminMember; onChe
         {member.albion.checkedAt && <p className="num mt-0.5 truncate text-xs text-muted-foreground">{formatDateTime(member.albion.checkedAt)}</p>}
       </TableCell>
       <TableCell>
-        <MemberActions member={member} onChecked={onChecked} onManage={onManage} />
+        <MemberActions member={member} {...actions} />
       </TableCell>
     </TableRow>
   );
@@ -293,7 +358,7 @@ function MemberRow({ member, onChecked, onManage }: { member: AdminMember; onChe
  * Ações da linha (AC#1/AC#2/AC#3). Botões de ícone com rótulo acessível e dica: a coluna precisa caber em
  * 400px de largura, e nome de ação por extenso em toda linha rouba o espaço do que o admin veio ler.
  */
-function MemberActions({ member, onChecked, onManage }: { member: AdminMember; onChecked: (albion: AdminMember["albion"]) => void; onManage: () => void }) {
+function MemberActions({ member, isSelf, canManage, canBan, onChecked, onManage, onBan }: { member: AdminMember } & RowActions) {
   const [checking, setChecking] = useState(false);
   const name = member.gameNick || member.discordUsername;
 
@@ -321,30 +386,52 @@ function MemberActions({ member, onChecked, onManage }: { member: AdminMember; o
 
   return (
     <div className="flex justify-end gap-1">
-      <Tooltip>
-        <TooltipTrigger asChild>
-          <Button
-            variant="outline"
-            size="icon"
-            className="press"
-            disabled={checking || !member.gameNick}
-            aria-label={`Conferir ${name} no Albion`}
-            onClick={() => void check()}
-          >
-            {checking ? <Loader2 className="animate-spin" /> : <RefreshCw />}
-          </Button>
-        </TooltipTrigger>
-        <TooltipContent>{member.gameNick ? "Conferir o nick na API do Albion agora" : "Sem nick registrado: não há o que conferir"}</TooltipContent>
-      </Tooltip>
+      {canManage && (
+        <>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button
+                variant="outline"
+                size="icon"
+                className="press"
+                disabled={checking || !member.gameNick}
+                aria-label={`Conferir ${name} no Albion`}
+                onClick={() => void check()}
+              >
+                {checking ? <Loader2 className="animate-spin" /> : <RefreshCw />}
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent>{member.gameNick ? "Conferir o nick na API do Albion agora" : "Sem nick registrado: não há o que conferir"}</TooltipContent>
+          </Tooltip>
 
-      <Tooltip>
-        <TooltipTrigger asChild>
-          <Button variant="outline" size="icon" className="press" aria-label={`Gerenciar ${name}`} onClick={onManage}>
-            <SlidersHorizontal />
-          </Button>
-        </TooltipTrigger>
-        <TooltipContent>Editar nick e tag, ler e escrever notas</TooltipContent>
-      </Tooltip>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button variant="outline" size="icon" className="press" aria-label={`Gerenciar ${name}`} onClick={onManage}>
+                <SlidersHorizontal />
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent>Editar nick e tag, ler e escrever notas</TooltipContent>
+          </Tooltip>
+        </>
+      )}
+
+      {/* Banir a si mesmo é sempre engano: o botão não aparece na própria linha, e a API recusa de qualquer jeito. */}
+      {canBan && !isSelf && (
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <Button
+              variant={member.ban ? "outline" : "destructive"}
+              size="icon"
+              className="press"
+              aria-label={member.ban ? `Desbanir ${name}` : `Banir ${name}`}
+              onClick={onBan}
+            >
+              {member.ban ? <ShieldCheck /> : <Ban />}
+            </Button>
+          </TooltipTrigger>
+          <TooltipContent>{member.ban ? "Desbanir: devolve o acesso ao painel, a eventos e ao saque" : "Banir: corta o acesso na hora e congela o saldo"}</TooltipContent>
+        </Tooltip>
+      )}
     </div>
   );
 }
