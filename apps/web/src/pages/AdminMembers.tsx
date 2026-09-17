@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useState } from "react";
-import { Ban, Check, CircleDashed, CloudOff, Download, Loader2, RefreshCw, Search, ShieldCheck, SlidersHorizontal, UserRoundX, Users } from "lucide-react";
+import { Ban, Check, CircleDashed, CloudOff, Download, Loader2, Receipt, RefreshCw, Search, ShieldCheck, SlidersHorizontal, UserRoundX, Users } from "lucide-react";
 import { toast } from "sonner";
 import {
+  asSubject,
   describeAlbionCheck,
   MEMBER_FILTER_LABELS,
   MEMBER_FILTERS,
@@ -15,6 +16,7 @@ import { errorText } from "@/api/http";
 import { usePoll } from "@/api/use-poll";
 import { useCurrentUser } from "@/auth/AuthProvider";
 import { MemberBanDialog } from "@/components/MemberBanDialog";
+import { MemberLedgerDialog } from "@/components/MemberLedgerDialog";
 import { MemberManageDialog } from "@/components/MemberManageDialog";
 import { EmptyState, PageHeader, Panel, Pill, StatCard, type Tone } from "@/components/display";
 import { Button } from "@/components/ui/button";
@@ -58,6 +60,7 @@ export function AdminMembers() {
   const [summary, setSummary] = useState<MemberImportSummary | null>(null);
   const [managing, setManaging] = useState<string | null>(null);
   const [banning, setBanning] = useState<string | null>(null);
+  const [statement, setStatement] = useState<string | null>(null);
   const { user, ability } = useCurrentUser();
   // Conferir o nick, editar nick/tag e as notas: admin e staff (TASK-047, G3).
   const canManage = ability.can("update", "MemberProfile");
@@ -65,6 +68,14 @@ export function AdminMembers() {
   // Importar do Discord continua exigindo `manage`/`all` na API: o botão fica escondido para a staff em
   // vez de aparecer e devolver 403 no clique.
   const canImport = ability.can("manage", "all");
+  /**
+   * Extrato alheio (TASK-051, G10): a mesma pergunta que a API faz, com a condição de dono junto —
+   * `read Wallet` sem condição é de staff e admin; a regra do membro é presa ao próprio id. Perguntar
+   * pelo tipo só (`ability.can("read", "UserRole")`) esconderia a ação do staff, e perguntar por
+   * `read Wallet` cru a mostraria pra todo membro logado: é o erro da TASK-027.
+   */
+  const canReadLedger = (userId: string) => ability.can("read", asSubject("Wallet", { userId }));
+>>>>>>> b86f9ba (feat(web): leva a staff ao extrato do jogador pela lista de membros)
   // Staff bane quem está abaixo dela; banir staff ou admin é coisa de admin (a API recusa igual).
   const isAdmin = user.roles.includes("admin");
   /**
@@ -242,9 +253,11 @@ export function AdminMembers() {
                   isSelf={m.id === user.id}
                   canManage={canManage}
                   canBan={canBan && (isAdmin || !m.roles.some((r) => r === "staff" || r === "admin"))}
+                  canReadLedger={canReadLedger(m.id)}
                   onChecked={(albion) => patch(m.id, { albion })}
                   onManage={() => setManaging(m.id)}
                   onBan={() => setBanning(m.id)}
+                  onStatement={() => setStatement(m.id)}
                 />
               ))}
             </TableBody>
@@ -286,6 +299,14 @@ export function AdminMembers() {
         }}
       />
 
+      <MemberLedgerDialog
+        member={(() => {
+          const m = members.find((x) => x.id === statement);
+          return m ? { id: m.id, name: m.gameNick || m.displayName || m.discordUsername } : null;
+        })()}
+        onClose={() => setStatement(null)}
+      />
+
       <MemberManageDialog
         member={members.find((m) => m.id === managing) ?? null}
         onClose={() => setManaging(null)}
@@ -302,9 +323,11 @@ interface RowActions {
   isSelf: boolean;
   canManage: boolean;
   canBan: boolean;
+  canReadLedger: boolean;
   onChecked: (albion: AdminMember["albion"]) => void;
   onManage: () => void;
   onBan: () => void;
+  onStatement: () => void;
 }
 
 function MemberRow({ member, ...actions }: { member: AdminMember } & RowActions) {
@@ -363,7 +386,7 @@ function MemberRow({ member, ...actions }: { member: AdminMember } & RowActions)
  * Ações da linha (AC#1/AC#2/AC#3). Botões de ícone com rótulo acessível e dica: a coluna precisa caber em
  * 400px de largura, e nome de ação por extenso em toda linha rouba o espaço do que o admin veio ler.
  */
-function MemberActions({ member, isSelf, canManage, canBan, onChecked, onManage, onBan }: { member: AdminMember } & RowActions) {
+function MemberActions({ member, isSelf, canManage, canBan, canReadLedger, onChecked, onManage, onBan, onStatement }: { member: AdminMember } & RowActions) {
   const [checking, setChecking] = useState(false);
   const name = member.gameNick || member.discordUsername;
 
@@ -418,6 +441,18 @@ function MemberActions({ member, isSelf, canManage, canBan, onChecked, onManage,
             <TooltipContent>Editar nick e tag, ler e escrever notas</TooltipContent>
           </Tooltip>
         </>
+      )}
+
+      {/* Extrato vem antes de banir: é a ação que a staff mais usa aqui e a única que não muda nada. */}
+      {canReadLedger && (
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <Button variant="outline" size="icon" className="press" aria-label={`Ver o extrato de ${name}`} onClick={onStatement}>
+              <Receipt />
+            </Button>
+          </TooltipTrigger>
+          <TooltipContent>Ver o extrato: saldo, reservado e de onde veio cada prata</TooltipContent>
+        </Tooltip>
       )}
 
       {/* Banir a si mesmo é sempre engano: o botão não aparece na própria linha, e a API recusa de qualquer jeito. */}
