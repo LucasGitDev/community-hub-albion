@@ -1,7 +1,7 @@
-import { eventCancelledText, type EventDto, type EventStatus } from "@albion-hub/shared";
-import { Archive, CalendarClock, CheckCircle2, CircleDot, DoorOpen, FileEdit, Lock, XCircle } from "lucide-react";
+import { eventCancelledText, NO_ENTRY_FEE, type EventDto, type EventStatus } from "@albion-hub/shared";
+import { Archive, CalendarClock, CheckCircle2, CircleDot, DoorOpen, FileEdit, Lock, Ticket, XCircle } from "lucide-react";
 import type { ReactNode } from "react";
-import { Pill, type Tone } from "@/components/display";
+import { Amount, Pill, type Tone } from "@/components/display";
 import { POLL_INTERVAL_MS } from "@/lib/events";
 import { formatDateTime } from "@/lib/format";
 import { cn } from "@/lib/utils";
@@ -63,6 +63,21 @@ export function EventArchivedNote({ event, className }: { event: EventDto; class
         <span className="text-muted-foreground"> Os dados, a taxa e os splits dele não mudam mais.</span>
       </span>
     </p>
+  );
+}
+
+/**
+ * Preço da entrada (TASK-058, F6-12), ao lado do nome do evento. Fica visível **antes** do clique
+ * porque é no clique que a Buffunfa sai da carteira (F6-13): descobrir o preço depois de pagar não é
+ * escolha. Evento gratuito não mostra nada — é o caso normal, e um selo "gratuito" em toda linha
+ * viraria ruído. Ouro do `--brand`, que é a cor da Buffunfa desde a TASK-055.
+ */
+export function EntryFeePill({ entryFee, className }: { entryFee: bigint; className?: string }) {
+  if (entryFee <= NO_ENTRY_FEE) return null;
+  return (
+    <Pill tone="brand" icon={<Ticket aria-hidden />} className={className}>
+      entrada <Amount value={entryFee} currency="buffunfa" className="font-semibold" />
+    </Pill>
   );
 }
 

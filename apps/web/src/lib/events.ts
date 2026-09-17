@@ -2,6 +2,7 @@ import {
   ALLOWED_EVENT_TRANSITIONS,
   EVENT_TRANSITIONS,
   EVENT_TRANSITION_ACTIONS,
+  entryFeeEditable,
   eventEditBlocked,
   freeSlots,
   type AppAbility,
@@ -122,6 +123,14 @@ export function availableTransitions(event: EventDto, ability: AppAbility): Even
 /** Mexer na lista de inscritos é `update Event`: owner do evento ou staff, e só antes do evento rodar. */
 export const canManageRoster = (event: EventDto, ability: AppAbility): boolean =>
   (event.status === "open" || event.status === "closed") && ability.can("update", asSubject("Event", { ownerId: event.ownerUserId }));
+
+/**
+ * Mexer na taxa de entrada é `update Event` (owner ou staff) **enquanto as inscrições estão abertas**
+ * (TASK-058, `entryFeeEditable`). Depois disso a lista já foi cobrada, e um preço novo valeria para
+ * quem pagou o antigo. A API refaz a mesma checagem e devolve 409.
+ */
+export const canSetEntryFee = (event: EventDto, ability: AppAbility): boolean =>
+  entryFeeEditable(event.status) && ability.can("update", asSubject("Event", { ownerId: event.ownerUserId }));
 
 /**
  * Trocar o dono é `manage Event`: só staff (Q21). Vale até o evento ser arquivado: a taxa e as sobras

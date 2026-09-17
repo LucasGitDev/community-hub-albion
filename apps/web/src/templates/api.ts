@@ -11,8 +11,14 @@ export const updateEventRole = (id: string, body: { name?: string; description?:
   api<EventRoleDto>(`/api/event-roles/${id}`, { method: "PATCH", body: JSON.stringify(body) });
 export const deleteEventRole = (id: string) => api<void>(`/api/event-roles/${id}`, { method: "DELETE" });
 
-export const createEventTemplate = (body: EventTemplateInput) => api<EventTemplateDto>("/api/event-templates", { method: "POST", body: JSON.stringify(body) });
-export const updateEventTemplate = (id: string, body: EventTemplateInput) => api<EventTemplateDto>(`/api/event-templates/${id}`, { method: "PATCH", body: JSON.stringify(body) });
+/**
+ * `defaultEntryFee` sai daqui como **string** (Q20): o schema compartilhado devolve `bigint`, e
+ * `JSON.stringify` não sabe serializar bigint — a moeda volta a ser texto no fio, como no resto da API.
+ */
+const templateBody = (body: EventTemplateInput) => JSON.stringify({ ...body, defaultEntryFee: body.defaultEntryFee.toString() });
+
+export const createEventTemplate = (body: EventTemplateInput) => api<EventTemplateDto>("/api/event-templates", { method: "POST", body: templateBody(body) });
+export const updateEventTemplate = (id: string, body: EventTemplateInput) => api<EventTemplateDto>(`/api/event-templates/${id}`, { method: "PATCH", body: templateBody(body) });
 export const deleteEventTemplate = (id: string) => api<void>(`/api/event-templates/${id}`, { method: "DELETE" });
 
 /**

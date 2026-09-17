@@ -1,4 +1,6 @@
 import {
+  entryFeeLabel,
+  entryFeeSchema,
   eventCreateSchema,
   EVENT_CANCEL_REASON_MAX,
   EVENT_TEMPLATE_NAME_MAX,
@@ -15,7 +17,7 @@ import { toast } from "sonner";
 import * as api from "@/api/events";
 import { errorText } from "@/api/http";
 import { usePoll } from "@/api/use-poll";
-import { EventArchivedNote, EventCancelledNote, EventMeta, EventStatusPill, FillMeter, Freshness, eventStatusText } from "@/components/events";
+import { EntryFeePill, EventArchivedNote, EventCancelledNote, EventMeta, EventStatusPill, FillMeter, Freshness, eventStatusText } from "@/components/events";
 import { DraftBlocksArchiveNote, EventSettlement } from "@/components/EventSettlement";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { canSettle, showsSettlement, toSettle } from "@/lib/settlement";
@@ -30,6 +32,7 @@ import { useCurrentUser } from "@/auth/AuthProvider";
 import {
   availableTransitions,
   canManageRoster,
+  canSetEntryFee,
   canTransferOwner,
   eventFill,
   groupEvents,
@@ -355,7 +358,12 @@ function EventDetail({
     <Panel
       title={event.name}
       titleId="staff-events-detail"
-      action={<EventStatusPill status={event.status} />}
+      action={
+        <div className="flex flex-wrap items-center gap-2">
+          <EntryFeePill entryFee={BigInt(event.entryFee)} />
+          <EventStatusPill status={event.status} />
+        </div>
+      }
       className="min-w-0"
     >
       <div className="space-y-4 border-b px-4 py-3">
@@ -370,6 +378,8 @@ function EventDetail({
             <FillMeter {...fill} />
           </div>
         </div>
+
+        {canSetEntryFee(event, ability) && <EntryFeeEditor event={event} onChanged={onChanged} />}
 
         {/* AC#3: só aparece a ação que a máquina de estados permite agora e que o papel autoriza. */}
         {/* Finalizado tem uma ação só e ela é irreversível: a frase explica por que ainda não acabou. */}
@@ -520,6 +530,65 @@ function EventDetail({
 }
 
 /** Uma role do evento: confirmados nas vagas e, abaixo, a espera daquela role na ordem (Q27). */
+/**
+ * Taxa de entrada do evento (TASK-058, F6-12), editada por quem conduz enquanto as inscrições estão
+ * abertas. Fica no cabeçalho do evento, junto das ações de estado: é uma decisão do mesmo momento
+ * ("quanto vou cobrar para filtrar essa lista"), não uma configuração escondida num diálogo.
+ *
+ * Sem teto de propósito: quem calibra o filtro é o caller. O texto diz o que o número faz, porque é
+ * Buffunfa saindo da carteira de quem se inscreve — e que ela **some**, em vez de virar lucro dele.
+ */
+function EntryFeeEditor({ event, onChanged }: { event: EventDto; onChanged: () => void }) {
+  const id = useId();
+  const [value, setValue] = useState(event.entryFee);
+  const [busy, setBusy] = useState(false);
+  const parsed = entryFeeSchema().safeParse(value.trim() === "" ? "0" : value.trim());
+  const dirty = parsed.success && parsed.data !== BigInt(event.entryFee);
+
+  async function save() {
+    if (!parsed.success) return toast.error(firstIssue(parsed.error));
+    setBusy(true);
+    try {
+      const saved = await api.setEventEntryFee(event.id, parsed.data);
+      toast.success("Taxa de entrada salva", { description: `${saved.name}: ${entryFeeLabel(BigInt(saved.entryFee))}.` });
+      onChanged();
+    } catch (e) {
+      toast.error(errorText(e, "Não foi possível salvar a taxa de entrada."));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div className="rounded-lg border bg-muted/40 p-3">
+      <Label htmlFor={id}>Taxa de entrada em Buffunfa</Label>
+      <div className="mt-1.5 flex flex-wrap items-center gap-2">
+        <Input
+          id={id}
+          inputMode="numeric"
+          value={value}
+          onChange={(e) => setValue(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === "Enter" && dirty) void save();
+          }}
+          placeholder="0"
+          aria-describedby={`${id}-hint`}
+          aria-invalid={!parsed.success}
+          className="num w-32"
+        />
+        <Button size="sm" disabled={busy || !dirty} onClick={() => void save()}>
+          <Coins />
+          Salvar taxa
+        </Button>
+      </div>
+      <p id={`${id}-hint`} className="mt-2 text-sm text-muted-foreground">
+        <span className="num font-medium text-foreground">0</span> = entrada gratuita. Cobrada de cada pessoa na hora em que ela se inscreve; quem desistir antes do
+        início recebe de volta. A Buffunfa cobrada some — ela não vai para você nem para ninguém. Depois que as inscrições fecharem o valor não muda mais.
+      </p>
+    </div>
+  );
+}
+
 function RoleRoster({
   role,
   roles,

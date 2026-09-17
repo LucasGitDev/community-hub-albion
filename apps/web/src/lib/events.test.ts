@@ -23,6 +23,7 @@ const event = (id: string, status: EventStatus, ownerUserId = CALLER): EventDto 
   templateName: "DG de grupo",
   name: `Evento ${id}`,
   description: null,
+  entryFee: "0",
   status,
   ownerUserId,
   ownerNick: "Caller",
