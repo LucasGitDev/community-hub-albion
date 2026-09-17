@@ -52,25 +52,32 @@ describe("o que impede o fechamento", () => {
 });
 
 describe("valor por role", () => {
-  it("escreve a faixa do template", () => {
-    expect(roleRangeText(tank)).toBe("10 a 40 BUF");
-    expect(roleRangeText({ buffunfaMin: "0", buffunfaMax: "0" })).toBe("sem Buffunfa");
+  it("escreve a faixa do template como sugestão, não como teto (TASK-072)", () => {
+    expect(roleRangeText(tank)).toBe("template sugere 10 a 40 BUF");
+    expect(roleRangeText({ buffunfaMin: "0", buffunfaMax: "0" })).toBe("template sugere 0 BUF");
   });
 
-  it("aceita inteiro dentro da faixa e recusa fora dela antes de gastar request", () => {
-    expect(checkRoleValue("25", tank)).toEqual({ ok: true, value: 25n });
-    expect(checkRoleValue(" 40 ", tank)).toEqual({ ok: true, value: 40n });
-    expect(checkRoleValue("41", tank)).toMatchObject({ ok: false });
-    expect(checkRoleValue("9", tank)).toMatchObject({ ok: false });
-    expect(checkRoleValue("", tank)).toMatchObject({ ok: false });
+  it("aceita qualquer inteiro até o teto do sistema, inclusive acima da faixa do template (AC#3)", () => {
+    expect(checkRoleValue("25")).toEqual({ ok: true, value: 25n });
+    expect(checkRoleValue(" 40 ")).toEqual({ ok: true, value: 40n });
+    // Acima do máximo do template: antes era recusa, agora passa — a faixa é partida, não teto.
+    expect(checkRoleValue("500")).toEqual({ ok: true, value: 500n });
+    // Abaixo do mínimo do template, e zero: também passam.
+    expect(checkRoleValue("9")).toEqual({ ok: true, value: 9n });
+    expect(checkRoleValue("0")).toEqual({ ok: true, value: 0n });
+  });
+
+  it("recusa acima do teto do sistema, vazio e abreviação antes de gastar request", () => {
+    expect(checkRoleValue("10001")).toMatchObject({ ok: false });
+    expect(checkRoleValue("")).toMatchObject({ ok: false });
     // Buffunfa nunca abrevia (F6-5): "2k" é erro de moeda, não atalho.
-    expect(checkRoleValue("2k", tank)).toMatchObject({ ok: false });
+    expect(checkRoleValue("2k")).toMatchObject({ ok: false });
   });
 
-  it("a mensagem da faixa diz os dois extremos, que é o que o caller precisa corrigir", () => {
-    const result = checkRoleValue("99", tank);
+  it("a mensagem diz o teto do sistema, que é o que o caller precisa corrigir", () => {
+    const result = checkRoleValue("99999");
     expect(result.ok).toBe(false);
-    if (!result.ok) expect(result.error).toContain("de 10 a 40");
+    if (!result.ok) expect(result.error).toContain("0 a 10000");
   });
 });
 

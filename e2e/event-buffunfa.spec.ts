@@ -2,7 +2,7 @@ import { expect, test, type Page } from "@playwright/test";
 import { ORIGIN } from "./session";
 
 /**
- * Buffunfa por participação em evento (TASK-057, F6-8 a F6-11).
+ * Buffunfa por participação em evento (TASK-057, F6-8 a F6-11; ajuste em lote na TASK-072).
  *
  * O e2e roda com o bot desligado, então nenhum evento aqui tem canal de voz carimbado — que é
  * justamente o caso da F6-11. Isso torna este spec a prova do AC#5: a tela avisa, e o botão de
@@ -28,7 +28,7 @@ async function snap(page: Page, name: string) {
 const selectEvent = (page: Page, eventName: string) =>
   page.getByRole("region", { name: "Eventos", exact: true }).getByRole("button", { name: new RegExp(eventName) }).click();
 
-test("caller escolhe a Buffunfa por role dentro da faixa e a tela avisa o evento sem canal medido (AC#1, AC#2, AC#5)", async ({ page }) => {
+test("caller põe todas as roles num valor de uma vez, ajusta uma por cima e a tela avisa o evento sem canal medido (AC#1 a AC#4)", async ({ page }) => {
   test.setTimeout(180_000);
   const run = `${tag()}b${Date.now().toString(36)}${Math.floor(Math.random() * 1e4).toString(36)}`;
   const templateName = `Buffunfa ${run}`;
@@ -42,10 +42,14 @@ test("caller escolhe a Buffunfa por role dentro da faixa e a tela avisa o evento
   const form = page.getByRole("dialog");
   await form.getByLabel("Nome", { exact: true }).fill(templateName);
   await form.getByLabel("Mínimo de pessoas").fill("1");
-  await form.getByLabel("Máximo (vazio = sem teto)").fill("1");
+  await form.getByLabel("Máximo (vazio = sem teto)").fill("2");
   await form.getByRole("button", { name: "Tank", exact: true }).click();
   await form.getByLabel("Buffunfa mínima de Tank").fill("10");
   await form.getByLabel("Buffunfa máxima de Tank").fill("40");
+  // Healer com faixa 0 a 0: o template antigo da F6-51, que antes não tinha como pagar (AC#6).
+  await form.getByRole("button", { name: "Healer", exact: true }).click();
+  await form.getByLabel("Buffunfa mínima de Healer").fill("0");
+  await form.getByLabel("Buffunfa máxima de Healer").fill("0");
   await snap(page, `buffunfa-template-faixa-${tag()}`);
   await form.getByRole("button", { name: "Criar template" }).click();
   await expect(page.getByText("Template criado").first()).toBeVisible();
@@ -78,10 +82,15 @@ test("caller escolhe a Buffunfa por role dentro da faixa e a tela avisa o evento
   await expect(buffunfa.getByText("90% ou mais do tempo da call", { exact: false })).toBeVisible();
   await expect(buffunfa.getByText("para todos daquela role", { exact: false })).toBeVisible();
 
-  // AC#1/AC#2: a faixa do template veio para o evento, e o valor nasce no mínimo dela.
-  await expect(buffunfa.getByText("10 a 40 BUF")).toBeVisible();
+  // AC#4: a faixa do template veio para o evento como **sugestão**, e o valor nasce no mínimo dela.
+  await expect(buffunfa.getByText("template sugere 10 a 40 BUF")).toBeVisible();
+  await expect(buffunfa.getByText("template sugere 0 BUF")).toBeVisible();
   const campo = buffunfa.getByLabel("Buffunfa por presença na role Tank");
+  const campoHealer = buffunfa.getByLabel("Buffunfa por presença na role Healer");
   await expect(campo).toHaveValue("10");
+  // AC#6: a role de faixa zerada tem campo editável, não um valor congelado em zero.
+  await expect(campoHealer).toHaveValue("0");
+  await expect(campoHealer).toBeEditable();
 
   // AC#5: sem canal carimbado, o aviso vem antes do clique e o botão não vai.
   await expect(buffunfa.getByRole("alert").first()).toContainText("não teve canal de voz carimbado");
@@ -89,18 +98,28 @@ test("caller escolhe a Buffunfa por role dentro da faixa e a tela avisa o evento
   await expect(buffunfa.getByRole("button", { name: "Pagar Buffunfa" })).toBeDisabled();
   await snap(page, `buffunfa-sem-canal-${tag()}`);
 
-  // AC#2: fora da faixa é recusado na hora, com a faixa na mensagem, sem gastar request.
-  await campo.fill("41");
-  await expect(buffunfa.getByText("permite de 10 a 40 de Buffunfa", { exact: false })).toBeVisible();
-  await expect(buffunfa.getByRole("button", { name: "Aplicar" })).toBeDisabled();
-  await snap(page, `buffunfa-fora-da-faixa-${tag()}`);
+  // AC#1: todas as roles de uma vez — o gesto com que o evento começa.
+  const lote = buffunfa.getByLabel("Buffunfa por presença em todas as roles");
+  await lote.fill("60");
+  await snap(page, `buffunfa-lote-${tag()}`);
+  await buffunfa.getByRole("button", { name: "Aplicar a todas" }).click();
+  await expect(page.getByText("2 roles a 60 de Buffunfa").first()).toBeVisible();
+  await expect(buffunfa.getByLabel("Buffunfa por presença na role Tank")).toHaveValue("60");
+  await expect(buffunfa.getByLabel("Buffunfa por presença na role Healer")).toHaveValue("60");
+  await snap(page, `buffunfa-lote-aplicado-${tag()}`);
 
-  // Dentro da faixa: aplica e vale para todos da role no fechamento.
-  await campo.fill("35");
-  await buffunfa.getByRole("button", { name: "Aplicar" }).click();
-  await expect(page.getByText("Tank: 35 de Buffunfa").first()).toBeVisible();
+  // AC#3: acima do máximo do template (40) passa; só o teto do sistema recusa, e diz que é dele.
+  const tankDepois = buffunfa.getByLabel("Buffunfa por presença na role Tank");
+  await tankDepois.fill("10001");
+  await expect(buffunfa.getByText("vai de 0 a 10000 por role", { exact: false })).toBeVisible();
+  await expect(buffunfa.getByRole("button", { name: "Aplicar", exact: true }).first()).toBeDisabled();
+  await snap(page, `buffunfa-acima-do-teto-${tag()}`);
+
+  // AC#2: um ajuste individual por cima do lote, acima da faixa do template.
+  await tankDepois.fill("135");
+  await buffunfa.getByRole("button", { name: "Aplicar", exact: true }).first().click();
+  await expect(page.getByText("Tank: 135 de Buffunfa").first()).toBeVisible();
   await expect(page.getByText("Vale para todos dessa role no fechamento.").first()).toBeVisible();
-  await expect(buffunfa.getByRole("button", { name: "Aplicar" })).toBeDisabled();
   await snap(page, `buffunfa-valor-aplicado-${tag()}`);
 
   // O valor ficou gravado no evento, e não só desenhado.
@@ -108,9 +127,13 @@ test("caller escolhe a Buffunfa por role dentro da faixa e a tela avisa o evento
     const list = (await (await fetch("/api/events")).json()) as { events: { id: string; name: string }[] };
     const id = list.events.find((e) => e.name === name)!.id;
     const event = (await (await fetch(`/api/events/${id}`)).json()) as { roles: { name: string; buffunfaMin: string; buffunfaMax: string; buffunfaValue: string }[] };
-    return event.roles.find((r) => r.name === "Tank")!;
+    return event.roles.map((r) => ({ name: r.name, buffunfaMin: r.buffunfaMin, buffunfaMax: r.buffunfaMax, buffunfaValue: r.buffunfaValue }));
   }, eventName);
-  expect(gravado).toMatchObject({ buffunfaMin: "10", buffunfaMax: "40", buffunfaValue: "35" });
+  // O lote e o ajuste por cima dele ficaram gravados no evento, e não só desenhados.
+  expect(gravado).toEqual([
+    { name: "Tank", buffunfaMin: "10", buffunfaMax: "40", buffunfaValue: "135" },
+    { name: "Healer", buffunfaMin: "0", buffunfaMax: "0", buffunfaValue: "60" },
+  ]);
 });
 
 /** A rota que cria moeda é fechada: membro comum e caller de outro evento não chegam nela. */
