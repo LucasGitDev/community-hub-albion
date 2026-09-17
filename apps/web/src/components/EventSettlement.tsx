@@ -14,12 +14,14 @@ import {
   type SplitPresenceDto,
 } from "@albion-hub/shared";
 import { AlertTriangle, Archive, Calculator, Check, Coins, Crown, Lock, Pencil, RotateCcw, Save, Users } from "lucide-react";
-import { useCallback, useEffect, useId, useMemo, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useId, useMemo, useState } from "react";
 import { toast } from "sonner";
 import * as eventsApi from "@/api/events";
 import { errorText } from "@/api/http";
 import * as splitsApi from "@/api/splits";
+import { EventBuffunfaStep } from "@/components/EventBuffunfa";
 import { Amount } from "@/components/display";
+import { Step } from "@/components/settlement-step";
 import { Pill } from "@/components/display";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
@@ -59,23 +61,6 @@ import { cn } from "@/lib/utils";
 interface SettlementData {
   present: SplitPresenceDto[];
   splits: LootSplitDto[];
-}
-
-/** Passo do acerto. O número é informação, não enfeite: isto é uma sequência, e ela tem ordem. */
-function Step({ n, title, hint, action, children }: { n: number; title: string; hint?: ReactNode; action?: ReactNode; children: ReactNode }) {
-  return (
-    <section aria-label={title} className="border-b last:border-b-0">
-      <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2 px-4 pt-4">
-        <h3 className="flex min-w-0 items-center gap-2.5 text-lg font-semibold">
-          <span className="num grid size-6 shrink-0 place-items-center rounded-md border bg-muted text-xs font-semibold text-muted-foreground">{n}</span>
-          <span className="truncate">{title}</span>
-        </h3>
-        {action}
-      </div>
-      {hint && <p className="mt-1 px-4 pl-[3.125rem] text-sm text-muted-foreground">{hint}</p>}
-      <div className="px-4 py-4">{children}</div>
-    </section>
-  );
 }
 
 export function EventSettlement({ event, onChanged, onDraftChange }: { event: EventDto; onChanged: () => void; onDraftChange: (hasDraft: boolean) => void }) {
@@ -153,6 +138,9 @@ export function EventSettlement({ event, onChanged, onDraftChange }: { event: Ev
           onChanged();
         }}
       />
+      {/* Passo 4 e não 1: a Buffunfa é prêmio de comparecimento, e quem acabou de finalizar está
+          aqui para dividir o loot primeiro. O valor por role só precisa estar certo no fechamento. */}
+      <EventBuffunfaStep event={event} n={4} open={open} onChanged={onChanged} />
     </div>
   );
 }
