@@ -3,6 +3,7 @@ id: doc-008
 title: Roadmap pós-v1
 type: other
 created_date: '2026-09-17 14:25'
+updated_date: '2026-09-17 17:05'
 ---
 
 Status: **rascunho para debate** (2026-09-17). Sucede o doc "Roadmap", cuja v1 (F0–F5) está
@@ -22,35 +23,32 @@ que só existe para habilitar a próxima não entra sozinha no board — entra c
 
 ---
 
-## F6 — Moeda temática, taxa de entrada e loja
+## F6 — Moeda Buffunfa, taxa de entrada e loja — **grelhada, pronta para executar**
 
-**Entram juntas de propósito.** Moeda sem onde gastar é número morto na tela; loja sem moeda não
-tem o que cobrar. O sink precisa nascer no mesmo dia que a fonte.
+Decisões fechadas em 2026-09-17 (doc "Decisões v1", bloco F6-1 a F6-29) e identidade no doc
+"Identidade: Toca da Turma e Buffunfa". **Entram juntas de propósito:** moeda sem onde gastar é
+número morto na tela; loja sem moeda não tem o que cobrar. O sink precisa nascer no mesmo dia que
+a fonte.
 
-**Moeda**
-- Segunda moeda no ledger, **sem saque**, regras próprias. O doc "Arquitetura" já previa tabela por
-  tipo de moeda; a F5 deliberadamente não criou a coluna `currency` (migration aditiva barata).
-- Fontes previstas no produto: participação em ping/evento, streak, ranking mensal, giveaway,
-  indicação. **Na F6 entra só a participação em evento** — as outras chegam com suas fases.
-- Valor por role definido pelo caller até o fechamento, dentro da faixa do template; staff pode
-  intervir; o valor trava no fechamento e vale para todos.
+**Seis tasks, nesta ordem de merge** (TASK-056 e TASK-057 são o núcleo):
 
-**Taxa de entrada**
-- Conteúdo disputado: template nasce zerado, caller define até fechar inscrições, sem teto.
-- **Sink puro** — a moeda cobrada some, não vai para ninguém. É o que diferencia da taxa do split
-  (prata), que vai para o caller/dono.
+| Ordem | Task | Entrega |
+|---|---|---|
+| 1 | TASK-055 | Inverter a paleta: dourado vira Buffunfa, âmbar vira CTA, prata vira prateada |
+| 2 | TASK-056 | Buffunfa no ledger: coluna `currency`, saldo e extrato por moeda, emoji do bot |
+| 3 | TASK-057 | Ganho por participação em evento (valor por role, presença ≥ 90%) |
+| 4 | TASK-058 | Taxa de entrada em Buffunfa, cobrada na inscrição |
+| 5 | TASK-059 | Loja: catálogo de item de texto livre e compra |
+| 6 | TASK-060 | Fila de pedidos com entrega manual pela staff |
 
-**Loja**
-- Fulfillment manual, com fila para a staff, no molde da fila de saques que já existe.
-- Estoque opcional por item.
-- Cargos e cosméticos do Discord ficam **mapeados, não automatizados** (decisão da v1).
+TASK-055 não toca lógica e roda em paralelo com o resto, mas vai primeiro: as telas novas da fase
+nascem com a paleta certa em vez de nascerem erradas e serem corrigidas.
 
-**Pronto quando:** um membro ganha moeda participando de um evento, paga taxa de entrada num
+**Escala da economia** (define formatação e preços): ganhos na casa da unidade ou da dezena,
+gastos na casa da centena ou do milhar. Muitos eventos por compra, de propósito.
+
+**Pronto quando:** um membro ganha Buffunfa participando de um evento, paga taxa de entrada num
 conteúdo disputado, compra um item na loja e a staff entrega pela fila.
-
-**Perguntas a grelhar antes de começar:** nome e símbolo da moeda; se a taxa de entrada é cobrada
-na inscrição ou no início do evento (e o que acontece com quem desiste); se compra na loja pode
-ficar negativa; se estorno de compra é estorno de ledger ou devolução de item ao estoque.
 
 ---
 
@@ -125,7 +123,12 @@ canais que a F4 já construiu.
 ## Fora do radar (registrado para não voltar como novidade)
 
 Realtime, cosméticos na loja, jackpot, teto e decaimento de moeda, buff e recuperação de streak,
-evento beneficente, multi-guild, i18n, upload de comprovante de saque.
+multi-guild, i18n, upload de comprovante de saque.
+
+**Adiados com fase conhecida, não descartados:** ping comprado com Buffunfa (vai com a F7, que é
+quando permissão vira coisa de primeira classe — caminho paralelo na F6 seria construir duas
+vezes) e **transações entre jogadores**, que precisa de fase própria depois da loja rodar: ela
+abre lavagem de taxa de entrada (dois membros se financiando) e exige limite e rastro próprios.
 
 ---
 

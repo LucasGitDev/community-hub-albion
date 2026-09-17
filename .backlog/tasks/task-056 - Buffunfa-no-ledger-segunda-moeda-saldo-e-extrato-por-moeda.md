@@ -1,0 +1,50 @@
+---
+id: TASK-056
+title: 'Buffunfa no ledger: segunda moeda, saldo e extrato por moeda'
+status: To Do
+assignee: []
+created_date: '2026-09-17 17:04'
+labels: []
+dependencies:
+  - TASK-055
+documentation:
+  - .backlog/docs/doc-005 - Decisões-v1.md
+priority: high
+ordinal: 54000
+---
+
+## Description
+
+<!-- SECTION:DESCRIPTION:BEGIN -->
+Introduz a Buffunfa como segunda moeda do ledger, sem nenhuma fonte ou sink ainda — é a base das tasks seguintes da F6. A moeda entra na mesma tabela ledger_entries com uma coluna currency (decisão F6-1); tabela separada duplicaria triggers, estorno e telas. O risco assumido é query que esqueça o filtro e some moedas diferentes, e é por isso que saldo e extrato passam a exigir moeda explícita na assinatura.
+
+Detalhe que não é preferência e sim restrição do banco: as triggers append-only vivem em packages/db/migrations/0011_nosy_leopardon.sql:25-33 e recusam UPDATE, então backfill é impossível. A coluna precisa nascer NOT NULL DEFAULT silver (o Postgres preenche sem UPDATE) e o default cai na mesma migration, devolvendo a proteção contra insert sem moeda (F6-2).
+
+Buffunfa não tem saque, mas tem ajuste da staff pela rota de manutenção (F6-6): sem ele, erro de taxa ou de pagamento não tem conserto nenhum, porque o ledger é append-only.
+<!-- SECTION:DESCRIPTION:END -->
+
+## Acceptance Criteria
+<!-- AC:BEGIN -->
+- [ ] #1 ledger_entries ganha a coluna currency (silver | buffunfa), NOT NULL, criada com default silver e com o default removido na mesma migration
+- [ ] #2 Existe índice de extrato com currency antes de created_at; a leitura de uma moeda não varre a outra
+- [ ] #3 getLedgerBalance e as leituras de extrato exigem a moeda na assinatura: não há caminho que devolva saldo somando as duas
+- [ ] #4 formatSilver e o componente <Silver> viram genéricos por moeda (formatAmount / <Amount currency>), com todas as chamadas migradas
+- [ ] #5 Buffunfa nunca é abreviada na exibição (340 BUF, nunca 0,3K); prata continua abreviando
+- [ ] #6 Débito que deixaria o saldo de Buffunfa negativo é recusado na transação, com trava no saldo; ajuste da staff pode deixar negativo
+- [ ] #7 POST /api/maintenance/buffunfa credita e debita com motivo obrigatório, atrás do mesmo guard de header da rota de prata
+- [ ] #8 O extrato é uma página só, com filtro por moeda (default todas), cada linha marcando a moeda e o cabeçalho trazendo os dois saldos separados, nunca somados
+- [ ] #9 O chip do header mostra as duas moedas, com a Buffunfa em destaque
+- [ ] #10 O emoji do Discord é criado pelo bot no boot a partir do PNG versionado; falha de permissão ou de slot loga aviso e cai para o texto puro, sem derrubar o bot. Precedência: env > descoberto > texto puro
+<!-- AC:END -->
+
+## Definition of Done
+<!-- DOD:BEGIN -->
+- [ ] #1 pnpm quality sem falha bloqueante; resumo do gate colado nas notas
+- [ ] #2 Cada AC verificado com evidência objetiva (teste, e2e, screenshot ou saída de comando), nunca só leitura de código
+- [ ] #3 Skills aplicáveis do doc-003 invocadas e listadas nas notas
+- [ ] #4 UI alterada: fluxo coberto por e2e e screenshots desktop 1280 e mobile 400 revisados pelo agent
+- [ ] #5 Comportamento confere com decisões do doc-005 (Qs citadas) e nada fora do escopo da task
+- [ ] #6 Toca auth, ledger, prata ou saque: security-review sem achado crítico
+- [ ] #7 Notas e final summary com evidências; commits Conventional atômicos sem co-autor
+- [ ] #8 PR merged na main com quality gate verde; branch e worktree removidos
+<!-- DOD:END -->

@@ -3,7 +3,7 @@ id: doc-005
 title: Decisões v1
 type: specification
 created_date: '2026-09-15 03:22'
-updated_date: '2026-09-16 14:35'
+updated_date: '2026-09-17 17:03'
 ---
 Resultado do grill (R1–R3, 2026-09-15). Referência pra specs e tasks.
 
@@ -92,3 +92,65 @@ Resultado do grill (R1–R3, 2026-09-15). Referência pra specs e tasks.
 | N6 | Filtro "Saiu do servidor" **fica para depois**, junto com uma passada em todos os filtros da lista de membros (TASK-053). Hoje só o selo. |
 | N7 | Mudança apenas de **visibilidade** não exige as skills de design; exige **revisão visual por screenshot no papel afetado**. Ritual não pega bug; olhar a tela no papel novo pega. |
 
+
+## Grelha de 2026-09-17 (F6 — Buffunfa, taxa de entrada e loja)
+
+Antecede a F6 do doc "Roadmap pós-v1". Nomes e cores já vinham decididos no doc "Identidade:
+Toca da Turma e Buffunfa"; aqui ficam as regras de economia e de fila.
+
+### Moeda no ledger
+| # | Decisão |
+|---|---|
+| F6-1 | Buffunfa entra na **mesma** `ledger_entries`, com coluna `currency` (`silver` \| `buffunfa`). Tabela separada duplicaria triggers, estorno e telas. Risco assumido: query que esquecer o filtro soma moedas diferentes — por isso saldo e extrato passam a exigir moeda explícita na assinatura. |
+| F6-2 | A coluna nasce `NOT NULL DEFAULT 'silver'` **e o default cai na mesma migration**. Não é preferência: as triggers append-only (`0011_nosy_leopardon.sql:25-33`) recusam UPDATE, então backfill é impossível — o default na criação é o único caminho, e derrubá-lo em seguida devolve a proteção contra insert sem moeda. |
+| F6-3 | Índice novo de extrato com `currency` antes de `created_at`. O atual (`user_id, created_at, id`) faria toda leitura varrer as duas moedas. |
+| F6-4 | `formatSilver`/`<Silver>` viram **genéricos** (`formatAmount`/`<Amount currency>`). Motivo é identidade, não código: "prata prateada, Buffunfa dourada com emoji" precisa morar num lugar só. |
+| F6-5 | **Buffunfa nunca abrevia**: `340 BUF`, nunca `0,3K`. Ganhos são de unidade/dezena, gastos chegam a milhares — o valor cheio cabe. Prata continua abreviando. |
+| F6-6 | **Sem saque** de Buffunfa. **Com** ajuste da staff, por `/api/maintenance/buffunfa`, mesmo guard de token da prata — sem ele, erro de taxa não tem conserto, e o ledger é append-only. |
+| F6-7 | Saldo **nunca fica negativo** por compra ou taxa (recusa na transação, com `FOR UPDATE`, igual ao saque). Exceção única: **ajuste/estorno da staff pode cravar negativo** — quem ganhou por engano e já gastou precisa poder ficar devendo. |
+
+### Ganho por evento
+| # | Decisão |
+|---|---|
+| F6-8 | Valor **por role**, faixa **obrigatória** no template (não pode ser aberta), caller ajusta dentro dela até o fechamento. Serve para forçar o preenchimento de vaga escassa: faltam tanks, o caller sobe tank. Faixa obrigatória porque Buffunfa é criada do nada — caller generoso demais fura o sink e o ledger não volta atrás. |
+| F6-9 | **Vale o valor do fechamento, para todos daquela role**, inclusive quem se inscreveu antes da subida. Pagar menos a quem se comprometeu cedo ensinaria a esperar o preço subir. |
+| F6-10 | Recebe quem teve **presença ≥ 90% do tempo de vida da call** (mesmo relógio que a prata já usa). Regra **binária**: bateu os 90%, recebe o valor cheio. Proporcional em número de uma casa vira "2,7" e arredonda para nada — a prata é divisão de bolo, a Buffunfa é prêmio de comparecimento. |
+| F6-11 | Evento **sem canal de voz carimbado** (`presence_channel_id` nulo) **não paga Buffunfa**, e a tela de fechamento avisa. Sem medição não há comparecimento provado. |
+
+### Taxa de entrada
+| # | Decisão |
+|---|---|
+| F6-12 | Cobrada em **Buffunfa**, nunca em prata. Em prata viraria barreira de dinheiro contra o membro novo, que é justamente quem tem pouca prata. |
+| F6-13 | Cobrada **na inscrição**. Desistir **antes do início devolve**; depois do início, não. É o único desenho que filtra de verdade (inscrever-se de graça mantém a lista inflada) sem punir quem avisa cedo. |
+| F6-14 | **Evento cancelado devolve a todos**, automático, por estorno apontando para o lançamento da taxa. |
+| F6-15 | Um evento **pode cobrar e pagar**, em lançamentos separados no extrato (`−20` na inscrição, `+15` no fechamento). O líquido negativo é o ponto: é o que faz o conteúdo disputado ser disputado. Juntar num lançamento só esconderia do membro o que ele pagou. |
+| F6-16 | **Sink puro**: a Buffunfa cobrada some, não vai para ninguém. É o que a diferencia da taxa do split, que vai para o caller/dono. |
+
+### Loja
+| # | Decisão |
+|---|---|
+| F6-17 | Item de **texto livre** (nome, descrição, preço, estoque opcional) — não catálogo tipado. Categorias tipadas na F6 seriam adivinhação; três meses de uso dizem quais existem. Itens previstos: itens do jogo, ping/criação de evento, beneficente. |
+| F6-18 | Item **esgotado aparece cinza**, não some. Sumir esconde o que existe e faz o item voltar como novidade. Aparecer esgotado cria fila de espera — é o que sustenta gasto de milhares com ganho de dezenas. |
+| F6-19 | Estorno de compra devolve **moeda e estoque, sempre na mesma transação**. Separar os dois faz item sumir do estoque sem ninguém receber. |
+| F6-20 | Cargos e cosméticos seguem **mapeados, não automatizados** (decisão da v1). "Ping comprado com Buffunfa" fica para a F7, junto das permissões — construir um caminho paralelo agora seria construir duas vezes. |
+
+### Fila de pedidos
+| # | Decisão |
+|---|---|
+| F6-21 | Estados: `pending → claimed → delivered`, mais `cancelled` (comprador) e `rejected` (staff). **Sem confirmação do comprador e sem disputa** — a staff é confiável, e exigir clique do comprador encheria a fila de pedidos eternamente abertos. |
+| F6-22 | `claimed` existe para a staff sinalizar "peguei este" antes de entrar no jogo: sem ele, dois membros da staff entregam o mesmo item. **`claimed` volta para `pending`** se ela desistir — o membro não pode ficar preso a um staff que sumiu. |
+| F6-23 | Buffunfa **reservada** em `pending` (fora do ledger) e **lançada** em `delivered`. Mesmo desenho da fila de saques, incluindo `RESERVING_*`, trava por usuário e revalidação dentro da transação. |
+| F6-24 | O comprador **cancela enquanto estiver `pending`**; depois de `claimed`, só a staff. Sem isso, clique errado vira ticket, e a fila manual já é o gargalo da fase. |
+
+### Permissões e UI
+| # | Decisão |
+|---|---|
+| F6-25 | `shop:manage` (publicar item, definir preço) e `shop:fulfill` (entregar pedido) ficam **no bloco `staff`**, provisórios, com os nomes já registrados para a F7. Ter a lista pronta é o motivo de a F7 ter sido adiada para depois da loja. |
+| F6-26 | Chip do header mostra **as duas moedas**, Buffunfa em destaque. Buffunfa só visível dentro da loja seria invisível até o membro já ter decidido comprar — ver o número subir é o que faz voltar ao evento. |
+| F6-27 | **Um** extrato, com filtro por moeda (default "todas"), cada linha marcando a moeda e o cabeçalho trazendo **os dois saldos separados, nunca somados**. A ordem cronológica é que conta a história. |
+| F6-28 | Emoji: o **bot tenta criar** no boot a partir do PNG versionado, procurando por nome. Falhou (permissão, slot cheio), loga aviso e segue com `340 BUF`; o usuário cria à mão e põe a env. Precedência: **env > descoberto > texto puro**. Bot não sobe por causa de emoji é inaceitável. |
+| F6-29 | A **inversão de cores** (dourado = Buffunfa, âmbar = CTA, prata = prateada) é a **primeira** task da fase, antes de qualquer tela nova: as telas novas nascem certas, e o diff isolado é revisável por screenshot (N7), o que um diff misturado com feature não seria. |
+
+### Fora da F6 (registrado para não voltar como novidade)
+Transações entre jogadores (traz lavagem de taxa de entrada e precisa de limite e rastro próprios),
+ping comprado com Buffunfa (vai com a F7), automação de cargo do Discord.
