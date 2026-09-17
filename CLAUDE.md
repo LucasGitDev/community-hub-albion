@@ -37,6 +37,40 @@ Doc "Quality Gate e DoD" no backlog. Resumo:
 - E2E em paralelo entre worktrees: `export E2E_PORT=41XX` (default 4173) antes do gate — a porta vale para as specs, o `webServer` e o `PUBLIC_URL` que o `SameOriginGuard` valida. O Playwright **não** reusa servidor existente (evita pegar o build de outra branch); só o loop rápido dentro do próprio worktree liga `E2E_REUSE_SERVER=true`.
 - Antes de marcar AC/DoD ou abrir PR final: invocar skill `task-done-check` (gate + visual Playwright 1280/400 + produto vs doc-005 + skills do doc-003).
 
+## Rotas de manutenção (TASK-048)
+
+Namespace `/api/maintenance`, sem sessão, chamado por curl, válido em dev **e** em produção (G5).
+**Ele cria prata em produção** — trate o segredo como trata a senha do banco.
+
+- Ligar: `MAINTENANCE_TOKEN` no env, mínimo 32 caracteres (`openssl rand -base64 48`).
+  Variável vazia ou ausente = namespace **desligado**: nenhuma rota é registrada. Sem default, sem fallback.
+- Recusa é sempre `404` idêntico ao de rota inexistente: não dá para descobrir se o namespace está ligado.
+- Rate limit de 20 chamadas por minuto no namespace inteiro.
+- **Se o token vazar, troque o valor e reinicie o servidor.** Não há lista de revogação; o valor É o acesso.
+  Nunca escreva o token real em commit, log, print, issue ou PR — nos exemplos abaixo ele é placeholder.
+
+```bash
+export HUB_URL=https://painel.exemplo.com
+export MAINTENANCE_TOKEN=<cole-o-segredo-aqui>   # nunca versionar
+
+# Ajuste de prata: motivo obrigatório, vira lançamento `adjustment` no extrato do jogador
+curl -fsS -X POST "$HUB_URL/api/maintenance/silver" \
+  -H "x-maintenance-token: $MAINTENANCE_TOKEN" -H 'content-type: application/json' \
+  -d '{"userId":"<uuid-do-usuario>","amount":"-1500000","reason":"estorno do split 12 pago em duplicidade"}'
+
+# Revalidar o nick do jogador na API do Albion
+curl -fsS -X POST "$HUB_URL/api/maintenance/albion-check" \
+  -H "x-maintenance-token: $MAINTENANCE_TOKEN" -H 'content-type: application/json' \
+  -d '{"userId":"<uuid-do-usuario>"}'
+
+# Disparar a limpeza diária sob demanda (503 enquanto a TASK-049 não estiver na base)
+curl -fsS -X POST "$HUB_URL/api/maintenance/cleanup" -H "x-maintenance-token: $MAINTENANCE_TOKEN"
+```
+
+`amount` é prata inteira em string (Q20): positivo credita, negativo debita, zero é recusado.
+O namespace **não** loga, não cria sessão, não lê sessão e não age como outro usuário — o `userId` é
+sempre alvo, nunca ator. Login sem Discord continua só no dev-login, proibido em produção pelo env.
+
 ## Uso automático de skills
 Invocar skill via Skill tool sem o usuário pedir sempre que o gatilho do doc "Skills" (backlog) bater.
 Resumo:
