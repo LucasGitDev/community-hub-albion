@@ -31,7 +31,7 @@ export function Login() {
           <span className="grid size-10 place-items-center rounded-lg bg-foreground text-background">
             <Swords className="size-5" aria-hidden />
           </span>
-          <h1 className="text-3xl font-semibold">albion-hub</h1>
+          <h1 className="text-3xl font-semibold">Toca da Turma</h1>
         </div>
         <p className="mt-4 text-lg text-muted-foreground">Sua prata dos loot splits da comunidade, com extrato de cada evento e pedido de saque.</p>
 

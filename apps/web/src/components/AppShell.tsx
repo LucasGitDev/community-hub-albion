@@ -191,7 +191,7 @@ function Brand({ className }: { className?: string }) {
       <span className="grid size-7 place-items-center rounded-md bg-foreground text-background">
         <Swords className="size-4" aria-hidden />
       </span>
-      <span className="text-lg font-semibold tracking-tight whitespace-nowrap">albion-hub</span>
+      <span className="text-lg font-semibold tracking-tight whitespace-nowrap">Toca da Turma</span>
     </div>
   );
 }
