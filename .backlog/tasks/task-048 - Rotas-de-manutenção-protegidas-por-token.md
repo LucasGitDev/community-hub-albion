@@ -1,11 +1,11 @@
 ---
 id: TASK-048
 title: Rotas de manutenção protegidas por token
-status: In Progress
+status: Done
 assignee:
   - '@claude'
 created_date: '2026-09-17 02:19'
-updated_date: '2026-09-17 02:47'
+updated_date: '2026-09-17 03:27'
 labels:
   - backend
   - security
@@ -40,7 +40,7 @@ Namespace de manutenção (dev e produção) atrás de um guard de header com se
 - [x] #5 Comportamento confere com decisões do doc-005 (Qs citadas) e nada fora do escopo da task
 - [x] #6 Toca auth, ledger, prata ou saque: security-review sem achado crítico
 - [x] #7 Notas e final summary com evidências; commits Conventional atômicos sem co-autor
-- [ ] #8 PR merged na main com quality gate verde; branch e worktree removidos
+- [x] #8 PR merged na main com quality gate verde; branch e worktree removidos
 <!-- DOD:END -->
 
 ## Implementation Plan
