@@ -33,7 +33,7 @@ export function Amount({
   const abs = negative ? -value : value;
   const sign = signed ? (negative ? "−" : "+") : negative ? "−" : "";
   return (
-    <span className={cn("num inline-flex items-baseline whitespace-nowrap", currency === "buffunfa" && "text-brand", className)}>
+    <span className={cn("num whitespace-nowrap", currency === "buffunfa" && "text-brand", className)}>
       {currency === "buffunfa" && <BuffunfaIcon />}
       {sign}
       {short ? formatAmountShort(abs, currency) : formatAmount(abs, currency)}
@@ -50,20 +50,25 @@ export function Amount({
  * a moeda em toda linha do extrato. O texto também é o que garante que a distinção entre prata e
  * Buffunfa **nunca** dependa da cor nem da imagem ter carregado.
  *
+ * `inline-block` e `vertical-align`, nunca flex: o `<Amount>` aparece no meio de frase ("Faltam X para
+ * a entrada") e dentro de botão, e trocar o `<span>` inline por `inline-flex` encolhe a linha a ponto
+ * de o card de evento cobrir o `<summary>` de baixo — dois e2e mobile viraram clique interceptado.
+ *
+ * E `background-image` num `<span>`, não um `<img>`: no extrato o Chrome não conta a largura de um
+ * `<img>` ao medir a coluna da tabela, e o `+1.340 BUF` vazava a borda do card em 400px. Um `<span>`
+ * vazio com largura própria entra na conta. Como o ícone é decorativo (o `BUF` ao lado é que fala),
+ * não se perde nada em não ser um `<img>`.
+ *
  * `1em` amarra o ícone ao tamanho da fonte, então o mesmo componente serve do extrato (14px) ao
  * número-chave da carteira (30px) sem tamanho mágico por tela. O PNG versionado é de 512px e pesa
  * 318 KB; o que entra no bundle é a redução para 64px (@2x do maior uso).
  */
 function BuffunfaIcon() {
   return (
-    <img
-      src={buffunfaIcon}
-      alt=""
+    <span
       aria-hidden
-      draggable={false}
-      width={64}
-      height={64}
-      className="mr-[0.3em] size-[1em] shrink-0 translate-y-[0.1em] select-none"
+      style={{ backgroundImage: `url(${buffunfaIcon})` }}
+      className="mr-[0.3em] inline-block size-[1em] bg-contain bg-center bg-no-repeat align-[-0.15em]"
     />
   );
 }

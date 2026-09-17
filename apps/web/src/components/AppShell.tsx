@@ -1,6 +1,6 @@
 import { ROLE_LABELS, type Action, type SubjectType } from "@albion-hub/shared";
 import { NavLink, Outlet, useLocation } from "react-router";
-import { CalendarPlus, CalendarRange, Coins, Sparkles, LayoutTemplate, HandCoins, CircleUser, KeyRound, LogOut, PackageCheck, ScrollText, Shield, Store, Swords, Users, UsersRound, Vault } from "lucide-react";
+import { CalendarPlus, CalendarRange, Coins, LayoutTemplate, HandCoins, CircleUser, KeyRound, LogOut, PackageCheck, ScrollText, Shield, Store, Swords, Users, UsersRound, Vault } from "lucide-react";
 import type { ReactNode } from "react";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
@@ -105,7 +105,9 @@ export function AppShell() {
               className="press flex h-8 items-center gap-2 rounded-full border bg-card px-3 text-sm hover:bg-accent"
               aria-label="Meus saldos"
             >
-              <Sparkles className="size-4 text-brand" aria-hidden />
+              {/* A moeda da Buffunfa entrou no `<Amount>` (TASK-071) e o `<Sparkles>` que marcava a
+                  Buffunfa aqui saiu junto: eram dois símbolos para a mesma coisa, e em 400px os 24px
+                  dele eram a diferença entre o header caber e a página rolar de lado (F6-30). */}
               {balances ? (
                 <Amount value={balances.buffunfa} currency="buffunfa" className="font-semibold" />
               ) : (
@@ -187,11 +189,15 @@ export function AppShell() {
 
 function Brand({ className }: { className?: string }) {
   return (
-    <div className={cn("flex items-center gap-2", className)}>
-      <span className="grid size-7 place-items-center rounded-md bg-foreground text-background">
+    <div className={cn("flex min-w-0 items-center gap-2", className)}>
+      <span className="grid size-7 shrink-0 place-items-center rounded-md bg-foreground text-background">
         <Swords className="size-4" aria-hidden />
       </span>
-      <span className="text-lg font-semibold tracking-tight whitespace-nowrap">Toca da Turma</span>
+      {/* Abaixo de 640px fica só o brasão: com o ícone da Buffunfa no chip (TASK-071), o nome inteiro
+          não cabe na barra de 400px, e "Toca da Tur…" cortado seria pior do que só a marca. O nome
+          continua na aba, no login e na barra lateral do desktop. `truncate` é a rede de segurança:
+          a barra pode apertar, mas nunca empurra o saldo, que é a âncora dela (F6-26/F6-30). */}
+      <span className="hidden truncate text-lg font-semibold tracking-tight sm:inline">Toca da Turma</span>
     </div>
   );
 }
