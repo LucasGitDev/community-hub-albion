@@ -759,7 +759,13 @@ export const shopOrders = pgTable(
     status: shopOrderStatusEnum("status").notNull().default("reserved"),
     /** Débito lançado na entrega (TASK-060). `restrict`: o lançamento é append-only. */
     ledgerEntryId: uuid("ledger_entry_id").references(() => ledgerEntries.id, { onDelete: "restrict" }),
-    /** Staff que entregou ou cancelou (TASK-060). */
+    /**
+     * Estorno do débito acima (TASK-060, F6-19). O pedido entregue **continua** `delivered`: o ledger é
+     * append-only, então desfazer a compra é um lançamento novo, não um estado novo — e a devolução do
+     * estoque vem na mesma transação. Esta coluna é o que impede estornar duas vezes o mesmo pedido.
+     */
+    reversalEntryId: uuid("reversal_entry_id").references(() => ledgerEntries.id, { onDelete: "restrict" }),
+    /** Staff que pegou, entregou, recusou ou cancelou o pedido; o próprio comprador quando ele desiste. */
     handledBy: uuid("handled_by").references(() => users.id, { onDelete: "restrict" }),
     handledAt: timestamp("handled_at", { withTimezone: true }),
     /** Como foi entregue, ou por que foi cancelado. */
@@ -778,7 +784,17 @@ export const shopOrders = pgTable(
     // Decisão completa: quem e quando, e só depois de sair de `reserved`.
     check("shop_orders_handled_consistent", sql`(${t.handledBy} is null) = (${t.handledAt} is null)`),
     check("shop_orders_handled_when_not_reserved", sql`(${t.status} = 'reserved') = (${t.handledAt} is null)`),
-    // Cancelamento exige motivo: é a única explicação que o membro recebe.
-    check("shop_orders_cancel_note_required", sql`${t.status} <> 'cancelled' or (${t.note} is not null and length(btrim(${t.note})) > 0)`),
+    /**
+     * Fim de linha exige nota escrita: entrega diz onde e para quem foi (AC#4), recusa e cancelamento
+     * dizem por quê. O `::text` não é enfeite — comparar com um valor de enum recém-criado (`rejected`)
+     * na **mesma** transação do `alter type` é recusado pelo Postgres, e a migration faz as duas coisas.
+     */
+    check(
+      "shop_orders_end_note_required",
+      sql`${t.status}::text not in ('delivered', 'cancelled', 'rejected') or (${t.note} is not null and length(btrim(${t.note})) > 0)`,
+    ),
+    // Estorno só existe onde existe débito, e só uma vez por pedido (F6-19).
+    uniqueIndex("shop_orders_reversal_entry_unique").on(t.reversalEntryId).where(sql`${t.reversalEntryId} is not null`),
+    check("shop_orders_reversal_needs_ledger_entry", sql`${t.reversalEntryId} is null or ${t.ledgerEntryId} is not null`),
   ],
 );

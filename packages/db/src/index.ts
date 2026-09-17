@@ -193,15 +193,24 @@ export {
   type UpdateLootSplitResult,
 } from "./loot-split-repo.js";
 export {
+  cancelShopOrder,
+  claimShopOrder,
   createShopItem,
+  deliverShopOrder,
   getShopBalance,
   getShopItem,
+  getShopOrder,
   listShopItems,
   listShopOrders,
   purchaseShopItem,
+  refundShopOrder,
+  rejectShopOrder,
+  releaseShopOrder,
   updateShopItem,
   type PurchaseShopItemResult,
   type ShopBalance,
+  type ShopOrderActionOptions,
+  type ShopOrderActionResult,
 } from "./shop-repo.js";
 export {
   listEventRoleBuffunfa,
