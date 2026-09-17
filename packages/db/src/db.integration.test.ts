@@ -546,6 +546,38 @@ describe.skipIf(!url)("@albion-hub/db (Postgres real)", () => {
       expect(catalog.findIndex((r) => r.name === "Bardo")).toBeGreaterThan(catalog.findIndex((r) => r.name === "Battlemount"));
     });
 
+    it("import não sobrescreve descrição já preenchida no catálogo e reporta o que ignorou (TASK-065 AC#1/#2/#4)", async () => {
+      // Dois templates com a MESMA role e descrições diferentes: o segundo import não pode reescrever o primeiro.
+      const zvz = await importEventTemplate(handle.db, yaml({ name: "T065 ZvZ", roles: [{ name: "Couraçado", slots: 1, description: "segura a linha de frente na ZvZ" }] }));
+      if (!zvz.ok) throw new Error(zvz.reason);
+      expect(zvz.createdRoles).toEqual(["Couraçado"]);
+      expect(zvz.ignoredDescriptions).toEqual([]);
+
+      const dg = await importEventTemplate(handle.db, yaml({ name: "T065 DG", roles: [{ name: "couraçado", slots: 1, description: "puxa os mobs da dungeon" }] }));
+      if (!dg.ok) throw new Error(dg.reason);
+      expect(dg.createdRoles).toEqual([]);
+      expect(dg.ignoredDescriptions).toEqual(["couraçado"]);
+
+      // A descrição do catálogo continua a do primeiro template; nada foi perdido em silêncio.
+      const role = (await listEventRoles(handle.db)).find((r) => r.name === "Couraçado")!;
+      expect(role.description).toBe("segura a linha de frente na ZvZ");
+      expect(role.templateCount).toBe(2);
+
+      // Descrição idêntica não é "ignorada": não havia nada a aplicar.
+      const igual = await importEventTemplate(handle.db, yaml({ name: "T065 Igual", roles: [{ name: "Couraçado", slots: 1, description: "segura a linha de frente na ZvZ" }] }));
+      if (!igual.ok) throw new Error(igual.reason);
+      expect(igual.ignoredDescriptions).toEqual([]);
+    });
+
+    it("role sem descrição no catálogo recebe a do arquivo (TASK-065 AC#3)", async () => {
+      const created = await createEventRole(handle.db, { name: "T065 Vazia", description: null });
+      if (!created.ok) throw new Error("falhou");
+      const result = await importEventTemplate(handle.db, yaml({ name: "T065 Preenche", roles: [{ name: "t065 vazia", slots: 1, description: "guia o grupo" }] }));
+      if (!result.ok) throw new Error(result.reason);
+      expect(result.ignoredDescriptions).toEqual([]);
+      expect((await listEventRoles(handle.db)).find((r) => r.id === created.role.id)!.description).toBe("guia o grupo");
+    });
+
     it("nome de template repetido não grava nada, nem as roles novas (AC#3, tudo ou nada)", async () => {
       const first = await importEventTemplate(handle.db, yaml({ name: "Import colide", roles: [{ name: "Tank", slots: 3, description: null }] }));
       expect(first.ok).toBe(true);

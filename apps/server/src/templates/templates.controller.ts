@@ -151,6 +151,8 @@ export class EventTemplatesController {
    * já fala JSON com a API e não precisa de mais uma dependência pra mandar texto.
    * Roles fora do catálogo são criadas e voltam em `createdRoles` — é o ponto da feature (levar
    * template entre servidores); nome de template repetido é 409, porque renomear é decisão da staff.
+   * `ignoredDescriptions` (TASK-065) lista as roles cuja descrição do arquivo não foi aplicada por já
+   * existir outra no catálogo global — o import nunca sobrescreve descrição preenchida.
    */
   @Post("import")
   @UseGuards(SameOriginGuard)
@@ -164,7 +166,7 @@ export class EventTemplatesController {
       if (result.reason === "role_race") throw new ConflictException("Uma role com esse nome acabou de ser criada. Tente importar de novo.");
       throw new ConflictException(`Já existe um template chamado "${parsed.template.name}". Renomeie no arquivo ou apague o template atual antes de importar.`);
     }
-    return { template: result.template, createdRoles: result.createdRoles };
+    return { template: result.template, createdRoles: result.createdRoles, ignoredDescriptions: result.ignoredDescriptions };
   }
 
   @Delete(":id")

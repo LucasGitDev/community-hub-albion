@@ -181,4 +181,10 @@ export function parseEventTemplateYaml(source: string): ParseEventTemplateYamlRe
 export interface EventTemplateImportResult {
   template: EventTemplateDto;
   createdRoles: string[];
+  /**
+   * Roles cuja `description` do arquivo foi **ignorada** porque a role já tinha outra descrição no
+   * catálogo global (TASK-065). A descrição vive uma vez por role, não por template: sobrescrever
+   * aqui apagaria o texto que os outros templates mostram.
+   */
+  ignoredDescriptions: string[];
 }

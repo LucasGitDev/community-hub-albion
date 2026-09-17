@@ -284,6 +284,20 @@ describe.skipIf(!baseUrl)("catálogo de roles e templates HTTP (TASK-020, Q8)", 
       expect(list.map((t) => t.name)).not.toContain("Gigante");
     });
 
+    it("import não reescreve a descrição global da role e devolve ignoredDescriptions (TASK-065)", async () => {
+      const yaml = (name: string, description: string) => ["version: 1", `name: ${templateName(name)}`, "minParty: 1", "maxParty: 6", "roles:", "  - name: Bastião", "    slots: 1", `    description: ${description}`].join("\n");
+
+      const first = await send("post", "/api/event-templates/import", staff, { yaml: yaml("t065 zvz", "segura a linha de frente na ZvZ") });
+      expect(first.status).toBe(201);
+      expect(first.body.createdRoles).toEqual(["Bastião"]);
+      expect(first.body.ignoredDescriptions).toEqual([]);
+
+      const second = await send("post", "/api/event-templates/import", staff, { yaml: yaml("t065 dg", "puxa os mobs da dungeon") });
+      expect(second.status).toBe(201);
+      expect(second.body.ignoredDescriptions).toEqual(["Bastião"]);
+      expect((await roles()).find((r) => r.name === "Bastião")).toMatchObject({ description: "segura a linha de frente na ZvZ", templateCount: 2 });
+    });
+
     it("roles fora do catálogo são criadas e reportadas em createdRoles (AC#4)", async () => {
       const yaml = ["version: 1", `name: ${templateName("roles novas")}`, "minParty: 2", "maxParty: 6", "roles:", "  - name: Battlemount", "    slots: 2", "  - name: tank", "    slots: 2"].join("\n");
       const res = await send("post", "/api/event-templates/import", staff, { yaml });
