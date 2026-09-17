@@ -9,6 +9,7 @@ export * from "./members-admin.js";
 export * from "./member-profile.js";
 export * from "./event-templates.js";
 export * from "./event-template-yaml.js";
+export * from "./entry-fee.js";
 export * from "./events.js";
 export * from "./event-signups.js";
 export * from "./ledger.js";

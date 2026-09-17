@@ -8,8 +8,11 @@ import { CURRENCIES, type Currency } from "./currency.js";
  * `purchase` e a origem `shop_order` nascem na TASK-059 **sem consumidor**, pelo mesmo motivo do
  * `spendCurrency` (F6-33): a compra só reserva, e o débito é lançado na entrega (TASK-060). Ter o tipo e a
  * origem prontos agora é o que faz a entrega ser uma transição de estado, e não uma migration nova.
+ *
+ * `entry_fee` é o contrário: nasce na TASK-058 **com** consumidor, porque a taxa de entrada é débito
+ * imediato — cobrada na inscrição (F6-13) e devolvida por estorno quando é devolvida (F6-14).
  */
-export const LEDGER_ENTRY_KINDS = ["split_payout", "split_fee", "withdrawal", "reversal", "adjustment", "purchase"] as const;
+export const LEDGER_ENTRY_KINDS = ["split_payout", "split_fee", "withdrawal", "reversal", "adjustment", "purchase", "entry_fee"] as const;
 
 export type LedgerEntryKind = (typeof LEDGER_ENTRY_KINDS)[number];
 
@@ -29,6 +32,7 @@ export const LEDGER_ENTRY_KIND_LABELS: Record<LedgerEntryKind, string> = {
   reversal: "Estorno",
   adjustment: "Ajuste",
   purchase: "Compra na loja",
+  entry_fee: "Taxa de entrada",
 };
 
 /**
