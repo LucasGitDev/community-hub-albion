@@ -2,6 +2,7 @@ import { escapeLike, type MemberFilter, type Role } from "@albion-hub/shared";
 import { and, asc, eq, inArray, isNotNull, isNull, or, sql, type SQL } from "drizzle-orm";
 import type { Database } from "./client.js";
 import { alias } from "drizzle-orm/pg-core";
+import { memberNick } from "./member-nick.js";
 import { roleEnum, userRoles, users } from "./schema.js";
 
 /** Uma linha da tabela de membros do admin (TASK-043, AC#1/AC#2). */
@@ -130,11 +131,16 @@ export interface AdminMemberProfile {
   id: string;
   gameNick: string | null;
   guildTag: string | null;
+  /** Como o painel chama essa pessoa: nick aprovado e, na falta dele, o nome do Discord (TASK-023). */
+  name: string;
 }
 
 export async function getAdminMemberProfile(db: Database, userId: string): Promise<AdminMemberProfile | null> {
-  const [row] = await db.select({ id: users.id, gameNick: users.gameNick, guildTag: users.guildTag }).from(users).where(eq(users.id, userId));
-  return row ?? null;
+  const [row] = await db
+    .select({ id: users.id, gameNick: users.gameNick, guildTag: users.guildTag, name: memberNick(users) })
+    .from(users)
+    .where(eq(users.id, userId));
+  return row ? { ...row, name: row.name ?? "sem nome" } : null;
 }
 
 export interface UpdateMemberProfileInput {
@@ -144,7 +150,8 @@ export interface UpdateMemberProfileInput {
   guildTag: string | null;
 }
 
-export type UpdateMemberProfileResult = { ok: true; before: AdminMemberProfile } | { ok: false; reason: "not_found" | "nick_taken" };
+/** `before` é só o que a edição compara (nick e tag); o nome de exibição não entra na comparação. */
+export type UpdateMemberProfileResult = { ok: true; before: Omit<AdminMemberProfile, "name"> } | { ok: false; reason: "not_found" | "nick_taken" };
 
 /**
  * Edição do nick e da tag pela staff/admin (TASK-045, AC#2).

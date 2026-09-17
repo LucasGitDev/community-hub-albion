@@ -2,7 +2,8 @@ import type { LedgerEntryKind, LedgerReferenceType } from "@albion-hub/shared";
 import { and, asc, desc, eq, lt, or, sql } from "drizzle-orm";
 import type { Database } from "./client.js";
 import type { EventTx } from "./events-repo.js";
-import { ledgerEntries } from "./schema.js";
+import { memberNick } from "./member-nick.js";
+import { ledgerEntries, users } from "./schema.js";
 
 /** Handle de escrita: a conexão do pool ou a transação de quem chama (split, saque). */
 type LedgerWriter = Database | EventTx;
@@ -170,4 +171,45 @@ export async function listLedgerEntriesByReference(db: LedgerWriter, type: Ledge
     .from(ledgerEntries)
     .where(and(eq(ledgerEntries.referenceType, type), eq(ledgerEntries.referenceId, id)))
     .orderBy(asc(ledgerEntries.createdAt), asc(ledgerEntries.id));
+}
+
+/** Um lançamento com o nome de quem lançou já resolvido. `author` é null quando ninguém assinou (job, manutenção). */
+export interface LedgerEntryWithAuthor extends LedgerEntry {
+  author: { id: string; name: string } | null;
+}
+
+export interface LedgerPageWithAuthor {
+  entries: LedgerEntryWithAuthor[];
+  nextCursor: { createdAt: Date; id: string } | null;
+}
+
+/**
+ * Mesmo extrato de `listLedgerEntries`, com o autor do lançamento resolvido num `left join` (TASK-051).
+ *
+ * Existe separado porque só a leitura da staff precisa do autor: o extrato do próprio membro (TASK-031)
+ * responde "cadê minha prata", e a staff responde "quem mexeu nisso". Mesmo keyset, mesmos limites — a
+ * paginação é a daqui, não uma segunda versão dela.
+ *
+ * `created_by` é nulo de propósito em lançamento sem gente por trás (ajuste do namespace de manutenção,
+ * TASK-048): a tela distingue isso pela origem `manual/maintenance`, não inventando um nome aqui.
+ */
+export async function listLedgerEntriesWithAuthor(db: Database, userId: string, query: LedgerPageQuery = {}): Promise<LedgerPageWithAuthor> {
+  const limit = Math.min(Math.max(query.limit ?? DEFAULT_PAGE, 1), MAX_PAGE);
+  const cursor = query.cursor;
+  const before = cursor
+    ? or(lt(ledgerEntries.createdAt, cursor.createdAt), and(eq(ledgerEntries.createdAt, cursor.createdAt), lt(ledgerEntries.id, cursor.id)))
+    : undefined;
+  const rows = await db
+    .select({ ...columns, authorId: users.id, authorName: memberNick(users) })
+    .from(ledgerEntries)
+    .leftJoin(users, eq(users.id, ledgerEntries.createdBy))
+    .where(before ? and(eq(ledgerEntries.userId, userId), before) : eq(ledgerEntries.userId, userId))
+    .orderBy(desc(ledgerEntries.createdAt), desc(ledgerEntries.id))
+    .limit(limit + 1);
+  const entries = rows.slice(0, limit).map(({ authorId, authorName, ...entry }) => ({
+    ...entry,
+    author: authorId ? { id: authorId, name: authorName ?? "sem nome" } : null,
+  }));
+  const last = entries.at(-1);
+  return { entries, nextCursor: rows.length > limit && last ? { createdAt: last.createdAt, id: last.id } : null };
 }
