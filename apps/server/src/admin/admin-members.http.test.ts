@@ -1,7 +1,7 @@
 import "reflect-metadata";
 import type { INestApplication } from "@nestjs/common";
 import { Test } from "@nestjs/testing";
-import { createDb, runMigrations, schema, setAlbionCheck, type DbHandle } from "@albion-hub/db";
+import { banUser, createDb, runMigrations, schema, setAlbionCheck, type DbHandle } from "@albion-hub/db";
 import { eq, sql } from "drizzle-orm";
 import request from "supertest";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
@@ -148,7 +148,7 @@ describe.skipIf(!baseUrl)("lista de membros do admin (TASK-043)", () => {
     const semNick = await session("560000000000000032", "filtro-semnick");
 
     const todos = await list(boss.cookie, "?search=filtro-");
-    expect(todos.body.counts).toEqual({ todos: 3, nao_encontrados: 1, sem_nick: 2, banidos: 0 });
+    expect(todos.body.counts).toEqual({ todos: 3, atencao: 3, nao_encontrados: 1, sem_nick: 2, saiu: 0, banidos: 0 });
     expect(todos.body.total).toBe(3);
 
     const naoEncontrados = await list(boss.cookie, "?search=filtro-&filter=nao_encontrados");
@@ -165,6 +165,45 @@ describe.skipIf(!baseUrl)("lista de membros do admin (TASK-043)", () => {
 
     // Filtro desconhecido não quebra: cai em todos.
     expect((await list(boss.cookie, "?search=filtro-&filter=expulsos")).body.total).toBe(3);
+  });
+
+  /**
+   * Os filtros novos pela API (TASK-054). O que este teste guarda é a regra que a tela promete: `atencao`
+   * é a união dos três refinos, e conta banida não entra em nenhum deles — nem quando o problema dela
+   * (saiu do servidor, nick não encontrado) é real.
+   */
+  it("agrupa a atenção, filtra quem saiu e deixa o banido fora da fila (TASK-054, AC#1, AC#2)", async () => {
+    await handle.db.delete(schema.users).where(sql`${schema.users.discordUsername} like 'grupo-%'`);
+    const boss = await session("560000000000000060", "grupo-chefe", ["admin"]);
+    await handle.db.update(schema.users).set({ gameNick: "GrupoChefe" }).where(eq(schema.users.id, boss.id));
+
+    const saiu = await session("560000000000000061", "grupo-saiu");
+    await handle.db.update(schema.users).set({ gameNick: "GrupoSaiu", leftGuildAt: new Date("2026-09-10T00:00:00.000Z") }).where(eq(schema.users.id, saiu.id));
+    const semNick = await session("560000000000000062", "grupo-semnick");
+    // Banido e fora do servidor ao mesmo tempo, com o nick também sem conferir: o caso combinado inteiro.
+    const banido = await session("560000000000000063", "grupo-banido");
+    await handle.db.update(schema.users).set({ gameNick: "GrupoBanido", leftGuildAt: new Date("2026-09-11T00:00:00.000Z") }).where(eq(schema.users.id, banido.id));
+    await setAlbionCheck(handle.db, banido.id, { status: "not_found", checkedAt: new Date() });
+    await banUser(handle.db, { userId: banido.id, actorId: boss.id, reason: "banido, fora do servidor e com nick errado" });
+
+    const counts = (await list(boss.cookie, "?search=grupo-")).body.counts;
+    expect(counts).toEqual({ todos: 4, atencao: 2, nao_encontrados: 0, sem_nick: 1, saiu: 1, banidos: 1 });
+
+    const ids = async (filter: string) => (await list(boss.cookie, `?search=grupo-&filter=${filter}`)).body.members.map((m: { id: string }) => m.id).sort();
+    expect(await ids("atencao")).toEqual([saiu.id, semNick.id].sort());
+    expect(await ids("saiu")).toEqual([saiu.id]);
+    expect(await ids("sem_nick")).toEqual([semNick.id]);
+    expect(await ids("nao_encontrados")).toEqual([]);
+    // O banido aparece em "Banidos" e em "Todos", e em lugar nenhum a mais.
+    expect(await ids("banidos")).toEqual([banido.id]);
+    expect(await ids("todos")).toContain(banido.id);
+
+    // `total` acompanha o filtro, que é o que a paginação da tela usa.
+    for (const [filter, esperado] of [["atencao", 2], ["saiu", 1], ["banidos", 1], ["todos", 4]] as const) {
+      const res = await list(boss.cookie, `?search=grupo-&filter=${filter}`);
+      expect.soft(res.body.total, `total de ${filter}`).toBe(esperado);
+      expect.soft(res.body.members, `linhas de ${filter}`).toHaveLength(esperado);
+    }
   });
 
   it("pagina com total estável e não repete membro entre páginas (AC#1)", async () => {

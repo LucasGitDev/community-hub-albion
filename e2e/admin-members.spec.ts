@@ -40,6 +40,9 @@ test("admin vê a lista, busca e filtra por sem nick (AC#1, AC#2, AC#4)", async 
   await expect(page.getByRole("row").filter({ hasText: `@${admin}` })).toHaveCount(0);
   await expect(row).toBeVisible();
 
+  // Os refinos moram dentro de "Precisam de atenção" (TASK-054): é por lá que se chega a eles.
+  await page.getByRole("button", { name: /^Precisam de atenção/ }).click();
+  await expect(row).toBeVisible();
   // Filtro "sem nick" mantém quem não registrou nick; "não encontrados" esvazia (ninguém foi conferido no e2e).
   await page.getByRole("button", { name: /^Sem nick/ }).click();
   await expect(row).toBeVisible();

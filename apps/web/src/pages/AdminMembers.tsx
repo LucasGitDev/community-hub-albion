@@ -1,11 +1,13 @@
 import { useCallback, useEffect, useState } from "react";
-import { Ban, Check, CircleDashed, CloudOff, Download, Loader2, LogOut, Receipt, RefreshCw, Search, ShieldCheck, SlidersHorizontal, UserRoundX, Users } from "lucide-react";
+import { Ban, Check, CircleDashed, CloudOff, Download, Loader2, LogOut, Receipt, RefreshCw, Search, ShieldCheck, SlidersHorizontal, TriangleAlert, UserRoundX, Users } from "lucide-react";
 import { toast } from "sonner";
 import {
   asSubject,
   describeAlbionCheck,
+  isAttentionFilter,
   MEMBER_FILTER_LABELS,
-  MEMBER_FILTERS,
+  MEMBER_FILTERS_ATTENTION,
+  MEMBER_FILTERS_PRIMARY,
   memberPageCount,
   ROLE_LABELS,
   type AlbionCheckKind,
@@ -46,11 +48,17 @@ function useDebounced<T>(value: T, delay = 300): T {
 }
 
 /**
- * Lista de membros do painel para o admin (TASK-043).
+ * Lista de membros do painel para o admin (TASK-043, filtros revistos na TASK-054).
  *
- * A tela responde a uma pergunta: quem está no painel e de quem o nick não bate com o Albion. Por isso o número
- * em destaque é o total de membros, os outros dois cartões são os problemas acionáveis, e a única ação primária
- * é importar do Discord. Servidor é a autoridade: busca, filtro e paginação vão na query, nada é filtrado aqui.
+ * A tela responde a uma pergunta: **quem precisa de atenção**. Quando eram quatro estados, cinco chips lado a
+ * lado ainda cabiam; com "Saiu do servidor" viraria uma fileira de cinco rótulos longos em que o admin lê tudo
+ * para descobrir onde tem trabalho. Então os chips têm dois níveis: em cima `Todos`, `Precisam de atenção` e
+ * `Banidos` (tem trabalho aqui?), e dentro da atenção uma linha de refino com `Sem nick`, `Não encontrados` e
+ * `Saiu do servidor` (que trabalho?). Os cartões de número acompanham: três, um por chip de cima, em vez de
+ * quatro cartões repetindo os chips.
+ *
+ * Servidor é a autoridade: busca, filtro e paginação vão na query, nada é filtrado aqui — inclusive as
+ * contagens dos chips, que saem do mesmo predicado SQL que monta a lista.
  */
 export function AdminMembers() {
   const [search, setSearch] = useState("");
@@ -94,6 +102,11 @@ export function AdminMembers() {
     setFilter(value);
     setPage(1);
   };
+  /**
+   * Clicar de novo no refino já ligado volta para o grupo inteiro: dentro da atenção o chip funciona como
+   * alternador, e desmarcar sem ter que mirar no chip de cima é o gesto que o admin tenta primeiro.
+   */
+  const toggleRefine = (value: MemberFilter) => changeFilter(filter === value ? "atencao" : value);
 
   const load = useCallback(() => fetchAdminMembers({ search: debouncedSearch, filter, page }), [debouncedSearch, filter, page]);
   const { data, error, loading, refresh } = usePoll<AdminMembersPage>(load, "Erro ao carregar os membros");
@@ -116,7 +129,8 @@ export function AdminMembers() {
     }
   }
 
-  const counts: Record<MemberFilter, number> = data?.counts ?? { todos: 0, nao_encontrados: 0, sem_nick: 0, banidos: 0 };
+  const counts: Record<MemberFilter, number> = data?.counts ?? { todos: 0, atencao: 0, sem_nick: 0, nao_encontrados: 0, saiu: 0, banidos: 0 };
+  const refining = isAttentionFilter(filter);
   const pageCount = data ? memberPageCount(data.total, data.pageSize) : 1;
   const members = data?.members.map((m) => ({ ...m, ...edits[m.id] })) ?? [];
   const patch = (id: string, values: Partial<AdminMember>) => setEdits((prev) => ({ ...prev, [id]: { ...prev[id], ...values } }));
@@ -136,6 +150,7 @@ export function AdminMembers() {
         }
       />
 
+      {/* Um cartão por chip de cima. O detalhe (sem nick, não encontrado, saiu) mora no refino, não em mais cartões. */}
       <div className="mb-4 grid grid-cols-2 gap-3 lg:grid-cols-3">
         <StatCard
           emphasis
@@ -146,15 +161,13 @@ export function AdminMembers() {
           hint={data ? `${counts.todos - counts.sem_nick} com nick registrado` : "Carregando…"}
           className="col-span-2 lg:col-span-1"
         />
-        <StatCard label="Não encontrados no Albion" icon={<UserRoundX />} value={counts.nao_encontrados} hint="Nick provavelmente errado: confira com a pessoa." />
-        <StatCard label="Sem nick" icon={<CircleDashed />} value={counts.sem_nick} hint="Ainda não registrou o nick do personagem." />
         <StatCard
-          label="Banidos"
-          icon={<Ban />}
-          value={counts.banidos}
-          hint="Sem acesso ao painel, a evento e a saque. O saldo fica congelado."
-          className="col-span-2 lg:col-span-1"
+          label="Precisam de atenção"
+          icon={<TriangleAlert />}
+          value={counts.atencao}
+          hint={`Sem nick ${counts.sem_nick} · não encontrados ${counts.nao_encontrados} · saíram ${counts.saiu}`}
         />
+        <StatCard label="Banidos" icon={<Ban />} value={counts.banidos} hint="Sem acesso ao painel, a evento e a saque. O saldo fica congelado." />
       </div>
 
       <Panel title="Lista de membros" titleId="lista-membros" className="overflow-hidden">
@@ -171,26 +184,30 @@ export function AdminMembers() {
             />
           </div>
           <div className="flex w-full flex-wrap gap-2 sm:w-auto" role="group" aria-label="Filtrar membros">
-            {MEMBER_FILTERS.map((key) => {
-              const on = filter === key;
-              return (
-                <button
-                  key={key}
-                  type="button"
-                  aria-pressed={on}
-                  onClick={() => changeFilter(key)}
-                  className={cn(
-                    "press inline-flex h-8 items-center gap-1.5 rounded-full border px-3 text-sm font-medium",
-                    on ? "border-foreground bg-foreground text-background" : "text-muted-foreground hover:bg-accent hover:text-foreground",
-                  )}
-                >
-                  {MEMBER_FILTER_LABELS[key]}
-                  <span className={cn("num text-xs", on ? "opacity-70" : "opacity-60")}>{counts[key]}</span>
-                </button>
-              );
-            })}
+            {MEMBER_FILTERS_PRIMARY.map((key) => (
+              <FilterChip
+                key={key}
+                filter={key}
+                count={counts[key]}
+                // "Precisam de atenção" fica aceso também quando o refino está ligado: o refino está dentro dele.
+                on={key === "atencao" ? isAttentionFilter(filter) : filter === key}
+                onClick={() => changeFilter(key)}
+              />
+            ))}
           </div>
         </div>
+
+        {/* Refino só existe dentro da atenção: fora dela seriam três chips sem pergunta que respondam. */}
+        {refining && (
+          <div className="refine-in flex flex-wrap items-center gap-2 border-b bg-muted/30 px-3 py-2 sm:pl-6">
+            <p className="text-xs text-muted-foreground">O que precisa de atenção</p>
+            <div className="flex flex-wrap gap-2" role="group" aria-label="Refinar quem precisa de atenção">
+              {MEMBER_FILTERS_ATTENTION.map((key) => (
+                <FilterChip key={key} filter={key} count={counts[key]} on={filter === key} small onClick={() => toggleRefine(key)} />
+              ))}
+            </div>
+          </div>
+        )}
 
         {error && (
           <p role="alert" className="border-b border-destructive/40 bg-destructive/10 px-4 py-3 text-sm">
@@ -315,6 +332,31 @@ export function AdminMembers() {
         }}
       />
     </TooltipProvider>
+  );
+}
+
+/**
+ * Chip de filtro (TASK-054). Rótulo + contagem do servidor; o estado ligado é preenchido (fundo sólido),
+ * não só colorido, porque o painel é B&W e "cor mais escura" não é estado legível.
+ *
+ * `small` é a linha de refino: mesma forma, um degrau menor, para ler como subordinada à linha de cima
+ * sem virar outro componente.
+ */
+function FilterChip({ filter, count, on, small, onClick }: { filter: MemberFilter; count: number; on: boolean; small?: boolean; onClick: () => void }) {
+  return (
+    <button
+      type="button"
+      aria-pressed={on}
+      onClick={onClick}
+      className={cn(
+        "press inline-flex items-center gap-1.5 rounded-full border font-medium whitespace-nowrap",
+        small ? "h-7 px-2.5 text-xs" : "h-8 px-3 text-sm",
+        on ? "border-foreground bg-foreground text-background" : "border-border bg-background text-muted-foreground hover:bg-accent hover:text-foreground",
+      )}
+    >
+      {MEMBER_FILTER_LABELS[filter]}
+      <span className={cn("num text-xs", on ? "opacity-70" : "opacity-60")}>{count}</span>
+    </button>
   );
 }
 

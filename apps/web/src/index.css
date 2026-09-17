@@ -229,6 +229,17 @@
 }
 
 @layer components {
+  /* Linha de refino dos filtros: aparece só dentro de "Precisam de atenção", 150ms para não parecer um salto. */
+  .refine-in {
+    transition:
+      opacity 150ms var(--ease-out),
+      transform 150ms var(--ease-out);
+    @starting-style {
+      opacity: 0;
+      transform: translateY(-4px);
+    }
+  }
+
   /* Nota nova entra sozinha na lista (as antigas não remontam): 200ms, só onde o olho já está. */
   .note-in {
     transition:
@@ -242,6 +253,7 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
+  .refine-in,
   .note-in {
     @starting-style {
       transform: none;

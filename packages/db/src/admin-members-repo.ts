@@ -38,8 +38,12 @@ export interface AdminMembersPage {
   members: AdminMember[];
   /** Total de membros no filtro atual (com a busca aplicada): é o que a paginação usa. */
   total: number;
-  /** Contagem de cada chip com a busca aplicada e sem o filtro, para o admin ver o que ganha ao trocar de chip. */
-  counts: { todos: number; nao_encontrados: number; sem_nick: number; banidos: number };
+  /**
+   * Contagem de cada chip com a busca aplicada e sem o filtro, para o admin ver o que ganha ao trocar de chip.
+   * Cada número sai do **mesmo predicado** que filtra a lista (`count(*) filter (where ...)` contra o `where`
+   * de baixo), então o chip nunca diz 3 e a lista mostra 5.
+   */
+  counts: Record<MemberFilter, number>;
 }
 
 /** Autor do banimento, para mostrar "banido por" sem uma consulta por linha (TASK-050). */
@@ -47,6 +51,21 @@ const bannedBy = alias(users, "banned_by_user");
 
 /** Nick vazio no banco conta como "sem nick" igual a null: quem importou sem apelido não fica escondido. */
 const withoutNick = () => or(isNull(users.gameNick), eq(users.gameNick, ""));
+
+const banned = () => isNotNull(users.bannedAt);
+const notBanned = () => isNull(users.bannedAt);
+const notFound = () => eq(users.albionStatus, "not_found");
+const leftGuild = () => isNotNull(users.leftGuildAt);
+
+/**
+ * Os três problemas que alguém precisa ir resolver, e só eles: nick errado, nick ausente e saída do servidor.
+ *
+ * `and not banned` é a decisão da TASK-054. Banimento é estado administrativo já resolvido — ninguém vai
+ * corrigir o nick de uma conta banida —, então conta banida não entra na fila de atenção nem nos refinos
+ * dela. Efeito colateral bom: `atencao` e `banidos` não se sobrepõem, e quem está banido **e** saiu do
+ * servidor aparece uma vez só, em `banidos` (e em `todos`, que é o único filtro que não esconde ninguém).
+ */
+const needsAttention = () => and(or(notFound(), withoutNick(), leftGuild()), notBanned());
 
 /**
  * Busca por nick do Albion ou usuário do Discord (AC#4). `lower(col) like '%termo%' escape '\'`:
@@ -57,14 +76,29 @@ function searchCondition(search: string): SQL {
   return sql`(lower(${users.gameNick}) like ${pattern} escape '\\' or lower(${users.discordUsername}) like ${pattern} escape '\\')`;
 }
 
-const filterCondition = (filter: MemberFilter): SQL | undefined =>
-  filter === "nao_encontrados"
-    ? eq(users.albionStatus, "not_found")
-    : filter === "sem_nick"
-      ? withoutNick()
-      : filter === "banidos"
-        ? isNotNull(users.bannedAt)
-        : undefined;
+/**
+ * `undefined` = sem `where` extra (só `todos`). Os refinos repetem o `and not banned` do grupo: entrar em
+ * "Precisam de atenção" e depois em "Sem nick" não pode ressuscitar as contas banidas que o grupo já tirou.
+ */
+const filterCondition = (filter: MemberFilter): SQL | undefined => {
+  switch (filter) {
+    case "atencao":
+      return needsAttention();
+    case "nao_encontrados":
+      return and(notFound(), notBanned());
+    case "sem_nick":
+      return and(withoutNick(), notBanned());
+    case "saiu":
+      return and(leftGuild(), notBanned());
+    case "banidos":
+      return banned();
+    default:
+      return undefined;
+  }
+};
+
+/** Zero em tudo: a resposta quando a busca não acha ninguém, sem inventar chave faltando. */
+const EMPTY_COUNTS: Record<MemberFilter, number> = { todos: 0, atencao: 0, sem_nick: 0, nao_encontrados: 0, saiu: 0, banidos: 0 };
 
 /**
  * Página da lista de membros do admin, com total e contagem por chip.
@@ -75,19 +109,21 @@ const filterCondition = (filter: MemberFilter): SQL | undefined =>
  */
 export async function listAdminMembers(db: Database, query: AdminMembersQuery): Promise<AdminMembersPage> {
   const search = query.search ? searchCondition(query.search) : undefined;
-  const notFound = eq(users.albionStatus, "not_found");
 
+  // Uma varredura só para os seis números, cada um com o predicado idêntico ao do filtro correspondente.
   const [counts] = await db
     .select({
       todos: sql<number>`count(*)::int`,
-      nao_encontrados: sql<number>`count(*) filter (where ${notFound})::int`,
-      sem_nick: sql<number>`count(*) filter (where ${withoutNick()})::int`,
-      banidos: sql<number>`count(*) filter (where ${isNotNull(users.bannedAt)})::int`,
+      atencao: sql<number>`count(*) filter (where ${needsAttention()})::int`,
+      sem_nick: sql<number>`count(*) filter (where ${filterCondition("sem_nick")})::int`,
+      nao_encontrados: sql<number>`count(*) filter (where ${filterCondition("nao_encontrados")})::int`,
+      saiu: sql<number>`count(*) filter (where ${filterCondition("saiu")})::int`,
+      banidos: sql<number>`count(*) filter (where ${banned()})::int`,
     })
     .from(users)
     .where(search);
 
-  const page = counts ?? { todos: 0, nao_encontrados: 0, sem_nick: 0, banidos: 0 };
+  const page = counts ?? EMPTY_COUNTS;
   const total = page[query.filter];
   if (total === 0) return { members: [], total, counts: page };
 

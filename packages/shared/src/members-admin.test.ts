@@ -5,22 +5,41 @@ import {
   MEMBER_PAGE_SIZE,
   MEMBER_PAGE_SIZE_MAX,
   MEMBER_SEARCH_MAX,
+  isAttentionFilter,
+  MEMBER_FILTER_LABELS,
+  MEMBER_FILTERS,
+  MEMBER_FILTERS_ATTENTION,
+  MEMBER_FILTERS_PRIMARY,
   memberPageCount,
   normalizeMemberSearch,
   parseMemberFilter,
   parseMemberPagination,
 } from "./members-admin.js";
 
-describe("filtro da lista de membros (TASK-043, AC#4)", () => {
+describe("filtro da lista de membros (TASK-043, AC#4; conjunto revisto na TASK-054)", () => {
   it("aceita os filtros conhecidos", () => {
-    expect(parseMemberFilter("todos")).toBe("todos");
-    expect(parseMemberFilter("nao_encontrados")).toBe("nao_encontrados");
-    expect(parseMemberFilter("sem_nick")).toBe("sem_nick");
-    expect(parseMemberFilter("banidos")).toBe("banidos");
+    for (const filter of MEMBER_FILTERS) expect(parseMemberFilter(filter)).toBe(filter);
   });
 
   it("valor desconhecido ou ausente cai em todos", () => {
     for (const value of ["", "expulsos", null, undefined, 7, {}]) expect(parseMemberFilter(value)).toBe("todos");
+  });
+
+  it("os dois níveis cobrem o conjunto inteiro, sem chip solto nem repetido (TASK-054, AC#2)", () => {
+    expect([...MEMBER_FILTERS_PRIMARY, ...MEMBER_FILTERS_ATTENTION].sort()).toEqual([...MEMBER_FILTERS].sort());
+    expect(MEMBER_FILTERS_PRIMARY).toContain("atencao");
+    expect(MEMBER_FILTERS_ATTENTION).not.toContain("banidos");
+  });
+
+  it("a linha de refino aparece na atenção e some fora dela", () => {
+    expect(isAttentionFilter("atencao")).toBe(true);
+    for (const filter of MEMBER_FILTERS_ATTENTION) expect(isAttentionFilter(filter)).toBe(true);
+    expect(isAttentionFilter("todos")).toBe(false);
+    expect(isAttentionFilter("banidos")).toBe(false);
+  });
+
+  it("todo filtro tem rótulo em PT-BR", () => {
+    for (const filter of MEMBER_FILTERS) expect(MEMBER_FILTER_LABELS[filter]).toBeTruthy();
   });
 });
 

@@ -5,14 +5,41 @@
  * (parâmetro de URL é entrada de usuário, nunca confiável) e nenhum dos dois inventa um default diferente.
  */
 
-/** Filtros da tela; valor vai cru na URL, então usa nome estável e sem acento. */
-export const MEMBER_FILTERS = ["todos", "nao_encontrados", "sem_nick", "banidos"] as const;
+/**
+ * Filtros da tela; o valor vai cru na URL, então usa nome estável e sem acento.
+ *
+ * **São exclusivos**: um filtro por vez, nunca combinados. A lista é uma fila de trabalho — o admin abre
+ * "quem precisa de atenção" e resolve, não monta interseções. Combinar viraria estado composto na URL e
+ * uma contagem por chip que depende do que mais está ligado; exclusivo mantém a promessa simples de que o
+ * número do chip é exatamente o número de linhas que ele devolve.
+ *
+ * Dois níveis, e não cinco chips soltos (TASK-054, decisão N6): `todos`, `atencao` e `banidos` são a
+ * pergunta de cima ("tem trabalho aqui?"); `sem_nick`, `nao_encontrados` e `saiu` refinam a atenção.
+ */
+export const MEMBER_FILTERS = ["todos", "atencao", "sem_nick", "nao_encontrados", "saiu", "banidos"] as const;
 export type MemberFilter = (typeof MEMBER_FILTERS)[number];
+
+/** Linha de cima dos chips: sempre visível. */
+export const MEMBER_FILTERS_PRIMARY = ["todos", "atencao", "banidos"] as const satisfies readonly MemberFilter[];
+
+/**
+ * Linha de refino, só aparece dentro da atenção. Os três podem se sobrepor entre si (quem não tem nick
+ * também pode ter saído), então a soma deles pode passar do total de `atencao` — cada um continua honesto
+ * sobre as próprias linhas, que é o que o chip promete.
+ */
+export const MEMBER_FILTERS_ATTENTION = ["sem_nick", "nao_encontrados", "saiu"] as const satisfies readonly MemberFilter[];
+
+/** O filtro pertence à família "precisa de atenção"? É o que decide se a linha de refino fica na tela. */
+export function isAttentionFilter(filter: MemberFilter): boolean {
+  return filter === "atencao" || (MEMBER_FILTERS_ATTENTION as readonly MemberFilter[]).includes(filter);
+}
 
 export const MEMBER_FILTER_LABELS: Record<MemberFilter, string> = {
   todos: "Todos",
-  nao_encontrados: "Não encontrados no Albion",
+  atencao: "Precisam de atenção",
   sem_nick: "Sem nick",
+  nao_encontrados: "Não encontrados no Albion",
+  saiu: "Saiu do servidor",
   banidos: "Banidos",
 };
 
