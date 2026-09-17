@@ -1,19 +1,18 @@
 import { useCallback, type ReactNode } from "react";
 import { Link } from "react-router";
-import { ArrowDownLeft, ArrowUpRight, CalendarDays, Check, Coins, Lock, Receipt, RefreshCw, RotateCcw, Scissors, SlidersHorizontal, Swords, TriangleAlert } from "lucide-react";
-import { LEDGER_ENTRY_KIND_LABELS, type LedgerEntryKind } from "@albion-hub/shared";
+import { ArrowUpRight, CalendarDays, Check, Coins, Lock, Receipt, RefreshCw, Swords, TriangleAlert } from "lucide-react";
 import { usePoll } from "@/api/use-poll";
 import { useWallet } from "@/api/WalletProvider";
 import { fetchMyStatement, type LedgerEntry, type Statement } from "@/api/wallet";
 import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { PageHeader, Panel, Pill, Silver, StatCard, StatusBadge, type Tone } from "@/components/display";
+import { PageHeader, Panel, Silver, StatCard, StatusBadge } from "@/components/display";
+import { LedgerTable } from "@/components/ledger";
 import { WithdrawDialog } from "@/components/WithdrawDialog";
 import { ErrorState } from "@/pages/MyWithdrawals";
-import { cn } from "@/lib/utils";
 import { formatDateTime } from "@/lib/format";
+import { cn } from "@/lib/utils";
 import { lastSplit, monthEarnings } from "@/lib/wallet";
 import { useMyNick } from "@/nick/api";
 
@@ -250,61 +249,11 @@ function ReservedBar({ total, reserved }: { total: bigint; reserved: bigint }) {
   );
 }
 
-/** Origem do lançamento (AC#1): ícone + rótulo PT-BR + tom, nunca só cor. */
-const kindMeta: Record<LedgerEntryKind, { icon: ReactNode; tone: Tone }> = {
-  split_payout: { icon: <ArrowDownLeft />, tone: "neutral" },
-  split_fee: { icon: <Scissors />, tone: "neutral" },
-  withdrawal: { icon: <ArrowUpRight />, tone: "info" },
-  reversal: { icon: <RotateCcw />, tone: "destructive" },
-  adjustment: { icon: <SlidersHorizontal />, tone: "warning" },
-};
-
 function Statement({ entries, hasMore }: { entries: LedgerEntry[]; hasMore: boolean }) {
-  const reversed = new Set(entries.map((e) => e.reversalOf).filter((id): id is string => !!id));
   return (
     <>
-      <Table>
-        <TableHeader>
-          <TableRow className="hover:bg-transparent">
-            <TableHead className="hidden sm:table-cell">Data</TableHead>
-            <TableHead>Lançamento</TableHead>
-            <TableHead className="hidden md:table-cell">Origem</TableHead>
-            <TableHead className="text-right">Valor</TableHead>
-          </TableRow>
-        </TableHeader>
-        <TableBody>
-          {entries.map((e) => {
-            const isReversed = reversed.has(e.id);
-            const meta = kindMeta[e.kind];
-            const label = LEDGER_ENTRY_KIND_LABELS[e.kind];
-            return (
-              <TableRow key={e.id}>
-                <TableCell className="num hidden text-sm text-muted-foreground sm:table-cell">{formatDateTime(e.createdAt)}</TableCell>
-                <TableCell className="w-full max-w-0 whitespace-normal">
-                  <p className={cn("truncate font-medium", isReversed && "text-muted-foreground line-through")}>{e.memo ?? label}</p>
-                  <p className={cn("truncate text-xs", e.kind === "reversal" ? "text-destructive" : "text-muted-foreground")}>
-                    <span className="sm:hidden">{formatDateTime(e.createdAt)} · </span>
-                    {e.memo ? label : "Sem descrição"}
-                    {isReversed && " · estornado depois"}
-                  </p>
-                </TableCell>
-                <TableCell className="hidden md:table-cell">
-                  <Pill tone={meta.tone} icon={meta.icon}>
-                    {label}
-                  </Pill>
-                </TableCell>
-                <TableCell className="text-right">
-                  <Silver
-                    value={e.amount}
-                    signed
-                    className={cn("font-semibold", isReversed ? "text-muted-foreground line-through" : e.amount > 0n ? "text-success" : "text-foreground")}
-                  />
-                </TableCell>
-              </TableRow>
-            );
-          })}
-        </TableBody>
-      </Table>
+      {/* Mesma tabela do extrato que a staff abre (TASK-051): uma fonte só pro que cada linha diz. */}
+      <LedgerTable entries={entries} />
       {hasMore && (
         <p className="border-t px-4 py-3 text-xs text-muted-foreground">
           Mostrando os 50 lançamentos mais recentes. Peça o histórico completo à staff.
