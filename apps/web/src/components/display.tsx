@@ -1,6 +1,6 @@
 import type { ReactNode } from "react";
 import { Check, Hourglass, PackageCheck, X } from "lucide-react";
-import { formatAmount, type Currency, type WithdrawalStatus } from "@albion-hub/shared";
+import { formatAmount, formatAmountShort, type Currency, type WithdrawalStatus } from "@albion-hub/shared";
 import { cn } from "@/lib/utils";
 
 /**
@@ -11,17 +11,30 @@ import { cn } from "@/lib/utils";
  * `--brand`, reservado a ela desde a TASK-055. Âmbar continua sendo só CTA e não aparece aqui. Quem
  * chama pode sobrescrever (valor estornado fica cinza, crédito fica verde) — o default é a moeda.
  *
- * Sinal explícito quando `signed`. Prata abrevia em contexto secundário; Buffunfa nunca (F6-5), e é o
- * `formatAmount` compartilhado que garante isso no painel e no bot ao mesmo tempo.
+ * Sinal explícito quando `signed`. `short` é para contexto apertado (o chip do header): prata abrevia
+ * para `1,48M`, Buffunfa **nunca** abrevia (F6-5) e sai cheia mesmo pedindo `short` — a regra mora no
+ * `formatAmountShort` compartilhado, que o bot usa também, então painel e Discord não divergem.
  */
-export function Amount({ value, currency, signed, className }: { value: bigint; currency: Currency; signed?: boolean; className?: string }) {
+export function Amount({
+  value,
+  currency,
+  signed,
+  short,
+  className,
+}: {
+  value: bigint;
+  currency: Currency;
+  signed?: boolean;
+  short?: boolean;
+  className?: string;
+}) {
   const negative = value < 0n;
   const abs = negative ? -value : value;
   const sign = signed ? (negative ? "−" : "+") : negative ? "−" : "";
   return (
     <span className={cn("num whitespace-nowrap", currency === "buffunfa" && "text-brand", className)}>
       {sign}
-      {formatAmount(abs, currency)}
+      {short ? formatAmountShort(abs, currency) : formatAmount(abs, currency)}
     </span>
   );
 }

@@ -32,8 +32,13 @@ describe("cursor do extrato", () => {
 });
 
 describe("parseLedgerPageQuery", () => {
-  it("aceita vazio", () => {
-    expect(parseLedgerPageQuery({})).toEqual({ ok: true });
+  it("aceita vazio, com 'todas as moedas' no default (F6-27)", () => {
+    expect(parseLedgerPageQuery({})).toEqual({ ok: true, currency: "all" });
+  });
+
+  it("aceita uma moeda e recusa moeda inventada em vez de ignorá-la", () => {
+    expect(parseLedgerPageQuery({ currency: "buffunfa" })).toEqual({ ok: true, currency: "buffunfa" });
+    expect(parseLedgerPageQuery({ currency: "ouro" })).toMatchObject({ ok: false });
   });
 
   it("aceita limite e cursor válidos", () => {
