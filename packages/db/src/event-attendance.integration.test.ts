@@ -143,6 +143,40 @@ describe.skipIf(!baseUrl)("Buffunfa por presença em evento (TASK-057, Postgres 
     expect((await getEvent(handle.db, event.id))!.roles.find((r) => r.name === "Tank")!.buffunfaValue).toBe("40");
   });
 
+  it("a janela começa na primeira entrada no canal, não no início do evento (TASK-073)", async () => {
+    const owner = await nextUser();
+    const dono = await nextUser();
+    const atrasado = await nextUser();
+    const { event, startedAt, finishedAt } = await finishedEvent(owner.id, "chan-janela", [
+      { userId: dono.id, roleName: "Tank" },
+      { userId: atrasado.id, roleName: "Tank" },
+    ]);
+
+    // O relato que originou a correção: call de menos de um minuto, e a pessoa ficou com 72,66% de
+    // presença mesmo tendo ficado do começo ao fim. Entre o evento começar e alguém entrar, o bot
+    // ainda cria o canal e arrasta gente da sala de espera — numa call curta esse intervalo é a maior
+    // parte da janela, e derrubava justamente quem estava lá o tempo todo.
+    const fimCurto = new Date(startedAt.getTime() + 50_000);
+    await handle.db.update(schema.events).set({ finishedAt: fimCurto }).where(eq(schema.events.id, event.id));
+    const abriuAcall = new Date(startedAt.getTime() + 16_000);
+    await voice(dono.discordId, "chan-janela", abriuAcall, fimCurto);
+    // Quem entrou na metade da call continua abaixo do corte: o denominador mudou, a regra não.
+    await voice(atrasado.discordId, "chan-janela", new Date(abriuAcall.getTime() + 17_000), fimCurto);
+
+    const slotId = await slotIdOf(event.id, "Tank");
+    expect(await setEventRoleBuffunfa(handle.db, event.id, slotId, 12n)).toEqual({ ok: true });
+
+    const preview = (await previewEventAttendance(handle.db, event.id))!;
+    expect(preview.windowMs).toBe(fimCurto.getTime() - abriuAcall.getTime());
+    expect(preview.rows.find((r) => r.userId === dono.id)).toMatchObject({ skip: null, amount: 12n });
+    expect(preview.rows.find((r) => r.userId === atrasado.id)!.skip).toBe("below_presence");
+
+    expect(await payEventAttendance(handle.db, event.id, { actorUserId: owner.id })).toMatchObject({ ok: true, alreadyPaid: false });
+    expect(await getLedgerBalance(handle.db, dono.id, "buffunfa")).toBe(12n);
+    expect(await getLedgerBalance(handle.db, atrasado.id, "buffunfa")).toBe(0n);
+    void finishedAt;
+  });
+
   it("paga cheio quem bateu 90% e nada a quem ficou abaixo, com o valor do fechamento (AC#3, AC#4, AC#6)", async () => {
     const owner = await nextUser();
     const cheio = await nextUser();

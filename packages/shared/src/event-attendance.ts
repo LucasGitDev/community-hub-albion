@@ -14,20 +14,16 @@ import { type SplitPresenceDto } from "./loot-split.js";
  * - o valor é **por role** e vale o do fechamento para todos daquela role (F6-9), então nada aqui
  *   olha para o instante da inscrição — só para a role;
  * - presença é **binária**: 90% ou mais do tempo de vida da call paga cheio, abaixo disso paga nada
- *   (F6-10). Não existe proporcional;
+ *   (F6-10). Não existe proporcional. "Tempo de vida da call" é medido a partir da **primeira entrada
+ *   no canal** (TASK-073), não do início do evento: entre um e outro o bot ainda está criando o canal
+ *   e arrastando gente, e contar esse intervalo derrubava quem ficou o evento inteiro. Quem monta a
+ *   janela é `eventCallWindowMs`, no repo — aqui ela chega pronta;
  * - evento sem canal de voz carimbado não paga a ninguém (F6-11), e o motivo aparece linha a linha
  *   em vez de a tabela vir vazia sem explicação.
  */
 
 /** Corte de presença em basis points do tempo de vida da call: 90% (F6-10). */
 export const ATTENDANCE_MIN_PRESENCE_BP = 9000;
-
-/** Tempo de vida da call: do start ao finish do evento, o mesmo relógio que a prata já usa (Q6). */
-export function attendanceWindowMs(startedAt: string | Date | null, finishedAt: string | Date | null): number {
-  if (!startedAt || !finishedAt) return 0;
-  const ms = new Date(finishedAt).getTime() - new Date(startedAt).getTime();
-  return ms > 0 ? ms : 0;
-}
 
 /** Presença em basis points da janela; 0 quando não houve janela medida. */
 export function attendancePresenceBp(presenceMs: number, windowMs: number): number {
