@@ -75,7 +75,6 @@ export function AdminMembers() {
    * `read Wallet` cru a mostraria pra todo membro logado: é o erro da TASK-027.
    */
   const canReadLedger = (userId: string) => ability.can("read", asSubject("Wallet", { userId }));
->>>>>>> b86f9ba (feat(web): leva a staff ao extrato do jogador pela lista de membros)
   // Staff bane quem está abaixo dela; banir staff ou admin é coisa de admin (a API recusa igual).
   const isAdmin = user.roles.includes("admin");
   /**
