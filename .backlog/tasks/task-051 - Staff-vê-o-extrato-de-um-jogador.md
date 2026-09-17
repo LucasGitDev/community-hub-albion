@@ -1,9 +1,11 @@
 ---
 id: TASK-051
 title: Staff vê o extrato de um jogador
-status: To Do
-assignee: []
+status: In Progress
+assignee:
+  - '@claude'
 created_date: '2026-09-17 02:19'
+updated_date: '2026-09-17 03:53'
 labels:
   - admin
   - web
@@ -39,3 +41,14 @@ Staff e admin conseguem abrir o ledger de um jogador específico a partir da lis
 - [ ] #7 Notas e final summary com evidências; commits Conventional atômicos sem co-autor
 - [ ] #8 PR merged na main com quality gate verde; branch e worktree removidos
 <!-- DOD:END -->
+
+## Implementation Plan
+
+<!-- SECTION:PLAN:BEGIN -->
+1. packages/db: listLedgerEntriesWithAuthor(userId, keyset) — mesmo keyset de listLedgerEntries, com leftJoin users em created_by para o nome do autor (memberNick).
+2. packages/shared: MemberLedgerEntryDto = LedgerEntryDto + author {id,name}|null; reaproveita encodeLedgerCursor/parseLedgerPageQuery/LEDGER_ENTRY_KIND_LABELS.
+3. apps/server: MemberLedgerController GET /api/admin/members/:userId/ledger — saldo (getWithdrawalBalance, reserva = só pending) + extrato paginado. Permissão: @Authorize('read','Wallet') no tipo + checagem de condição no handler com asSubject('Wallet',{userId: alvo}) — member e caller têm a regra condicionada ao próprio id e levam 403; staff/admin têm read Wallet sem condição. Prata sai string.
+4. apps/web: extrai a tabela de extrato do Wallet.tsx para components/ledger.tsx (kindMeta + LedgerTable) e reusa nos dois; novo MemberLedgerDialog aberto pela linha de AdminMembers (ação 'Ver extrato'), com saldo/reservado/disponível, coluna Autor+motivo, 'Carregar mais' por cursor, estados vazio/carregando/erro. BigInt na borda.
+5. Testes: http test do controller (staff/admin 200, member/caller/estranho 403, paginação, autor, manual/maintenance), unit do repo, e2e admin-members-ledger.spec.ts com screenshots 1280/400.
+6. security-review + task-done-check + pnpm quality.
+<!-- SECTION:PLAN:END -->
