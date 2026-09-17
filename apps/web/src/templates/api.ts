@@ -12,10 +12,16 @@ export const updateEventRole = (id: string, body: { name?: string; description?:
 export const deleteEventRole = (id: string) => api<void>(`/api/event-roles/${id}`, { method: "DELETE" });
 
 /**
- * `defaultEntryFee` sai daqui como **string** (Q20): o schema compartilhado devolve `bigint`, e
- * `JSON.stringify` não sabe serializar bigint — a moeda volta a ser texto no fio, como no resto da API.
+ * Valor inteiro vai no fio como **string** (Q20): os schemas compartilhados devolvem `bigint` e
+ * `JSON.stringify` não sabe serializar bigint. Vale para a taxa de entrada (TASK-058) e para a faixa
+ * de Buffunfa por role (TASK-057) — a conversão mora aqui, num lugar só, que é onde o corpo é montado.
  */
-const templateBody = (body: EventTemplateInput) => JSON.stringify({ ...body, defaultEntryFee: body.defaultEntryFee.toString() });
+const templateBody = (input: EventTemplateInput) =>
+  JSON.stringify({
+    ...input,
+    defaultEntryFee: input.defaultEntryFee.toString(),
+    roles: input.roles.map((r) => ({ ...r, buffunfaMin: r.buffunfaMin.toString(), buffunfaMax: r.buffunfaMax.toString() })),
+  });
 
 export const createEventTemplate = (body: EventTemplateInput) => api<EventTemplateDto>("/api/event-templates", { method: "POST", body: templateBody(body) });
 export const updateEventTemplate = (id: string, body: EventTemplateInput) => api<EventTemplateDto>(`/api/event-templates/${id}`, { method: "PATCH", body: templateBody(body) });
