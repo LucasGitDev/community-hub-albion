@@ -1,10 +1,10 @@
 ---
 id: TASK-064
 title: Decidir como role e build convivem por tipo de conteúdo
-status: In Progress
+status: To Do
 assignee: []
 created_date: '2026-09-17 17:06'
-updated_date: '2026-09-17 17:36'
+updated_date: '2026-09-17 17:37'
 labels:
   - congelada
   - eventos
