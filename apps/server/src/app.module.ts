@@ -11,6 +11,7 @@ import { MaintenanceModule } from "./maintenance/maintenance.module.js";
 import { MembersModule } from "./members/members.module.js";
 import type { MemberImporter } from "./members/member-importer.token.js";
 import { NickModule } from "./nick/nick.module.js";
+import { ShopModule } from "./shop/shop.module.js";
 import { TemplatesModule } from "./templates/templates.module.js";
 import { serveSpa } from "./web/spa.js";
 
@@ -29,7 +30,7 @@ export class AppModule {
   static register(env: Env, options: AppModuleOptions = { bot: true }): DynamicModule {
     return {
       module: AppModule,
-      imports: [DbModule.register(env.DATABASE_URL), EconomyModule.register(env), AuthModule.register(env, options.memberImporter), NickModule.register(env), MembersModule.register(env), TemplatesModule.register(env), EventsModule.register(env), ...(options.bot ? [BotModule.register(env), CleanupModule.register()] : []), ...maintenance(env)],
+      imports: [DbModule.register(env.DATABASE_URL), EconomyModule.register(env), AuthModule.register(env, options.memberImporter), NickModule.register(env), MembersModule.register(env), TemplatesModule.register(env), EventsModule.register(env), ShopModule.register(env), ...(options.bot ? [BotModule.register(env), CleanupModule.register()] : []), ...maintenance(env)],
       controllers: [HealthController],
     };
   }
