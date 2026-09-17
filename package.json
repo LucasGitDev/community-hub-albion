@@ -21,7 +21,8 @@
     "db:migrate": "pnpm --filter @albion-hub/db db:migrate",
     "ship": "node scripts/local-pipeline.mjs",
     "ship:gate": "node scripts/local-pipeline.mjs gate",
-    "ship:deploy": "node scripts/local-pipeline.mjs deploy"
+    "ship:deploy": "node scripts/local-pipeline.mjs deploy",
+    "ship:pr": "node scripts/local-pipeline.mjs gate --report"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",

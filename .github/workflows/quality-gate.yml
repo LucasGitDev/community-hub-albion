@@ -16,6 +16,7 @@ on:
 permissions:
   contents: read
   pull-requests: write
+  statuses: write
 
 concurrency:
   group: quality-${{ github.ref }}
@@ -23,6 +24,10 @@ concurrency:
 
 jobs:
   check:
+    # PR do próprio repositório é validado pelo gate local, que publica o status `summary`
+    # (ver scripts/local-pipeline.mjs). Aqui roda o que precisa de ambiente neutro: push na main
+    # (verificação independente depois do merge) e PR de fork (código de fora, nunca na máquina de ninguém).
+    if: github.event_name == 'push' || github.event.pull_request.head.repo.full_name != github.repository
     name: ${{ matrix.check }}
     runs-on: ubuntu-latest
     # Postgres real para os testes de integração do @albion-hub/db (roda em toda a matriz por simplicidade;
@@ -68,6 +73,10 @@ jobs:
           if-no-files-found: ignore
 
   e2e:
+    # PR do próprio repositório é validado pelo gate local, que publica o status `summary`
+    # (ver scripts/local-pipeline.mjs). Aqui roda o que precisa de ambiente neutro: push na main
+    # (verificação independente depois do merge) e PR de fork (código de fora, nunca na máquina de ninguém).
+    if: github.event_name == 'push' || github.event.pull_request.head.repo.full_name != github.repository
     runs-on: ubuntu-latest
     # Login real no painel (TASK-010) exige sessão no Postgres.
     services:
@@ -113,6 +122,10 @@ jobs:
           if-no-files-found: ignore
 
   image:
+    # PR do próprio repositório é validado pelo gate local, que publica o status `summary`
+    # (ver scripts/local-pipeline.mjs). Aqui roda o que precisa de ambiente neutro: push na main
+    # (verificação independente depois do merge) e PR de fork (código de fora, nunca na máquina de ninguém).
+    if: github.event_name == 'push' || github.event.pull_request.head.repo.full_name != github.repository
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -126,9 +139,11 @@ jobs:
           path: .quality/image.json
           if-no-files-found: ignore
 
-  summary:
+  # Nome diferente de `summary` de propósito: o check obrigatório do ruleset é o **status** `summary`,
+  # publicado no fim deste job ou pelo gate local. Job pulado vira check "skipped", que travaria o PR.
+  gate-summary:
     needs: [check, e2e, image]
-    if: always()
+    if: always() && (github.event_name == 'push' || github.event.pull_request.head.repo.full_name != github.repository)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -149,5 +164,16 @@ jobs:
         with:
           header: quality-gate
           path: .quality/summary.md
+      - name: Publica o status `summary`
+        if: always()
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+          STATE: ${{ steps.gate.outputs.exit == '0' && 'success' || 'failure' }}
+        run: |
+          gh api -X POST "repos/${{ github.repository }}/statuses/$SHA" \
+            -f state="$STATE" -f context=summary \
+            -f description="quality gate (GitHub Actions)" \
+            -f target_url="${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}" > /dev/null
       - if: steps.gate.outputs.exit != '0'
         run: exit 1
