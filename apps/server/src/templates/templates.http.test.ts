@@ -173,6 +173,23 @@ describe.skipIf(!baseUrl)("catálogo de roles e templates HTTP (TASK-020, Q8)", 
     expect((list.body.templates as EventTemplateDto[]).find((t) => t.id === tpl.id)).toMatchObject({ totalSlots: 7, active: false });
   });
 
+  it("taxa de entrada do template nasce zerada e sobrevive a um PATCH que não fala dela (TASK-058, AC#1)", async () => {
+    const tank = await roleId("Tank");
+    const body = { name: "Disputado", description: null, minPartySize: 1, maxPartySize: null, roles: [{ roleId: tank, slots: 1 }] };
+    const created = await send("post", "/api/event-templates", staff, body);
+    expect(created.status).toBe(201);
+    // Nasce zerado: o template não decide quanto custa entrar (F6-12).
+    expect((created.body as EventTemplateDto).defaultEntryFee).toBe("0");
+    const id = (created.body as EventTemplateDto).id;
+
+    expect((await send("patch", `/api/event-templates/${id}`, staff, { defaultEntryFee: "40" })).body.defaultEntryFee).toBe("40");
+    // O PATCH de outro campo **não** zera a taxa: era o jeito mais fácil de perder a taxa em silêncio.
+    expect((await send("patch", `/api/event-templates/${id}`, staff, { name: "Disputado v2" })).body).toMatchObject({ name: "Disputado v2", defaultEntryFee: "40" });
+    expect((await send("patch", `/api/event-templates/${id}`, staff, { defaultEntryFee: "0" })).body.defaultEntryFee).toBe("0");
+    expect((await send("patch", `/api/event-templates/${id}`, staff, { defaultEntryFee: "-1" })).status).toBe(400);
+    expect((await send("patch", `/api/event-templates/${id}`, staff, { defaultEntryFee: 10 })).status).toBe(400);
+  });
+
   it("role em uso por template não pode ser apagada: 409 PT-BR; depois de liberar, apaga (AC#3)", async () => {
     const created = await send("post", "/api/event-roles", staff, { name: "Arqueiro" });
     const tank = await roleId("Tank");
