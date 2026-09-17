@@ -1,6 +1,6 @@
 import type { ReactNode } from "react";
-import { Check, Hourglass, PackageCheck, X } from "lucide-react";
-import { formatAmount, formatAmountShort, type Currency, type WithdrawalStatus } from "@albion-hub/shared";
+import { Check, Hand, Hourglass, PackageCheck, RotateCcw, X } from "lucide-react";
+import { formatAmount, formatAmountShort, SHOP_ORDER_STATUS_LABELS, type Currency, type ShopOrderStatus, type WithdrawalStatus } from "@albion-hub/shared";
 import { cn } from "@/lib/utils";
 
 /**
@@ -77,6 +77,34 @@ export function Pill({ tone, icon, children, className }: { tone: Tone; icon?: R
 
 export function StatusBadge({ status }: { status: WithdrawalStatus }) {
   const m = statusMeta[status];
+  return (
+    <Pill tone={m.tone} icon={m.icon}>
+      {m.label}
+    </Pill>
+  );
+}
+
+/**
+ * Pílula de estado do pedido da loja (TASK-060). Mora aqui, junto da do saque, porque a fila da staff e a
+ * lista "Meus pedidos" do membro precisam dizer a mesma coisa da mesma forma — duas versões divergiriam
+ * na primeira mudança, e aí a conversa entre staff e membro passaria a ter duas verdades.
+ *
+ * Os tons seguem a paleta (doc-009, TASK-055): estado que espera é `warning`, estado em andamento é
+ * `info`, fim bom é `success`, fim ruim é `destructive`. `refunded` não é um estado do pedido — é o
+ * pedido entregue que ganhou um estorno (F6-19), e a tela precisa dizer isso em vez de continuar
+ * mostrando só "entregue".
+ */
+const shopStatusMeta: Record<ShopOrderStatus | "refunded", { label: string; icon: ReactNode; tone: Tone }> = {
+  reserved: { label: SHOP_ORDER_STATUS_LABELS.reserved, icon: <Hourglass strokeWidth={2.25} />, tone: "warning" },
+  claimed: { label: SHOP_ORDER_STATUS_LABELS.claimed, icon: <Hand strokeWidth={2.25} />, tone: "info" },
+  delivered: { label: SHOP_ORDER_STATUS_LABELS.delivered, icon: <PackageCheck strokeWidth={2.25} />, tone: "success" },
+  cancelled: { label: SHOP_ORDER_STATUS_LABELS.cancelled, icon: <X strokeWidth={2.5} />, tone: "neutral" },
+  rejected: { label: SHOP_ORDER_STATUS_LABELS.rejected, icon: <X strokeWidth={2.5} />, tone: "destructive" },
+  refunded: { label: "estornado", icon: <RotateCcw strokeWidth={2.25} />, tone: "destructive" },
+};
+
+export function ShopOrderBadge({ status, refunded }: { status: ShopOrderStatus; refunded?: boolean }) {
+  const m = shopStatusMeta[refunded ? "refunded" : status];
   return (
     <Pill tone={m.tone} icon={m.icon}>
       {m.label}

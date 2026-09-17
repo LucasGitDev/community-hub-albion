@@ -12,6 +12,7 @@ import { AdminRoles } from "./pages/AdminRoles";
 import { Events } from "./pages/Events";
 import { WalletProvider } from "./api/WalletProvider";
 import { QueueProvider } from "./api/QueueProvider";
+import { ShopQueueProvider } from "./api/ShopQueueProvider";
 import { Login } from "./pages/Login";
 import { MyWithdrawals } from "./pages/MyWithdrawals";
 import { Profile } from "./pages/Profile";
@@ -21,6 +22,7 @@ import { StaffMembers } from "./pages/StaffMembers";
 import { StaffEvents } from "./pages/StaffEvents";
 import { StaffRoles } from "./pages/StaffRoles";
 import { StaffTemplates } from "./pages/StaffTemplates";
+import { StaffShopOrders } from "./pages/StaffShopOrders";
 import { StaffWithdrawals } from "./pages/StaffWithdrawals";
 import { Wallet } from "./pages/Wallet";
 import { ThemeProvider, useTheme } from "./theme/theme";
@@ -38,7 +40,10 @@ createRoot(document.getElementById("root")!).render(
                 <WalletProvider>
                   {/* QueueProvider: fila de saques da staff (TASK-032); não busca nada sem a permissão. */}
                   <QueueProvider>
-                    <AppShell />
+                    {/* ShopQueueProvider: fila de pedidos da loja (TASK-060); sem `shop:fulfill` não busca nada. */}
+                    <ShopQueueProvider>
+                      <AppShell />
+                    </ShopQueueProvider>
                   </QueueProvider>
                 </WalletProvider>
               </RequireAuth>
@@ -59,6 +64,15 @@ createRoot(document.getElementById("root")!).render(
               element={
                 <RequirePermission action="approve" subject="Withdrawal">
                   <StaffWithdrawals />
+                </RequirePermission>
+              }
+            />
+            {/* Fila de pedidos da loja (TASK-060): `shop:fulfill`, hoje no bloco staff (F6-25). */}
+            <Route
+              path="/staff/pedidos"
+              element={
+                <RequirePermission action="fulfill" subject="ShopOrder">
+                  <StaffShopOrders />
                 </RequirePermission>
               }
             />

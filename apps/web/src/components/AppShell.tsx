@@ -1,12 +1,13 @@
 import { ROLE_LABELS, type Action, type SubjectType } from "@albion-hub/shared";
 import { NavLink, Outlet, useLocation } from "react-router";
-import { CalendarPlus, CalendarRange, Coins, Sparkles, LayoutTemplate, HandCoins, CircleUser, KeyRound, LogOut, ScrollText, Shield, Store, Swords, Users, UsersRound, Vault } from "lucide-react";
+import { CalendarPlus, CalendarRange, Coins, Sparkles, LayoutTemplate, HandCoins, CircleUser, KeyRound, LogOut, PackageCheck, ScrollText, Shield, Store, Swords, Users, UsersRound, Vault } from "lucide-react";
 import type { ReactNode } from "react";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import { useAuth, useCurrentUser } from "@/auth/AuthProvider";
 import { Amount } from "@/components/display";
 import { useWallet } from "@/api/WalletProvider";
+import { useShopOrderQueue } from "@/api/ShopQueueProvider";
 import { useWithdrawalQueue } from "@/api/QueueProvider";
 import { ThemeToggle } from "@/theme/theme";
 
@@ -27,11 +28,14 @@ export function AppShell() {
   // as telas leem: o contador do menu nunca diverge do número que a fila mostra.
   const { balance, balances, withdrawals } = useWallet();
   const { items: queueItems } = useWithdrawalQueue();
+  const { orders: shopQueue } = useShopOrderQueue();
   const { pathname } = useLocation();
   const allowed = (item: NavItem) => !item.can || ability.can(item.can[0], item.can[1]);
 
   const myOpen = withdrawals.filter((w) => w.status === "pending" || w.status === "approved").length;
   const queue = queueItems.filter((w) => w.status === "pending").length;
+  // O contador da loja conta o que ainda ninguém pegou: pedido já `claimed` tem dono e não é trabalho novo.
+  const shopOpen = shopQueue.filter((o) => o.status === "reserved").length;
 
   const personal: NavItem[] = [
     { to: "/carteira", label: "Carteira", icon: <Coins /> },
@@ -43,6 +47,7 @@ export function AppShell() {
   const management = (
     [
       { to: "/staff/saques", label: "Fila de saques", icon: <Vault />, can: ["approve", "Withdrawal"], count: queue },
+      { to: "/staff/pedidos", label: "Fila de pedidos", icon: <PackageCheck />, can: ["fulfill", "ShopOrder"], count: shopOpen },
       { to: "/staff/eventos", label: "Central de eventos", icon: <CalendarPlus />, can: ["create", "Event"] },
       { to: "/staff/templates", label: "Templates", icon: <LayoutTemplate />, can: ["update", "EventTemplate"] },
       { to: "/staff/roles", label: "Roles", icon: <Shield />, can: ["update", "EventTemplate"] },

@@ -1,12 +1,13 @@
 import { useCallback, useState } from "react";
 import { toast } from "sonner";
 import { EyeOff, PackageOpen, Pencil, Plus, ShoppingBag, Sparkles, Store } from "lucide-react";
-import { checkShopPurchase, formatAmount, isSoldOut, SHOP_CURRENCY, SHOP_ORDER_STATUS_LABELS, shopRefusalMessage } from "@albion-hub/shared";
+import { canOwnerCancelShopOrder, checkShopPurchase, formatAmount, isRefundedShopOrder, isSoldOut, SHOP_CURRENCY, shopRefusalMessage } from "@albion-hub/shared";
 import { useCurrentUser } from "@/auth/AuthProvider";
 import { errorText } from "@/api/http";
 import { usePoll } from "@/api/use-poll";
 import { buyShopItem, fetchShopCatalog, setShopItemPublished, type ShopBalance, type ShopCatalog, type ShopItem, type ShopOrder } from "@/api/shop";
-import { Amount, EmptyState, PageHeader, Panel, Pill } from "@/components/display";
+import { cancelShopOrder } from "@/api/shop-queue";
+import { Amount, EmptyState, PageHeader, Panel, Pill, ShopOrderBadge } from "@/components/display";
 import { ShopItemDialog } from "@/components/ShopItemDialog";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogClose, DialogContent, DialogDescription, DialogTitle } from "@/components/ui/dialog";
@@ -41,7 +42,7 @@ export function Shop() {
   const items = data?.items ?? [];
   const orders = data?.orders ?? [];
   const balance = data?.balance ?? null;
-  const waiting = orders.filter((o) => o.status === "reserved");
+  const waiting = orders.filter((o) => o.status === "reserved" || o.status === "claimed");
 
   return (
     <>
@@ -81,7 +82,7 @@ export function Shop() {
         <Panel title="Meus pedidos" titleId="meus-pedidos" className="mt-8">
           <ul aria-label="Meus pedidos" className="divide-y">
             {orders.map((order) => (
-              <OrderRow key={order.id} order={order} />
+              <OrderRow key={order.id} order={order} onChanged={poll.refresh} />
             ))}
           </ul>
         </Panel>
@@ -276,9 +277,40 @@ function BuyDialog({ item, balance, disabled, onBought }: { item: ShopItem; bala
   );
 }
 
-function OrderRow({ order }: { order: ShopOrder }) {
+/**
+ * Um pedido meu. O estado é a pílula da direita, e o único botão que existe aqui é o de desistir — e ele
+ * só existe enquanto ninguém da staff pegou o pedido (F6-24): depois de `claimed` alguém já pode estar no
+ * jogo com o item na mão, e aí quem encerra é a staff.
+ */
+function OrderRow({ order, onChanged }: { order: ShopOrder; onChanged: () => void }) {
+  const [busy, setBusy] = useState(false);
+  const refunded = isRefundedShopOrder(order);
+  const canCancel = canOwnerCancelShopOrder(order.status);
+
+  const cancel = async () => {
+    if (busy) return;
+    setBusy(true);
+    try {
+      await cancelShopOrder(order.id);
+      toast.success("Pedido cancelado", { description: `${formatAmount(order.price, SHOP_CURRENCY)} de volta no seu saldo.` });
+      onChanged();
+    } catch (e) {
+      // A staff pode ter pegado o pedido entre a tela e o clique: a frase do 403 vem pronta da API.
+      toast.error("Pedido não cancelado", { description: errorText(e, "Não foi possível cancelar agora. Atualize a página.") });
+      onChanged();
+    } finally {
+      setBusy(false);
+    }
+  };
+
   return (
-    <li className={cn("flex flex-wrap items-center justify-between gap-x-6 gap-y-1 px-4 py-3", order.status === "reserved" && "shadow-[inset_3px_0_0_var(--warning)]")}>
+    <li
+      className={cn(
+        "flex flex-wrap items-center justify-between gap-x-6 gap-y-2 px-4 py-3",
+        order.status === "reserved" && "shadow-[inset_3px_0_0_var(--warning)]",
+        order.status === "claimed" && "shadow-[inset_3px_0_0_var(--info)]",
+      )}
+    >
       <div className="min-w-0">
         <p className="font-medium break-words">{order.itemName}</p>
         <p className="text-sm text-muted-foreground">
@@ -287,8 +319,17 @@ function OrderRow({ order }: { order: ShopOrder }) {
         </p>
       </div>
       <div className="flex items-center gap-3">
-        <Amount value={order.price} currency={SHOP_CURRENCY} className={cn("font-semibold", order.status === "cancelled" && "text-muted-foreground line-through")} />
-        <Pill tone={order.status === "reserved" ? "warning" : order.status === "delivered" ? "success" : "neutral"}>{SHOP_ORDER_STATUS_LABELS[order.status]}</Pill>
+        <Amount
+          value={order.price}
+          currency={SHOP_CURRENCY}
+          className={cn("font-semibold", (order.status === "cancelled" || order.status === "rejected" || refunded) && "text-muted-foreground line-through")}
+        />
+        <ShopOrderBadge status={order.status} refunded={refunded} />
+        {canCancel && (
+          <Button variant="ghost" size="sm" disabled={busy} aria-label={`Cancelar pedido de ${order.itemName}`} onClick={() => void cancel()}>
+            Cancelar
+          </Button>
+        )}
       </div>
     </li>
   );
