@@ -88,6 +88,11 @@ describe("loja: schemas (AC#1)", () => {
     expect(shopItemCreateSchema.parse({ name: "Bolsa T8", price: 1000, stock: 0 }).stock).toBe(0);
   });
 
+  it("recusa preço acima do teto: 400 explicado em vez de 500 do banco", () => {
+    expect(shopItemCreateSchema.safeParse({ name: "x", price: "999999999999999999999" }).success).toBe(false);
+    expect(shopItemCreateSchema.safeParse({ name: "x", price: "1000000000" }).success).toBe(true);
+  });
+
   it("recusa preço zero, negativo, fracionário e nome em branco", () => {
     expect(shopItemCreateSchema.safeParse({ name: "x", price: "0" }).success).toBe(false);
     expect(shopItemCreateSchema.safeParse({ name: "x", price: "-5" }).success).toBe(false);

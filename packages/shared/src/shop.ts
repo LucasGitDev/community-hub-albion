@@ -81,6 +81,11 @@ export const SHOP_ITEM_NAME_MAX = 80;
 export const SHOP_ITEM_DESCRIPTION_MAX = 500;
 /** Teto de estoque: é contagem manual da staff, não inventário de verdade. */
 export const SHOP_ITEM_STOCK_MAX = 100_000;
+/**
+ * Teto de preço. Não é regra de produto — é o que faz um preço absurdo virar 400 explicado em vez de
+ * estourar o `int8` do banco e voltar 500 mudo. Buffunfa é de unidade/dezena a milhares (F6-5).
+ */
+export const SHOP_ITEM_PRICE_MAX = 1_000_000_000n;
 
 /** Preço em Buffunfa: inteiro positivo (Q20), aceito como número seguro, string de dígitos ou bigint. */
 const price = z
@@ -101,7 +106,8 @@ const price = z
     }
     return BigInt(raw);
   })
-  .refine((v) => v > 0n, "O preço precisa ser maior que zero.");
+  .refine((v) => v > 0n, "O preço precisa ser maior que zero.")
+  .refine((v) => v <= SHOP_ITEM_PRICE_MAX, `O preço vai até ${SHOP_ITEM_PRICE_MAX.toString()} de Buffunfa.`);
 
 /** Estoque: inteiro >= 0, ou `null` para ilimitado (F6-17: estoque é **opcional**). */
 const stock = z
