@@ -119,6 +119,16 @@ const envSchema = z.object({
     (value) => (typeof value === "string" && value.trim() === "" ? undefined : typeof value === "string" ? value.trim() : value),
     z.enum(ALBION_REGIONS, { error: "deve ser americas, europe ou asia (ou vazio para desligar)" }).optional(),
   ),
+  /**
+   * Segredo do namespace de manutenção (TASK-048, G5). Ausente ou vazio = namespace **desligado**:
+   * nenhuma rota de /api/maintenance é registrada. Não existe default nem fallback — é de propósito,
+   * porque essas rotas criam prata em produção. Mínimo de 32 caracteres para não caber em força bruta.
+   * O valor nunca aparece em mensagem de erro (o schema só fala do tamanho, nunca do conteúdo).
+   */
+  MAINTENANCE_TOKEN: z.preprocess(
+    (value) => (typeof value === "string" && value.trim() === "" ? undefined : typeof value === "string" ? value.trim() : value),
+    z.string().min(32, { error: "deve ter pelo menos 32 caracteres (ou ficar vazia para desligar o namespace de manutenção)" }).optional(),
+  ),
   NODE_ENV: z.enum(["development", "test", "production"], { error: "deve ser development, test ou production" }).default("development"),
 }).refine((env) => !env.DISCORD_BOT_ENABLED || env.DISCORD_MEMBER_ROLE_ID !== undefined, {
   error: "obrigatória com DISCORD_BOT_ENABLED=true",
