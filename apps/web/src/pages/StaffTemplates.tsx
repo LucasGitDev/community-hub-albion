@@ -598,7 +598,7 @@ function ImportPreview({ template, newRoles }: { template: EventTemplateYaml; ne
         {template.roles.map((r) => {
           const isNew = newRoles.includes(r.name);
           return (
-            <li key={r.name} className={`flex h-6 items-center gap-1.5 rounded-full border px-2 text-xs ${isNew ? "border-brand/50 text-brand" : ""}`}>
+            <li key={r.name} className={`flex h-6 items-center gap-1.5 rounded-full border px-2 text-xs ${isNew ? "border-info/50 text-info" : ""}`}>
               <span className="num font-semibold">{r.slots}</span>
               {r.name}
               {isNew && <Sparkles className="size-3" aria-hidden />}
@@ -608,7 +608,7 @@ function ImportPreview({ template, newRoles }: { template: EventTemplateYaml; ne
       </ul>
       {newRoles.length > 0 && (
         <p className="mt-2 flex items-start gap-1.5 text-xs text-muted-foreground">
-          <Sparkles className="mt-0.5 size-3 shrink-0 text-brand" aria-hidden />
+          <Sparkles className="mt-0.5 size-3 shrink-0 text-info" aria-hidden />
           <span>
             {newRoles.length === 1 ? "Esta role será criada" : `Estas ${newRoles.length} roles serão criadas`} no catálogo junto com o template: {newRoles.join(", ")}.
           </span>

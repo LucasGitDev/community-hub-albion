@@ -1,10 +1,11 @@
 ---
 id: TASK-055
 title: 'Inverter a paleta: dourado vira Buffunfa, âmbar vira CTA'
-status: To Do
-assignee: []
+status: In Progress
+assignee:
+  - '@claude'
 created_date: '2026-09-17 17:03'
-updated_date: '2026-09-17 17:08'
+updated_date: '2026-09-17 17:18'
 labels: []
 milestone: m-6
 dependencies: []
@@ -40,3 +41,12 @@ Hoje o token --brand é o dourado e serve de CTA primário e número-chave (TASK
 - [ ] #7 Notas e final summary com evidências; commits Conventional atômicos sem co-autor
 - [ ] #8 PR merged na main com quality gate verde; branch e worktree removidos
 <!-- DOD:END -->
+
+## Implementation Plan
+
+<!-- SECTION:PLAN:BEGIN -->
+1. Separar os três papéis em três matizes: --brand vira ouro amarelo de croma baixo (Buffunfa), --primary/--ring ganham valor próprio em âmbar alaranjado (CTA), --warning perde croma para virar selo de estado.
+2. Prata não ganha token: vira --foreground, o cinza que o tema já tem.
+3. Revisar os 16 usos de brand e os 26 de warning, reclassificando cada um pelo papel novo (moeda x ação x estado).
+4. Gate + screenshots antes/depois em 1280 e 400 nas telas que usam as três cores.
+<!-- SECTION:PLAN:END -->

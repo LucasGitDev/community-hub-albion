@@ -94,7 +94,7 @@ function MemberLedger({ member }: { member: { id: string; name: string } }) {
           label="Disponível"
           icon={<Coins />}
           emphasis
-          value={balance ? <Silver value={balance.available} className={cn("text-brand", negative && "text-destructive")} /> : <Skeleton className="h-6 w-24" />}
+          value={balance ? <Silver value={balance.available} className={cn(negative && "text-destructive")} /> : <Skeleton className="h-6 w-24" />}
         />
         <Figure label="Reservado" icon={<Lock />} value={balance ? <Silver value={balance.reserved} /> : <Skeleton className="h-6 w-20" />} hint="Em análise" />
         <Figure label="Saldo total" icon={<Wallet />} value={balance ? <Silver value={balance.balance} /> : <Skeleton className="h-6 w-20" />} />

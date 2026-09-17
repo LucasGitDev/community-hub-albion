@@ -74,7 +74,7 @@ function Identity({ user, state }: { user: ReturnType<typeof useCurrentUser>["us
         <dl className="grid shrink-0 grid-cols-2 gap-px overflow-hidden rounded-lg border bg-border sm:w-72">
           <div className="bg-card p-3">
             <dt className="text-xs text-muted-foreground">Disponível pra saque</dt>
-            <dd className="mt-1 text-xl font-semibold text-brand">
+            <dd className="mt-1 text-xl font-semibold">
               {balance ? <Silver value={balance.available} /> : <Skeleton className="h-6 w-20" />}
             </dd>
           </div>
