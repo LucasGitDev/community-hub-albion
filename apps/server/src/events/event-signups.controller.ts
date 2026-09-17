@@ -63,6 +63,9 @@ export class EventSignupsController {
     assertEventEditable(event);
     const result = await this.signups.join(event.id, auth.user.id, parsed.data.slotId);
     if (result.ok) return result.signup;
+    // Banido não se inscreve (TASK-050). Na prática o AuthorizeGuard já barrou antes; esta é a trava do
+    // serviço, que vale também para qualquer caminho que não passe pelo guard.
+    if (result.reason === "banned") throw new ForbiddenException(`Sua conta está banida e não pode se inscrever em eventos. Motivo: ${result.banReason}`);
     if (result.reason === "not_open") throw new ConflictException(SIGNUP_ERRORS.notOpen(eventStatusLabel(result.status)));
     if (result.reason === "unknown_role") throw new BadRequestException(SIGNUP_ERRORS.unknownRole);
     if (result.reason === "already_in_role") throw new ConflictException(SIGNUP_ERRORS.alreadyInRole);

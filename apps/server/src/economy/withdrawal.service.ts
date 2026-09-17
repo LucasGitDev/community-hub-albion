@@ -1,6 +1,7 @@
 import { Inject, Injectable } from "@nestjs/common";
 import {
   approveWithdrawal,
+  getBanStatus,
   getWithdrawal,
   getWithdrawalBalance,
   getWithdrawalBalances,
@@ -31,6 +32,11 @@ import { DB_HANDLE } from "../db/db.module.js";
  * que está o teste que prova que um membro não age no nome de outro — recomendação do security-review da
  * TASK-026. Se um dia um comando de bot chamar este serviço, ele tem a mesma obrigação.
  */
+/** Recusa por banimento (TASK-050), somada ao que o repo já devolve. */
+type BannedRefusal = { ok: false; reason: "banned"; banReason: string };
+export type RequestSilverResult = RequestWithdrawalResult | BannedRefusal;
+export type DecideSilverResult = WithdrawalDecisionResult | BannedRefusal;
+
 @Injectable()
 export class WithdrawalService {
   constructor(@Inject(DB_HANDLE) private readonly handle: DbHandle) {}
@@ -45,13 +51,29 @@ export class WithdrawalService {
     return getWithdrawalBalances(this.handle.db, userIds);
   }
 
-  /** Cria o pedido `pending`, que reserva o saldo. Recusas em AC#1/Q24 voltam como `ok: false`. */
-  request(userId: string, amount: bigint): Promise<RequestWithdrawalResult> {
+  /**
+   * Cria o pedido `pending`, que reserva o saldo. Recusas em AC#1/Q24 voltam como `ok: false`.
+   * Saldo de banido é congelado (TASK-050): não some, não estorna, mas não sai.
+   */
+  async request(userId: string, amount: bigint): Promise<RequestSilverResult> {
+    const ban = await getBanStatus(this.handle.db, userId);
+    if (ban) return { ok: false, reason: "banned", banReason: ban.banReason };
     return requestWithdrawal(this.handle.db, { userId, amount });
   }
 
-  /** Lança o débito no ledger e marca o saque como aprovado, na mesma transação (AC#3). */
-  approve(id: string, options: DecideWithdrawalOptions): Promise<WithdrawalDecisionResult> {
+  /**
+   * Lança o débito no ledger e marca o saque como aprovado, na mesma transação (AC#3).
+   *
+   * Saque pendente de banido não pode ser aprovado enquanto durar o banimento (TASK-050): o pedido fica
+   * onde está, com a reserva de pé. Quem quiser liberar o saldo rejeita (isso continua permitido) ou
+   * desbane — aprovar seria pagar prata a quem acabou de ser expulso da comunidade.
+   */
+  async approve(id: string, options: DecideWithdrawalOptions): Promise<DecideSilverResult> {
+    const withdrawal = await getWithdrawal(this.handle.db, id);
+    if (withdrawal) {
+      const ban = await getBanStatus(this.handle.db, withdrawal.userId);
+      if (ban) return { ok: false, reason: "banned", banReason: ban.banReason };
+    }
     return approveWithdrawal(this.handle.db, id, options);
   }
 

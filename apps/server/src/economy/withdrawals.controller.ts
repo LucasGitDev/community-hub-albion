@@ -13,12 +13,12 @@ import {
   type WithdrawalDto,
   type WithdrawalQueueResponse,
 } from "@albion-hub/shared";
-import type { WithdrawalDecisionResult } from "@albion-hub/db";
+
 import type { Response } from "express";
 import type { z } from "zod";
 import { Authorize, CurrentAuth, type AuthorizedRequest } from "../auth/authorize.js";
 import { SameOriginGuard } from "../auth/same-origin.guard.js";
-import { toBalanceDto, WithdrawalService } from "./withdrawal.service.js";
+import { toBalanceDto, WithdrawalService, type DecideSilverResult } from "./withdrawal.service.js";
 
 type Auth = AuthorizedRequest["auth"];
 
@@ -36,9 +36,13 @@ function parseBody<S extends z.ZodType>(schema: S, body: unknown): z.output<S> {
 }
 
 /** 404/409 PT-BR para o resultado de uma decisão da staff; `note_required` nunca chega aqui (zod pega antes). */
-function unwrap(result: WithdrawalDecisionResult, to: "approved" | "rejected" | "settled"): WithdrawalDto {
+function unwrap(result: DecideSilverResult, to: "approved" | "rejected" | "settled"): WithdrawalDto {
   if (result.ok) return result.withdrawal;
   if (result.reason === "not_found") throw new NotFoundException("Saque não encontrado.");
+  // Saldo de banido é congelado (TASK-050): o pedido continua pendente, com a reserva de pé. Recusar
+  // continua valendo — é o caminho de liberar a reserva sem pagar.
+  if (result.reason === "banned")
+    throw new ConflictException(`Esse membro está banido: o saldo fica congelado e o saque não pode ser aprovado. Motivo do banimento: ${result.banReason}`);
   if (result.reason === "note_required") throw new BadRequestException("Escreva a nota: ela fica no histórico do saque.");
   throw new ConflictException(withdrawalTransitionError(result.from, to));
 }
@@ -82,6 +86,7 @@ export class MyWithdrawalsController {
     const result = await this.withdrawals.request(auth.user.id, amount);
     if (!result.ok) {
       if (result.reason === "unknown_user") throw new NotFoundException("Usuário não encontrado.");
+      if (result.reason === "banned") throw new ForbiddenException(`Sua conta está banida e o saldo está congelado. Motivo: ${result.banReason}`);
       throw new ConflictException(withdrawalRefusalMessage(result));
     }
     res.status(201);
