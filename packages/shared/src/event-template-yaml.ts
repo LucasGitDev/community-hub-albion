@@ -1,6 +1,6 @@
 import { parse as parseYaml, stringify as stringifyYaml } from "yaml";
 import { z } from "zod";
-import { EVENT_PARTY_SIZE_MAX, EVENT_ROLE_DESCRIPTION_MAX, EVENT_ROLE_NAME_MAX, EVENT_TEMPLATE_DESCRIPTION_MAX, EVENT_TEMPLATE_NAME_MAX, checkPartySize, type EventTemplateDto } from "./event-templates.js";
+import { EVENT_PARTY_SIZE_MAX, EVENT_ROLE_DESCRIPTION_MAX, EVENT_ROLE_NAME_MAX, EVENT_TEMPLATE_DESCRIPTION_MAX, EVENT_TEMPLATE_NAME_MAX, BUFFUNFA_ROLE_MAX, checkPartySize, type EventTemplateDto } from "./event-templates.js";
 
 /**
  * Import/export de template em YAML (TASK-038; doc-001: DB é fonte de verdade, YAML é só transporte).
@@ -20,6 +20,8 @@ import { EVENT_PARTY_SIZE_MAX, EVENT_ROLE_DESCRIPTION_MAX, EVENT_ROLE_NAME_MAX, 
  *   - name: Tank
  *     slots: 1
  *     description: segura o dano  # opcional
+ *     buffunfaMin: 10             # opcional, default 0
+ *     buffunfaMax: 40             # opcional, default 0
  * ```
  */
 
@@ -35,6 +37,7 @@ const HEADER = [
   "# Edite à vontade e importe em qualquer servidor: as roles são casadas pelo nome",
   "# (sem diferenciar maiúsculas) e as que não existirem no catálogo são criadas na importação.",
   "# maxParty: null = sem teto. A soma das vagas precisa caber entre minParty e maxParty.",
+  "# buffunfaMin/buffunfaMax: faixa de Buffunfa que a role paga por presença; o caller escolhe dentro dela.",
 ].join("\n");
 
 const trimmed = (label: string, max: number) =>
@@ -61,11 +64,26 @@ const size = (label: string) =>
     .min(1, `${label} precisa ser pelo menos 1.`)
     .max(EVENT_PARTY_SIZE_MAX, `${label} vai até ${EVENT_PARTY_SIZE_MAX}.`);
 
+/**
+ * Faixa de Buffunfa da role (F6-8). Opcional no arquivo, com default 0: template exportado antes da
+ * F6 continua importando, e sem faixa a role simplesmente não paga — o que nunca é "faixa aberta".
+ */
+const yamlBuffunfa = (label: string) =>
+  z
+    .number({ error: `${label} precisa ser um número inteiro.` })
+    .int(`${label} precisa ser um número inteiro.`)
+    .min(0, `${label} não pode ser negativo.`)
+    .max(Number(BUFFUNFA_ROLE_MAX), `${label} vai até ${BUFFUNFA_ROLE_MAX}.`)
+    .nullish()
+    .transform((v) => BigInt(v ?? 0));
+
 const yamlRoleSchema = z
   .object({
     name: trimmed("O nome da role", EVENT_ROLE_NAME_MAX),
     slots: size("Vagas"),
     description: optional("A descrição da role", EVENT_ROLE_DESCRIPTION_MAX),
+    buffunfaMin: yamlBuffunfa("O mínimo de Buffunfa"),
+    buffunfaMax: yamlBuffunfa("O máximo de Buffunfa"),
   })
   // `strict()` sem mensagem: a tradução PT-BR da chave desconhecida vive em `yamlIssueMessage`.
   .strict();
@@ -95,6 +113,10 @@ const eventTemplateYamlSchema = z
       const key = r.name.toLocaleLowerCase("pt-BR");
       if (seen.has(key)) ctx.addIssue({ code: "custom", path: ["roles", i, "name"], message: `A role "${r.name}" aparece duas vezes: some as vagas numa linha só.` });
       seen.add(key);
+    });
+    t.roles.forEach((r, i) => {
+      if (r.buffunfaMax < r.buffunfaMin)
+        ctx.addIssue({ code: "custom", path: ["roles", i, "buffunfaMax"], message: `A role "${r.name}" tem máximo de Buffunfa menor que o mínimo.` });
     });
     const party = checkPartySize({ minPartySize: t.minParty, maxPartySize: t.maxParty, roles: t.roles });
     if (!party.ok) ctx.addIssue({ code: "custom", path: ["roles"], message: party.error });
@@ -128,7 +150,13 @@ export function serializeEventTemplateYaml(template: Pick<EventTemplateDto, "nam
       active: template.active,
       // A descrição da role já entra no import (cria a role do catálogo com ela); exportar fecha o
       // round-trip, senão mandar o template pra outro servidor perde o que a staff escreveu (TASK-039).
-      roles: template.roles.map((r) => ({ name: r.name, slots: r.slots, ...(r.description ? { description: r.description } : {}) })),
+      roles: template.roles.map((r) => ({
+        name: r.name,
+        slots: r.slots,
+        ...(r.description ? { description: r.description } : {}),
+        buffunfaMin: Number(r.buffunfaMin),
+        buffunfaMax: Number(r.buffunfaMax),
+      })),
     },
     { lineWidth: 0, nullStr: "null" },
   );
@@ -146,7 +174,7 @@ function yamlIssueMessage(error: z.ZodError): string {
   if (issue.code === "unrecognized_keys") {
     const keys = issue.keys.map((k) => `"${k}"`).join(", ");
     return where
-      ? `A role ${issue.path[1] !== undefined ? (issue.path[1] as number) + 1 : 1} tem campo que o formato não conhece: ${keys}. Use só name, slots e description.`
+      ? `A role ${issue.path[1] !== undefined ? (issue.path[1] as number) + 1 : 1} tem campo que o formato não conhece: ${keys}. Use só name, slots, description, buffunfaMin e buffunfaMax.`
       : `O arquivo tem campo que o formato não conhece: ${keys}. Use só version, name, description, minParty, maxParty, active e roles.`;
   }
   return `${issue.message}${where}`;

@@ -94,7 +94,7 @@ async function createTemplate(page: Page, name: string, roleName: string): Promi
   const healer = catalog.roles.find((r) => r.name === "Healer")!;
   const res = await page.request.post("/api/event-templates", {
     headers: { Origin: ORIGIN },
-    data: { name, description: null, minPartySize: 2, maxPartySize: 4, active: true, roles: [{ roleId: role.id, slots: 2 }, { roleId: healer.id, slots: 1 }] },
+    data: { name, description: null, minPartySize: 2, maxPartySize: 4, active: true, roles: [{ roleId: role.id, slots: 2, buffunfaMin: 0, buffunfaMax: 0 }, { roleId: healer.id, slots: 1, buffunfaMin: 0, buffunfaMax: 0 }] },
   });
   expect(res.status()).toBe(201);
   return role.id;

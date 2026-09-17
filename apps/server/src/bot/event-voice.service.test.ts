@@ -164,8 +164,8 @@ describe.skipIf(!baseUrl)("canal de voz do evento (TASK-024, Postgres real + Dis
       maxPartySize: null,
       active: true,
       roles: [
-        { roleId: roles.find((r) => r.name === "Tank")!.id, slots: 1 },
-        { roleId: roles.find((r) => r.name === "Healer")!.id, slots: 1 },
+        { roleId: roles.find((r) => r.name === "Tank")!.id, slots: 1, buffunfaMin: 0n, buffunfaMax: 0n },
+        { roleId: roles.find((r) => r.name === "Healer")!.id, slots: 1, buffunfaMin: 0n, buffunfaMax: 0n },
       ],
     });
     if (!saved.ok) throw new Error(saved.reason);

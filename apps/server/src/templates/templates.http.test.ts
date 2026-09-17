@@ -87,7 +87,7 @@ describe.skipIf(!baseUrl)("catálogo de roles e templates HTTP (TASK-020, Q8)", 
     expect((await http().get("/api/event-roles").set("Cookie", member)).status).toBe(403);
     expect((await http().get("/api/event-templates").set("Cookie", member)).status).toBe(403);
     const tank = await roleId("Tank");
-    const tpl = { name: "Proibido", minPartySize: 1, maxPartySize: null, roles: [{ roleId: tank, slots: 1 }] };
+    const tpl = { name: "Proibido", minPartySize: 1, maxPartySize: null, roles: [{ roleId: tank, slots: 1, buffunfaMin: 0, buffunfaMax: 0 }] };
     for (const cookie of [member, caller]) {
       expect((await send("post", "/api/event-roles", cookie, { name: "Hacker" })).status).toBe(403);
       expect((await send("patch", `/api/event-roles/${tank}`, cookie, { name: "Hacker" })).status).toBe(403);
@@ -131,16 +131,16 @@ describe.skipIf(!baseUrl)("catálogo de roles e templates HTTP (TASK-020, Q8)", 
     const yamlOf = (id: string) => http().get(`/api/event-templates/${id}/export`).set("Cookie", staff);
     const tank = await roleId("Tank");
     await send("patch", `/api/event-roles/${tank}`, staff, { description: "Segura a frente e chama o engage." });
-    const created = await send("post", "/api/event-templates", staff, { name: "Com descrição", minPartySize: 1, maxPartySize: null, roles: [{ roleId: tank, slots: 1 }] });
+    const created = await send("post", "/api/event-templates", staff, { name: "Com descrição", minPartySize: 1, maxPartySize: null, roles: [{ roleId: tank, slots: 1, buffunfaMin: 0, buffunfaMax: 0 }] });
     expect(created.status).toBe(201);
-    expect((created.body as EventTemplateDto).roles).toEqual([{ roleId: tank, name: "Tank", description: "Segura a frente e chama o engage.", slots: 1 }]);
+    expect((created.body as EventTemplateDto).roles).toEqual([{ roleId: tank, name: "Tank", description: "Segura a frente e chama o engage.", slots: 1, buffunfaMin: "0", buffunfaMax: "0" }]);
 
     const exported = await yamlOf(created.body.id);
     expect(exported.status).toBe(200);
     expect(exported.text).toContain("description: Segura a frente e chama o engage.");
 
     // AC#3: role sem descrição continua valendo, e o YAML não inventa campo.
-    const bare = await send("post", "/api/event-templates", staff, { name: "Sem descrição", minPartySize: 1, maxPartySize: null, roles: [{ roleId: await roleId("Scout"), slots: 1 }] });
+    const bare = await send("post", "/api/event-templates", staff, { name: "Sem descrição", minPartySize: 1, maxPartySize: null, roles: [{ roleId: await roleId("Scout"), slots: 1, buffunfaMin: 0, buffunfaMax: 0 }] });
     expect((bare.body as EventTemplateDto).roles[0]!.description).toBeNull();
     expect((await yamlOf(bare.body.id)).text).not.toContain("description:");
     await send("patch", `/api/event-roles/${tank}`, staff, { description: "" });
@@ -148,18 +148,18 @@ describe.skipIf(!baseUrl)("catálogo de roles e templates HTTP (TASK-020, Q8)", 
 
   it("staff cria template com roles e vagas, edita parcial e valida party (AC#2)", async () => {
     const [tank, healer, dps] = [await roleId("Tank"), await roleId("Healer"), await roleId("DPS Melee")];
-    const body = { name: "DG de grupo", description: "Dungeon em grupo", minPartySize: 4, maxPartySize: 9, roles: [{ roleId: tank, slots: 1 }, { roleId: healer, slots: 1 }, { roleId: dps, slots: 5 }] };
+    const body = { name: "DG de grupo", description: "Dungeon em grupo", minPartySize: 4, maxPartySize: 9, roles: [{ roleId: tank, slots: 1, buffunfaMin: 0, buffunfaMax: 0 }, { roleId: healer, slots: 1, buffunfaMin: 0, buffunfaMax: 0 }, { roleId: dps, slots: 5, buffunfaMin: 0, buffunfaMax: 0 }] };
     const created = await send("post", "/api/event-templates", staff, body);
     expect(created.status).toBe(201);
     const tpl = created.body as EventTemplateDto;
     expect(tpl).toMatchObject({ name: "DG de grupo", active: true, totalSlots: 7, roles: [{ name: "Tank", slots: 1 }, { name: "Healer", slots: 1 }, { name: "DPS Melee", slots: 5 }] });
 
-    const over = await send("post", "/api/event-templates", staff, { ...body, name: "Cheio", roles: [{ roleId: dps, slots: 10 }] });
+    const over = await send("post", "/api/event-templates", staff, { ...body, name: "Cheio", roles: [{ roleId: dps, slots: 10, buffunfaMin: 0, buffunfaMax: 0 }] });
     expect(over.status).toBe(400);
     expect(over.body.message).toContain("acima do máximo de 9");
-    expect((await send("post", "/api/event-templates", staff, { ...body, roles: [{ roleId: tank, slots: 0 }] })).status).toBe(400);
+    expect((await send("post", "/api/event-templates", staff, { ...body, roles: [{ roleId: tank, slots: 0, buffunfaMin: 0, buffunfaMax: 0 }] })).status).toBe(400);
     expect((await send("post", "/api/event-templates", staff, { ...body, name: "dg DE GRUPO" })).status).toBe(409);
-    expect((await send("post", "/api/event-templates", staff, { ...body, name: "Fantasma", roles: [{ roleId: MISSING, slots: 4 }] })).status).toBe(400);
+    expect((await send("post", "/api/event-templates", staff, { ...body, name: "Fantasma", roles: [{ roleId: MISSING, slots: 4, buffunfaMin: 0, buffunfaMax: 0 }] })).status).toBe(400);
 
     const patched = await send("patch", `/api/event-templates/${tpl.id}`, staff, { active: false, maxPartySize: null });
     expect(patched.status).toBe(200);
@@ -193,7 +193,7 @@ describe.skipIf(!baseUrl)("catálogo de roles e templates HTTP (TASK-020, Q8)", 
   it("role em uso por template não pode ser apagada: 409 PT-BR; depois de liberar, apaga (AC#3)", async () => {
     const created = await send("post", "/api/event-roles", staff, { name: "Arqueiro" });
     const tank = await roleId("Tank");
-    const tpl = await send("post", "/api/event-templates", staff, { name: "Caçada", minPartySize: 3, maxPartySize: 7, roles: [{ roleId: created.body.id, slots: 2 }, { roleId: tank, slots: 1 }] });
+    const tpl = await send("post", "/api/event-templates", staff, { name: "Caçada", minPartySize: 3, maxPartySize: 7, roles: [{ roleId: created.body.id, slots: 2, buffunfaMin: 0, buffunfaMax: 0 }, { roleId: tank, slots: 1, buffunfaMin: 0, buffunfaMax: 0 }] });
     expect(tpl.status).toBe(201);
     expect((await roles()).find((r) => r.id === created.body.id)!.templateCount).toBe(1);
 
@@ -202,7 +202,7 @@ describe.skipIf(!baseUrl)("catálogo de roles e templates HTTP (TASK-020, Q8)", 
     expect(blocked.body.message).toContain("em uso por um template");
     expect((await roles()).map((r) => r.id)).toContain(created.body.id);
 
-    expect((await send("patch", `/api/event-templates/${tpl.body.id}`, staff, { roles: [{ roleId: tank, slots: 3 }] })).status).toBe(200);
+    expect((await send("patch", `/api/event-templates/${tpl.body.id}`, staff, { roles: [{ roleId: tank, slots: 3, buffunfaMin: 0, buffunfaMax: 0 }] })).status).toBe(200);
     expect((await send("delete", `/api/event-roles/${created.body.id}`, staff)).status).toBe(204);
     expect((await send("delete", `/api/event-roles/${created.body.id}`, staff)).status).toBe(404);
     expect((await send("delete", `/api/event-templates/${tpl.body.id}`, staff)).status).toBe(204);
@@ -224,7 +224,7 @@ describe.skipIf(!baseUrl)("catálogo de roles e templates HTTP (TASK-020, Q8)", 
         description: "levado pra outro servidor",
         minPartySize: 3,
         maxPartySize: 7,
-        roles: [{ roleId: tank, slots: 2 }, { roleId: healer, slots: 2 }],
+        roles: [{ roleId: tank, slots: 2, buffunfaMin: 0, buffunfaMax: 0 }, { roleId: healer, slots: 2, buffunfaMin: 0, buffunfaMax: 0 }],
       });
       expect(created.status).toBe(201);
 
@@ -246,7 +246,7 @@ describe.skipIf(!baseUrl)("catálogo de roles e templates HTTP (TASK-020, Q8)", 
 
     it("staff importa o YAML exportado e o template nasce com roles e vagas (AC#2)", async () => {
       const [tank, scout] = [await roleId("Tank"), await roleId("Scout")];
-      const origin = await send("post", "/api/event-templates", staff, { name: templateName("ida"), minPartySize: 4, maxPartySize: 9, roles: [{ roleId: tank, slots: 1 }, { roleId: scout, slots: 4 }] });
+      const origin = await send("post", "/api/event-templates", staff, { name: templateName("ida"), minPartySize: 4, maxPartySize: 9, roles: [{ roleId: tank, slots: 1, buffunfaMin: 0, buffunfaMax: 0 }, { roleId: scout, slots: 4, buffunfaMin: 0, buffunfaMax: 0 }] });
       const yaml = (await exportYaml(staff, origin.body.id)).text.replace(templateName("ida"), templateName("volta"));
 
       const imported = await send("post", "/api/event-templates/import", staff, { yaml });
@@ -321,8 +321,8 @@ describe.skipIf(!baseUrl)("catálogo de roles e templates HTTP (TASK-020, Q8)", 
       expect(res.status).toBe(201);
       expect(res.body.createdRoles).toEqual(["Battlemount"]);
       expect(res.body.template.roles).toEqual([
-        { roleId: expect.any(String), name: "Battlemount", description: null, slots: 2 },
-        { roleId: await roleId("Tank"), name: "Tank", description: null, slots: 2 },
+        { roleId: expect.any(String), name: "Battlemount", description: null, slots: 2, buffunfaMin: "0", buffunfaMax: "0" },
+        { roleId: await roleId("Tank"), name: "Tank", description: null, slots: 2, buffunfaMin: "0", buffunfaMax: "0" },
       ]);
       const catalog = await roles();
       expect(catalog.find((r) => r.name === "Battlemount")).toMatchObject({ templateCount: 1 });
@@ -332,7 +332,7 @@ describe.skipIf(!baseUrl)("catálogo de roles e templates HTTP (TASK-020, Q8)", 
 
     it("sem sessão 401; membro e caller 403; outra origem 403 no import", async () => {
       const tank = await roleId("Tank");
-      const tpl = await send("post", "/api/event-templates", staff, { name: templateName("acesso"), minPartySize: 1, maxPartySize: 4, roles: [{ roleId: tank, slots: 2 }] });
+      const tpl = await send("post", "/api/event-templates", staff, { name: templateName("acesso"), minPartySize: 1, maxPartySize: 4, roles: [{ roleId: tank, slots: 2, buffunfaMin: 0, buffunfaMax: 0 }] });
       const yaml = (await exportYaml(staff, tpl.body.id)).text.replace(templateName("acesso"), templateName("invasor"));
 
       expect((await http().get(`/api/event-templates/${tpl.body.id}/export`)).status).toBe(401);

@@ -16,9 +16,9 @@ const dgDeGrupo = {
   maxPartySize: 9,
   active: true,
   roles: [
-    { roleId: "a", name: "Tank", description: null, slots: 1 },
-    { roleId: "b", name: "Healer", description: null, slots: 1 },
-    { roleId: "c", name: "DPS Melee", description: null, slots: 5 },
+    { roleId: "a", name: "Tank", description: null, slots: 1, buffunfaMin: "10", buffunfaMax: "40" },
+    { roleId: "b", name: "Healer", description: null, slots: 1, buffunfaMin: "0", buffunfaMax: "0" },
+    { roleId: "c", name: "DPS Melee", description: null, slots: 5, buffunfaMin: "5", buffunfaMax: "5" },
   ],
 };
 
@@ -49,7 +49,7 @@ describe("serializeEventTemplateYaml", () => {
   });
 
   it("omite descrição vazia e escreve maxParty null quando não há teto", () => {
-    const yaml = serializeEventTemplateYaml({ name: "PvP Roaming", description: null, minPartySize: 2, maxPartySize: null, active: false, roles: [{ roleId: "a", name: "DPS Range", description: null, slots: 5 }] });
+    const yaml = serializeEventTemplateYaml({ name: "PvP Roaming", description: null, minPartySize: 2, maxPartySize: null, active: false, roles: [{ roleId: "a", name: "DPS Range", description: null, slots: 5, buffunfaMin: "0", buffunfaMax: "0" }] });
     expect(yaml).not.toContain("description");
     expect(yaml).toContain("maxParty: null");
     expect(yaml).toContain("active: false");
@@ -58,10 +58,16 @@ describe("serializeEventTemplateYaml", () => {
   it("descrição da role faz round-trip: o import cria a role do catálogo com ela (TASK-039)", () => {
     const yaml = serializeEventTemplateYaml({
       ...dgDeGrupo,
-      roles: [{ roleId: "a", name: "Tank", description: "Segura a frente e chama o engage.", slots: 1 }, { roleId: "b", name: "Healer", description: null, slots: 3 }],
+      roles: [
+        { roleId: "a", name: "Tank", description: "Segura a frente e chama o engage.", slots: 1, buffunfaMin: "0", buffunfaMax: "0" },
+        { roleId: "b", name: "Healer", description: null, slots: 3, buffunfaMin: "0", buffunfaMax: "0" },
+      ],
     });
     expect(yaml).toContain("description: Segura a frente e chama o engage.");
-    expect(ok(yaml).roles).toEqual([{ name: "Tank", slots: 1, description: "Segura a frente e chama o engage." }, { name: "Healer", slots: 3, description: null }]);
+    expect(ok(yaml).roles).toEqual([
+      { name: "Tank", slots: 1, description: "Segura a frente e chama o engage.", buffunfaMin: 0n, buffunfaMax: 0n },
+      { name: "Healer", slots: 3, description: null, buffunfaMin: 0n, buffunfaMax: 0n },
+    ]);
   });
 
   it("round-trip: o que sai do banco volta igual depois de reler", () => {
@@ -73,12 +79,18 @@ describe("serializeEventTemplateYaml", () => {
       minParty: 4,
       maxParty: 9,
       active: true,
-      roles: [{ name: "Tank", slots: 1, description: null }, { name: "Healer", slots: 1, description: null }, { name: "DPS Melee", slots: 5, description: null }],
+      // A faixa viaja no arquivo (F6-8): mandar o template para outro servidor levava as vagas e passa
+      // a levar também quanto cada role paga.
+      roles: [
+        { name: "Tank", slots: 1, description: null, buffunfaMin: 10n, buffunfaMax: 40n },
+        { name: "Healer", slots: 1, description: null, buffunfaMin: 0n, buffunfaMax: 0n },
+        { name: "DPS Melee", slots: 5, description: null, buffunfaMin: 5n, buffunfaMax: 5n },
+      ],
     });
   });
 
   it("round-trip aguenta nome com dois-pontos, acento e emoji sem quebrar o YAML", () => {
-    const tricky = { name: "Raid: Dragão #1 🐉", description: "linha 1\nlinha 2", minPartySize: 15, maxPartySize: 20, active: true, roles: [{ roleId: "a", name: "Tank: frente", description: null, slots: 20 }] };
+    const tricky = { name: "Raid: Dragão #1 🐉", description: "linha 1\nlinha 2", minPartySize: 15, maxPartySize: 20, active: true, roles: [{ roleId: "a", name: "Tank: frente", description: null, slots: 20, buffunfaMin: "0", buffunfaMax: "0" }] };
     const parsed = ok(serializeEventTemplateYaml(tricky));
     expect(parsed.name).toBe("Raid: Dragão #1 🐉");
     expect(parsed.description).toBe("linha 1\nlinha 2");
@@ -92,7 +104,11 @@ describe("parseEventTemplateYaml", () => {
   it("aceita o formato mínimo: sem description e sem active (default true)", () => {
     const t = ok(base);
     expect(t).toMatchObject({ name: "Caçada", minParty: 3, maxParty: 7, active: true, description: null });
-    expect(t.roles).toEqual([{ name: "Tank", slots: 2, description: null }, { name: "Scout", slots: 2, description: null }]);
+    // Faixa de Buffunfa ausente no arquivo vira 0: template exportado antes da F6 continua importando.
+    expect(t.roles).toEqual([
+      { name: "Tank", slots: 2, description: null, buffunfaMin: 0n, buffunfaMax: 0n },
+      { name: "Scout", slots: 2, description: null, buffunfaMin: 0n, buffunfaMax: 0n },
+    ]);
   });
 
   it("aceita maxParty ausente ou null como sem teto", () => {
@@ -118,7 +134,7 @@ describe("parseEventTemplateYaml", () => {
 
   it("recusa chave desconhecida no topo e dentro da role em vez de ignorar calado", () => {
     expect(err(`${base}\nminparty: 9`)).toBe('O arquivo tem campo que o formato não conhece: "minparty". Use só version, name, description, minParty, maxParty, active e roles.');
-    expect(err("version: 1\nname: X\nminParty: 1\nroles:\n  - name: Tank\n    slots: 1\n    vagas: 3")).toBe('A role 1 tem campo que o formato não conhece: "vagas". Use só name, slots e description.');
+    expect(err("version: 1\nname: X\nminParty: 1\nroles:\n  - name: Tank\n    slots: 1\n    vagas: 3")).toBe('A role 1 tem campo que o formato não conhece: "vagas". Use só name, slots, description, buffunfaMin e buffunfaMax.');
   });
 
   it("recusa version ausente ou de formato mais novo", () => {

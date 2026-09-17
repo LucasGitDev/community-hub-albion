@@ -112,7 +112,7 @@ describe.skipIf(!baseUrl)("rascunho de loot split (TASK-027, Postgres real)", ()
       minPartySize: 1,
       maxPartySize: null,
       active: true,
-      roles: [{ roleId: tank.id, slots: 20 }],
+      roles: [{ roleId: tank.id, slots: 20, buffunfaMin: 0n, buffunfaMax: 0n }],
     });
     if (!template.ok) throw new Error(template.reason);
     templateId = template.template.id;
@@ -419,7 +419,7 @@ describe.skipIf(!baseUrl)("rascunho de loot split (TASK-027, Postgres real)", ()
         minPartySize: 1,
         maxPartySize: null,
         active: true,
-        roles: [{ roleId: roles.find((r) => r.name === "Tank")!.id, slots: 5 }],
+        roles: [{ roleId: roles.find((r) => r.name === "Tank")!.id, slots: 5, buffunfaMin: 0n, buffunfaMax: 0n }],
       });
       if (!template.ok) throw new Error(template.reason);
       await handle.db

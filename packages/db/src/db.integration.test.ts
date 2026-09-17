@@ -459,7 +459,16 @@ describe.skipIf(!url)("@albion-hub/db (Postgres real)", () => {
 
   describe("catálogo de roles e templates (TASK-020, Q8)", () => {
     const MISSING = "00000000-0000-4000-8000-000000000000";
-    const tpl = (name: string, roles: { roleId: string; slots: number }[]) => ({ name, description: null, minPartySize: 1, maxPartySize: null, active: true, roles });
+    // A faixa de Buffunfa (TASK-057) é obrigatória no schema; o default 0 aqui mantém os casos antigos
+    // falando só de vagas, e quem testa Buffunfa passa a faixa explícita.
+    const tpl = (name: string, roles: { roleId: string; slots: number; buffunfaMin?: bigint; buffunfaMax?: bigint }[]) => ({
+      name,
+      description: null,
+      minPartySize: 1,
+      maxPartySize: null,
+      active: true,
+      roles: roles.map((r) => ({ buffunfaMin: 0n, buffunfaMax: 0n, ...r })),
+    });
 
     it("migration semeia as 6 roles iniciais uma vez só, na ordem", async () => {
       const names = (await listEventRoles(handle.db)).map((r) => r.name);
@@ -487,21 +496,21 @@ describe.skipIf(!url)("@albion-hub/db (Postgres real)", () => {
       if (!created.ok) throw new Error("falhou");
       const tank = created.role;
       const healer = roles.find((r) => r.name === "Healer")!;
-      const saved = await saveEventTemplate(handle.db, tpl("Raid do Dragão", [{ roleId: healer.id, slots: 4 }, { roleId: tank.id, slots: 2 }]));
+      const saved = await saveEventTemplate(handle.db, tpl("Raid do Dragão", [{ roleId: healer.id, slots: 4, buffunfaMin: 0n, buffunfaMax: 0n }, { roleId: tank.id, slots: 2, buffunfaMin: 0n, buffunfaMax: 0n }]));
       if (!saved.ok) throw new Error(saved.reason);
       expect(saved.template).toMatchObject({ totalSlots: 6, roles: [{ name: "Healer", slots: 4 }, { name: "Arqueiro", slots: 2 }] });
-      expect(await saveEventTemplate(handle.db, tpl("raid do dragão", [{ roleId: tank.id, slots: 1 }]))).toEqual({ ok: false, reason: "duplicate" });
-      expect(await saveEventTemplate(handle.db, tpl("Outro", [{ roleId: MISSING, slots: 1 }]))).toEqual({ ok: false, reason: "unknown_role" });
+      expect(await saveEventTemplate(handle.db, tpl("raid do dragão", [{ roleId: tank.id, slots: 1, buffunfaMin: 0n, buffunfaMax: 0n }]))).toEqual({ ok: false, reason: "duplicate" });
+      expect(await saveEventTemplate(handle.db, tpl("Outro", [{ roleId: MISSING, slots: 1, buffunfaMin: 0n, buffunfaMax: 0n }]))).toEqual({ ok: false, reason: "unknown_role" });
 
       expect((await listEventRoles(handle.db)).find((r) => r.id === tank.id)!.templateCount).toBe(1);
       expect(await deleteEventRole(handle.db, tank.id)).toBe("in_use");
       await expect(handle.db.delete(schema.eventRoles).where(eq(schema.eventRoles.id, tank.id))).rejects.toThrow();
       await expect(handle.db.insert(schema.eventTemplateRoles).values({ templateId: saved.template.id, roleId: roles[2]!.id, slots: 0 })).rejects.toThrow();
 
-      const replaced = await saveEventTemplate(handle.db, { ...tpl("Raid do Dragão", [{ roleId: healer.id, slots: 5 }]), maxPartySize: 20 }, saved.template.id);
+      const replaced = await saveEventTemplate(handle.db, { ...tpl("Raid do Dragão", [{ roleId: healer.id, slots: 5, buffunfaMin: 0n, buffunfaMax: 0n }]), maxPartySize: 20 }, saved.template.id);
       expect(replaced).toMatchObject({ ok: true, template: { maxPartySize: 20, totalSlots: 5, roles: [{ name: "Healer" }] } });
       expect(await deleteEventRole(handle.db, tank.id)).toBe("deleted");
-      expect(await saveEventTemplate(handle.db, tpl("Nada", [{ roleId: healer.id, slots: 1 }]), MISSING)).toEqual({ ok: false, reason: "not_found" });
+      expect(await saveEventTemplate(handle.db, tpl("Nada", [{ roleId: healer.id, slots: 1, buffunfaMin: 0n, buffunfaMax: 0n }]), MISSING)).toEqual({ ok: false, reason: "not_found" });
       expect((await listEventTemplates(handle.db)).map((t) => t.name)).toContain("Raid do Dragão");
       expect(await deleteEventTemplate(handle.db, saved.template.id)).toBe(true);
       expect(await deleteEventTemplate(handle.db, saved.template.id)).toBe(false);
@@ -517,13 +526,13 @@ describe.skipIf(!url)("@albion-hub/db (Postgres real)", () => {
       minParty: 3,
       maxParty: 7,
       active: true,
-      roles: [{ name: "Tank", slots: 1, description: null }],
+      roles: [{ name: "Tank", slots: 1, description: null, buffunfaMin: 0n, buffunfaMax: 0n }],
       ...over,
     });
 
     it("casa role pelo nome sem diferenciar maiúsculas e não duplica o catálogo (AC#2, AC#4)", async () => {
       const before = await listEventRoles(handle.db);
-      const result = await importEventTemplate(handle.db, yaml({ name: "Import casa role", roles: [{ name: "tAnK", slots: 2, description: null }, { name: "healer", slots: 2, description: null }] }));
+      const result = await importEventTemplate(handle.db, yaml({ name: "Import casa role", roles: [{ name: "tAnK", slots: 2, description: null, buffunfaMin: 0n, buffunfaMax: 0n }, { name: "healer", slots: 2, description: null, buffunfaMin: 0n, buffunfaMax: 0n }] }));
       if (!result.ok) throw new Error(result.reason);
       expect(result.createdRoles).toEqual([]);
       expect(result.template).toMatchObject({ name: "Import casa role", minPartySize: 3, maxPartySize: 7, totalSlots: 4, roles: [{ name: "Tank", slots: 2 }, { name: "Healer", slots: 2 }] });
@@ -533,7 +542,7 @@ describe.skipIf(!url)("@albion-hub/db (Postgres real)", () => {
     it("cria as roles que faltam no catálogo e devolve os nomes criados (AC#4)", async () => {
       const result = await importEventTemplate(
         handle.db,
-        yaml({ name: "Import cria role", minParty: 2, maxParty: 6, roles: [{ name: "Battlemount", slots: 2, description: "monta de guerra" }, { name: "Tank", slots: 1, description: null }, { name: "Bardo", slots: 1, description: null }] }),
+        yaml({ name: "Import cria role", minParty: 2, maxParty: 6, roles: [{ name: "Battlemount", slots: 2, description: "monta de guerra", buffunfaMin: 0n, buffunfaMax: 0n }, { name: "Tank", slots: 1, description: null, buffunfaMin: 0n, buffunfaMax: 0n }, { name: "Bardo", slots: 1, description: null, buffunfaMin: 0n, buffunfaMax: 0n }] }),
       );
       if (!result.ok) throw new Error(result.reason);
       expect(result.createdRoles).toEqual(["Battlemount", "Bardo"]);
@@ -548,12 +557,12 @@ describe.skipIf(!url)("@albion-hub/db (Postgres real)", () => {
 
     it("import não sobrescreve descrição já preenchida no catálogo e reporta o que ignorou (TASK-065 AC#1/#2/#4)", async () => {
       // Dois templates com a MESMA role e descrições diferentes: o segundo import não pode reescrever o primeiro.
-      const zvz = await importEventTemplate(handle.db, yaml({ name: "T065 ZvZ", roles: [{ name: "Couraçado", slots: 1, description: "segura a linha de frente na ZvZ" }] }));
+      const zvz = await importEventTemplate(handle.db, yaml({ name: "T065 ZvZ", roles: [{ name: "Couraçado", slots: 1, description: "segura a linha de frente na ZvZ", buffunfaMin: 0n, buffunfaMax: 0n }] }));
       if (!zvz.ok) throw new Error(zvz.reason);
       expect(zvz.createdRoles).toEqual(["Couraçado"]);
       expect(zvz.ignoredDescriptions).toEqual([]);
 
-      const dg = await importEventTemplate(handle.db, yaml({ name: "T065 DG", roles: [{ name: "couraçado", slots: 1, description: "puxa os mobs da dungeon" }] }));
+      const dg = await importEventTemplate(handle.db, yaml({ name: "T065 DG", roles: [{ name: "couraçado", slots: 1, description: "puxa os mobs da dungeon", buffunfaMin: 0n, buffunfaMax: 0n }] }));
       if (!dg.ok) throw new Error(dg.reason);
       expect(dg.createdRoles).toEqual([]);
       expect(dg.ignoredDescriptions).toEqual(["couraçado"]);
@@ -564,7 +573,7 @@ describe.skipIf(!url)("@albion-hub/db (Postgres real)", () => {
       expect(role.templateCount).toBe(2);
 
       // Descrição idêntica não é "ignorada": não havia nada a aplicar.
-      const igual = await importEventTemplate(handle.db, yaml({ name: "T065 Igual", roles: [{ name: "Couraçado", slots: 1, description: "segura a linha de frente na ZvZ" }] }));
+      const igual = await importEventTemplate(handle.db, yaml({ name: "T065 Igual", roles: [{ name: "Couraçado", slots: 1, description: "segura a linha de frente na ZvZ", buffunfaMin: 0n, buffunfaMax: 0n }] }));
       if (!igual.ok) throw new Error(igual.reason);
       expect(igual.ignoredDescriptions).toEqual([]);
     });
@@ -572,17 +581,17 @@ describe.skipIf(!url)("@albion-hub/db (Postgres real)", () => {
     it("role sem descrição no catálogo recebe a do arquivo (TASK-065 AC#3)", async () => {
       const created = await createEventRole(handle.db, { name: "T065 Vazia", description: null });
       if (!created.ok) throw new Error("falhou");
-      const result = await importEventTemplate(handle.db, yaml({ name: "T065 Preenche", roles: [{ name: "t065 vazia", slots: 1, description: "guia o grupo" }] }));
+      const result = await importEventTemplate(handle.db, yaml({ name: "T065 Preenche", roles: [{ name: "t065 vazia", slots: 1, description: "guia o grupo", buffunfaMin: 0n, buffunfaMax: 0n }] }));
       if (!result.ok) throw new Error(result.reason);
       expect(result.ignoredDescriptions).toEqual([]);
       expect((await listEventRoles(handle.db)).find((r) => r.id === created.role.id)!.description).toBe("guia o grupo");
     });
 
     it("nome de template repetido não grava nada, nem as roles novas (AC#3, tudo ou nada)", async () => {
-      const first = await importEventTemplate(handle.db, yaml({ name: "Import colide", roles: [{ name: "Tank", slots: 3, description: null }] }));
+      const first = await importEventTemplate(handle.db, yaml({ name: "Import colide", roles: [{ name: "Tank", slots: 3, description: null, buffunfaMin: 0n, buffunfaMax: 0n }] }));
       expect(first.ok).toBe(true);
       const before = (await listEventRoles(handle.db)).length;
-      const again = await importEventTemplate(handle.db, yaml({ name: "IMPORT COLIDE", roles: [{ name: "Necromante", slots: 3, description: null }] }));
+      const again = await importEventTemplate(handle.db, yaml({ name: "IMPORT COLIDE", roles: [{ name: "Necromante", slots: 3, description: null, buffunfaMin: 0n, buffunfaMax: 0n }] }));
       expect(again).toEqual({ ok: false, reason: "duplicate" });
       expect((await listEventRoles(handle.db)).map((r) => r.name)).not.toContain("Necromante");
       expect((await listEventRoles(handle.db)).length).toBe(before);
@@ -590,7 +599,7 @@ describe.skipIf(!url)("@albion-hub/db (Postgres real)", () => {
     });
 
     it("importa template sem teto de party e inativo", async () => {
-      const result = await importEventTemplate(handle.db, yaml({ name: "Import roaming", minParty: 2, maxParty: null, active: false, roles: [{ name: "DPS Range", slots: 5, description: null }] }));
+      const result = await importEventTemplate(handle.db, yaml({ name: "Import roaming", minParty: 2, maxParty: null, active: false, roles: [{ name: "DPS Range", slots: 5, description: null, buffunfaMin: 0n, buffunfaMax: 0n }] }));
       expect(result).toMatchObject({ ok: true, template: { maxPartySize: null, active: false, totalSlots: 5 } });
     });
   });
@@ -612,8 +621,8 @@ describe.skipIf(!url)("@albion-hub/db (Postgres real)", () => {
         maxPartySize: null,
         active: true,
         roles: [
-          { roleId: roles.find((r) => r.name === "Tank")!.id, slots: 1 },
-          { roleId: roles.find((r) => r.name === "Healer")!.id, slots: 2 },
+          { roleId: roles.find((r) => r.name === "Tank")!.id, slots: 1, buffunfaMin: 0n, buffunfaMax: 0n },
+          { roleId: roles.find((r) => r.name === "Healer")!.id, slots: 2, buffunfaMin: 0n, buffunfaMax: 0n },
         ],
       });
       if (!saved.ok) throw new Error(saved.reason);
@@ -649,7 +658,7 @@ describe.skipIf(!url)("@albion-hub/db (Postgres real)", () => {
         minPartySize: 1,
         maxPartySize: null,
         active: true,
-        roles: [{ roleId: extra.role.id, slots: 3 }],
+        roles: [{ roleId: extra.role.id, slots: 3, buffunfaMin: 0n, buffunfaMax: 0n }],
       });
       if (!saved.ok) throw new Error(saved.reason);
       const result = await createEvent(handle.db, { templateId: saved.template.id, name: "Congelado", description: null, startsAt: null, signupsCloseAt: null, ownerUserId: owner, createdBy: owner });
@@ -657,7 +666,7 @@ describe.skipIf(!url)("@albion-hub/db (Postgres real)", () => {
 
       // Template muda depois: o evento publicado mantém as vagas com que foi criado.
       const roles = await listEventRoles(handle.db);
-      await saveEventTemplate(handle.db, { name: "Template descartável", description: null, minPartySize: 1, maxPartySize: null, active: true, roles: [{ roleId: roles.find((r) => r.name === "Tank")!.id, slots: 9 }] }, saved.template.id);
+      await saveEventTemplate(handle.db, { name: "Template descartável", description: null, minPartySize: 1, maxPartySize: null, active: true, roles: [{ roleId: roles.find((r) => r.name === "Tank")!.id, slots: 9, buffunfaMin: 0n, buffunfaMax: 0n }] }, saved.template.id);
       expect(await deleteEventRole(handle.db, extra.role.id)).toBe("deleted");
       // TASK-039: a descrição vem do catálogo, então some junto com a role; o nome congelado na vaga fica.
       expect((await getEvent(handle.db, result.event.id))!.roles).toEqual([{ id: expect.any(String), roleId: null, name: "Batedor do evento", description: null, slots: 3 }]);
@@ -667,9 +676,9 @@ describe.skipIf(!url)("@albion-hub/db (Postgres real)", () => {
     it("descrição da role é lida ao vivo do catálogo pela vaga do evento (TASK-039, AC#2)", async () => {
       const created = await createEventRole(handle.db, { name: "Batedor de flanco", description: "Abre caminho e avisa o que vem." });
       if (!created.ok) throw new Error("falhou");
-      const saved = await saveEventTemplate(handle.db, { name: "Flanco", description: null, minPartySize: 1, maxPartySize: null, active: true, roles: [{ roleId: created.role.id, slots: 2 }] });
+      const saved = await saveEventTemplate(handle.db, { name: "Flanco", description: null, minPartySize: 1, maxPartySize: null, active: true, roles: [{ roleId: created.role.id, slots: 2, buffunfaMin: 0n, buffunfaMax: 0n }] });
       if (!saved.ok) throw new Error(saved.reason);
-      expect(saved.template.roles).toEqual([{ roleId: created.role.id, name: "Batedor de flanco", description: "Abre caminho e avisa o que vem.", slots: 2 }]);
+      expect(saved.template.roles).toEqual([{ roleId: created.role.id, name: "Batedor de flanco", description: "Abre caminho e avisa o que vem.", slots: 2, buffunfaMin: 0n, buffunfaMax: 0n }]);
 
       const result = await createEvent(handle.db, { templateId: saved.template.id, name: "Flanco das 21h", description: null, startsAt: null, signupsCloseAt: null, ownerUserId: owner, createdBy: owner });
       if (!result.ok) throw new Error(result.reason);
@@ -684,7 +693,7 @@ describe.skipIf(!url)("@albion-hub/db (Postgres real)", () => {
     it("recusa template inexistente ou inativo", async () => {
       expect(await make("Sem template", { templateId: MISSING })).toEqual({ ok: false, reason: "unknown_template" });
       const roles = await listEventRoles(handle.db);
-      const saved = await saveEventTemplate(handle.db, { name: "Aposentado", description: null, minPartySize: 1, maxPartySize: null, active: false, roles: [{ roleId: roles[0]!.id, slots: 1 }] });
+      const saved = await saveEventTemplate(handle.db, { name: "Aposentado", description: null, minPartySize: 1, maxPartySize: null, active: false, roles: [{ roleId: roles[0]!.id, slots: 1, buffunfaMin: 0n, buffunfaMax: 0n }] });
       if (!saved.ok) throw new Error(saved.reason);
       expect(await make("Aposentado", { templateId: saved.template.id })).toEqual({ ok: false, reason: "inactive_template" });
     });
@@ -858,8 +867,8 @@ describe.skipIf(!url)("@albion-hub/db (Postgres real)", () => {
         maxPartySize: null,
         active: true,
         roles: [
-          { roleId: roles.find((r) => r.name === "Tank")!.id, slots: 1 },
-          { roleId: roles.find((r) => r.name === "Healer")!.id, slots: 2 },
+          { roleId: roles.find((r) => r.name === "Tank")!.id, slots: 1, buffunfaMin: 0n, buffunfaMax: 0n },
+          { roleId: roles.find((r) => r.name === "Healer")!.id, slots: 2, buffunfaMin: 0n, buffunfaMax: 0n },
         ],
       });
       if (!saved.ok) throw new Error(saved.reason);

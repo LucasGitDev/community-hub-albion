@@ -133,7 +133,9 @@ export class EventTemplatesController {
       // A taxa de entrada entra na base pelo valor atual: sem isso, um PATCH de nome zeraria a taxa
       // do template em silêncio, e o caller descobriria na hora em que ninguém pagou para entrar.
       defaultEntryFee: current.defaultEntryFee,
-      roles: current.roles.map(({ roleId, slots }) => ({ roleId, slots })),
+      // Mesma razão para a faixa de Buffunfa: ela é obrigatória, então some da mesclagem se não
+      // vier da base, e o PATCH passaria a recusar qualquer edição de nome.
+      roles: current.roles.map(({ roleId, slots, buffunfaMin, buffunfaMax }) => ({ roleId, slots, buffunfaMin, buffunfaMax })),
     };
     // O patch já traz `defaultEntryFee` como bigint (o schema converte); a revalidação abaixo espera
     // a string do fio de novo, então ele volta a texto antes de entrar na mesclagem.

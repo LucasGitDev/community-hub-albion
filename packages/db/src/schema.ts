@@ -225,8 +225,22 @@ export const eventTemplateRoles = pgTable(
       .references(() => eventRoles.id, { onDelete: "restrict" }),
     slots: integer("slots").notNull(),
     sortOrder: integer("sort_order").notNull().default(0),
+    /**
+     * Faixa de Buffunfa que a role paga por presença (TASK-057, F6-8). Obrigatória: os dois extremos
+     * são `not null`, e é dentro dela que o caller mexe até o fechamento. `default 0` existe só para a
+     * migration ser aditiva em template que já estava no banco — quem escreve sempre manda os dois.
+     */
+    buffunfaMin: bigint("buffunfa_min", { mode: "bigint" }).notNull().default(sql`0`),
+    buffunfaMax: bigint("buffunfa_max", { mode: "bigint" }).notNull().default(sql`0`),
   },
-  (t) => [primaryKey({ columns: [t.templateId, t.roleId] }), index("event_template_roles_role_idx").on(t.roleId), check("event_template_roles_slots_positive", sql`${t.slots} > 0`)],
+  (t) => [
+    primaryKey({ columns: [t.templateId, t.roleId] }),
+    index("event_template_roles_role_idx").on(t.roleId),
+    check("event_template_roles_slots_positive", sql`${t.slots} > 0`),
+    // Faixa fechada nos dois lados: sem isto, "sem teto" voltaria a ser representável e a Buffunfa
+    // criada do nada não teria freio nenhum (F6-8).
+    check("event_template_roles_buffunfa_range", sql`${t.buffunfaMin} >= 0 and ${t.buffunfaMax} >= ${t.buffunfaMin}`),
+  ],
 );
 
 export const eventStatusEnum = pgEnum("event_status", EVENT_STATUSES);
@@ -285,6 +299,13 @@ export const events = pgTable(
     cancelledAt: timestamp("cancelled_at", { withTimezone: true }),
     /** Arquivamento (TASK-044, Q26): o evento virou histórico e não aceita mais nenhuma edição. */
     archivedAt: timestamp("archived_at", { withTimezone: true }),
+    /**
+     * Quando a Buffunfa por presença foi paga (TASK-057, AC#6). É a chave de idempotência do
+     * pagamento: o carimbo é gravado na **mesma** transação dos lançamentos, com a linha do evento
+     * travada, então dois cliques no botão criam Buffunfa uma vez só. Depois dele, o valor por role
+     * não muda mais — o ledger é imutável e não haveria como refazer o pagamento (F6-9).
+     */
+    buffunfaPaidAt: timestamp("buffunfa_paid_at", { withTimezone: true }),
     /** Motivo que o caller/staff escreveu ao cancelar (TASK-025); o inscrito lê no embed e no painel. */
     cancelReason: text("cancel_reason"),
     createdAt: createdAt(),
@@ -334,11 +355,21 @@ export const eventRoleSlots = pgTable(
     name: text("name").notNull(),
     slots: integer("slots").notNull(),
     sortOrder: integer("sort_order").notNull().default(0),
+    /**
+     * Faixa copiada do template (TASK-057, F6-8) e o valor vigente dentro dela (F6-9). A faixa é
+     * snapshot pelo mesmo motivo das vagas: staff editar o template não pode mudar o prêmio de um
+     * evento já publicado. O valor nasce no mínimo da faixa e o caller sobe até o fechamento.
+     */
+    buffunfaMin: bigint("buffunfa_min", { mode: "bigint" }).notNull().default(sql`0`),
+    buffunfaMax: bigint("buffunfa_max", { mode: "bigint" }).notNull().default(sql`0`),
+    buffunfaValue: bigint("buffunfa_value", { mode: "bigint" }).notNull().default(sql`0`),
   },
   (t) => [
     index("event_role_slots_event_idx").on(t.eventId, t.sortOrder),
     uniqueIndex("event_role_slots_event_name_idx").on(t.eventId, t.name),
     check("event_role_slots_slots_positive", sql`${t.slots} > 0`),
+    // O valor vigente nunca sai da faixa: o banco é a última barreira, não a tela (F6-8).
+    check("event_role_slots_buffunfa_range", sql`${t.buffunfaMin} >= 0 and ${t.buffunfaMax} >= ${t.buffunfaMin} and ${t.buffunfaValue} between ${t.buffunfaMin} and ${t.buffunfaMax}`),
   ],
 );
 

@@ -102,13 +102,22 @@ async function loadTemplates(db: Database, ids?: string[]): Promise<EventTemplat
       name: eventRoles.name,
       description: eventRoles.description,
       slots: eventTemplateRoles.slots,
+      buffunfaMin: eventTemplateRoles.buffunfaMin,
+      buffunfaMax: eventTemplateRoles.buffunfaMax,
     })
     .from(eventTemplateRoles)
     .innerJoin(eventRoles, eq(eventRoles.id, eventTemplateRoles.roleId))
     .where(inArray(eventTemplateRoles.templateId, templates.map((t) => t.id)))
     .orderBy(asc(eventTemplateRoles.sortOrder));
   return templates.map((t) => {
-    const own = roles.filter((r) => r.templateId === t.id).map(({ roleId, name, description, slots }) => ({ roleId, name, description, slots }));
+    const own = roles.filter((r) => r.templateId === t.id).map(({ roleId, name, description, slots, buffunfaMin, buffunfaMax }) => ({
+      roleId,
+      name,
+      description,
+      slots,
+      buffunfaMin: buffunfaMin.toString(),
+      buffunfaMax: buffunfaMax.toString(),
+    }));
     return {
       id: t.id,
       name: t.name,
@@ -152,7 +161,7 @@ export async function saveEventTemplate(
         : await tx.insert(eventTemplates).values(fields).returning({ id: eventTemplates.id });
       if (!row) return null;
       await tx.delete(eventTemplateRoles).where(eq(eventTemplateRoles.templateId, row.id));
-      await tx.insert(eventTemplateRoles).values(roles.map((r, i) => ({ templateId: row.id, roleId: r.roleId, slots: r.slots, sortOrder: i })));
+      await tx.insert(eventTemplateRoles).values(roles.map((r, i) => ({ templateId: row.id, roleId: r.roleId, slots: r.slots, sortOrder: i, buffunfaMin: r.buffunfaMin, buffunfaMax: r.buffunfaMax })));
       return row.id;
     });
     if (!savedId) return { ok: false, reason: "not_found" };
@@ -226,7 +235,7 @@ export async function importEventTemplate(db: Database, input: EventTemplateYaml
         descriptionByKey.set(role.key, fileDescription);
       }
 
-      await tx.insert(eventTemplateRoles).values(wanted.map((r, i) => ({ templateId: template!.id, roleId: byKey.get(r.key)!, slots: r.slots, sortOrder: i })));
+      await tx.insert(eventTemplateRoles).values(wanted.map((r, i) => ({ templateId: template!.id, roleId: byKey.get(r.key)!, slots: r.slots, sortOrder: i, buffunfaMin: r.buffunfaMin, buffunfaMax: r.buffunfaMax })));
       return { id: template!.id, createdRoles: missing.map((r) => r.name), ignoredDescriptions };
     });
     return { ok: true, template: (await getEventTemplate(db, saved.id))!, createdRoles: saved.createdRoles, ignoredDescriptions: saved.ignoredDescriptions };
