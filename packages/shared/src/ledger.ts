@@ -73,3 +73,33 @@ export function parseLedgerPageQuery(query: Record<string, unknown>): { ok: true
   }
   return { ok: true, ...out };
 }
+
+/** Quem assinou o lançamento. Null quando não houve gente: job, ou o namespace de manutenção (TASK-048). */
+export interface LedgerAuthorDto {
+  id: string;
+  name: string;
+}
+
+/**
+ * Lançamento como a staff lê (TASK-051): o mesmo do membro, mais o autor. O extrato do próprio membro
+ * não carrega isso — quem pergunta "cadê minha prata" quer a linha; quem pergunta "quem mexeu" é a staff.
+ */
+export interface MemberLedgerEntryDto extends LedgerEntryDto {
+  author: LedgerAuthorDto | null;
+}
+
+/** Origem `manual/maintenance`: ajuste feito pelo namespace de manutenção (TASK-048, G5), sem sessão e sem autor. */
+export const MAINTENANCE_LEDGER_REFERENCE = { type: "manual" as const, id: "maintenance" };
+
+export const isMaintenanceLedgerEntry = (entry: Pick<LedgerEntryDto, "referenceType" | "referenceId">): boolean =>
+  entry.referenceType === MAINTENANCE_LEDGER_REFERENCE.type && entry.referenceId === MAINTENANCE_LEDGER_REFERENCE.id;
+
+/**
+ * Quem lançou, em texto (AC#2). O ajuste da manutenção é justamente a linha que alguém vai questionar,
+ * então ele se identifica como manutenção em vez de virar um "—" mudo que não explica nada.
+ */
+export function describeLedgerAuthor(entry: MemberLedgerEntryDto): string {
+  if (entry.author) return entry.author.name;
+  if (isMaintenanceLedgerEntry(entry)) return "Manutenção";
+  return "Sistema";
+}
