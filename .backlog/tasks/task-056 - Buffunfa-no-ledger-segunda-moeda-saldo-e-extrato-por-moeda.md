@@ -5,7 +5,7 @@ status: In Progress
 assignee:
   - '@claude'
 created_date: '2026-09-17 17:04'
-updated_date: '2026-09-17 18:09'
+updated_date: '2026-09-17 18:11'
 labels: []
 milestone: m-6
 dependencies:
@@ -107,6 +107,8 @@ telas) e a grade de cartões rearranjada (com cinco números, quatro colunas esp
 existiu — exatamente o risco que a F6-1 assumiu. As duas contas agora filtram prata no próprio helper.
 
 Skills: emil-design-eng, task-done-check, security-review
+
+security-review do diff: nenhum achado de alta confiança. Verificado que toda soma do ledger filtra moeda (inclusive as duas do saque, presas em 'silver'), que `spendCurrency` relê o saldo dentro da transação com `for update`, que o estorno herda a moeda do original, que a rota nova herda o mesmo guard/rate limit/404 da de prata pelo `@UseGuards` de classe, que `?currency=` é validado contra a lista antes de virar `eq`/`inArray` (sem interpolação) e que ator continua saindo da sessão em /api/me/ledger e da autorização na rota da staff.
 <!-- SECTION:NOTES:END -->
 
 ## Final Summary
