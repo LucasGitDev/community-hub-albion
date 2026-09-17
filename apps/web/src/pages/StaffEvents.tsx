@@ -611,6 +611,8 @@ function RoleRoster({
   onTransfer: (signup: EventSignupDto) => Promise<void>;
 }) {
   const confirmed = signups.filter((s) => s.status === "confirmed");
+  // `position` é a posição real da fila desde a TASK-066 (o repo renumera a espera a cada saída), então
+  // o painel mostra o mesmo número que a API e o card do membro, sem contar índice por cima da lista.
   const waitlist = signups.filter((s) => s.status === "waitlist").sort((a, b) => a.position - b.position);
 
   return (
@@ -649,11 +651,10 @@ function RoleRoster({
             Lista de espera desta role
           </p>
           <ul className="space-y-1.5">
-            {waitlist.map((signup, index) => (
+            {waitlist.map((signup) => (
               <SignupRow
                 key={signup.id}
                 signup={signup}
-                rank={index + 1}
                 members={members}
                 roles={roles}
                 isOwner={signup.userId === ownerUserId}
@@ -672,7 +673,6 @@ function RoleRoster({
 
 function SignupRow({
   signup,
-  rank,
   members,
   roles,
   isOwner,
@@ -682,8 +682,6 @@ function SignupRow({
   onTransfer,
 }: {
   signup: EventSignupDto;
-  /** Lugar na fila desta role, contado na lista já ordenada: a espera restante nunca mostra buraco. */
-  rank?: number;
   members: EventMemberDto[];
   roles: RoleView[];
   isOwner: boolean;
@@ -703,7 +701,7 @@ function SignupRow({
   return (
     <li className="flex flex-wrap items-center gap-x-3 gap-y-1.5">
       <span className="min-w-0 flex-1 truncate text-sm">
-        {signup.status === "waitlist" && <span className="num mr-1.5 text-muted-foreground">{rank ?? signup.position}º</span>}
+        {signup.status === "waitlist" && <span className="num mr-1.5 text-muted-foreground">{signup.position}º</span>}
         {nick}
         {isOwner && <Crown className="ml-1.5 inline size-3.5 text-muted-foreground" aria-label="caller do evento" />}
       </span>
