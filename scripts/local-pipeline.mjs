@@ -101,7 +101,10 @@ function deploy() {
     die("faltam DOCKERHUB_USERNAME e/ou DOCKERHUB_TOKEN.", "Crie `.env.deploy` a partir de `.env.deploy.example` (o arquivo é git-ignored).");
   }
   if (user.includes("@")) die("DOCKERHUB_USERNAME deve ser o usuário do Docker Hub, não o e-mail.");
-  const image = process.env.DOCKERHUB_IMAGE || `${user.toLowerCase()}/albion-hub`;
+  // Docker Hub só aceita o usuário em minúsculas: com maiúscula o registry devolve
+  // "malformed HTTP Authorization header", que não diz nada sobre a causa real.
+  const loginUser = user.toLowerCase();
+  const image = process.env.DOCKERHUB_IMAGE || `${loginUser}/albion-hub`;
   const sha = capture("git rev-parse HEAD");
   const short = sha.slice(0, 7);
 
@@ -111,7 +114,7 @@ function deploy() {
   console.log(`webhook: ${webhook ? "configurado" : "ausente (a imagem sobe, o deploy não é disparado)"}`);
   if (dryRun) return console.log("\n--dry-run: parando antes do login, do build e do webhook.");
 
-  run(`docker login docker.io --username ${JSON.stringify(user)} --password-stdin`, { stdin: token });
+  run(`docker login docker.io --username ${JSON.stringify(loginUser)} --password-stdin`, { stdin: token });
 
   // buildx com QEMU: a VPS é ARM e a máquina local é ARM ou x86 — o mesmo comando serve nos dois casos.
   const builder = "albion-hub-local";
