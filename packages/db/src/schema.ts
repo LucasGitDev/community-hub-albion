@@ -1,4 +1,4 @@
-import { CURRENCIES, EVENT_FEE_TYPES, EVENT_SIGNUP_STATUSES, EVENT_STATUSES, LEDGER_ENTRY_KINDS, LEDGER_REFERENCE_TYPES, LOOT_SPLIT_STATUSES, NICK_REQUEST_STATUSES, ROLES, SHOP_ORDER_STATUSES, USER_NOTE_KINDS, WITHDRAWAL_STATUSES } from "@albion-hub/shared";
+import { BUFFUNFA_ROLE_MAX, CURRENCIES, EVENT_FEE_TYPES, EVENT_SIGNUP_STATUSES, EVENT_STATUSES, LEDGER_ENTRY_KINDS, LEDGER_REFERENCE_TYPES, LOOT_SPLIT_STATUSES, NICK_REQUEST_STATUSES, ROLES, SHOP_ORDER_STATUSES, USER_NOTE_KINDS, WITHDRAWAL_STATUSES } from "@albion-hub/shared";
 import { sql } from "drizzle-orm";
 import { bigint, boolean, check, index, integer, pgEnum, pgTable, primaryKey, text, timestamp, uniqueIndex, uuid, type AnyPgColumn } from "drizzle-orm/pg-core";
 
@@ -356,9 +356,10 @@ export const eventRoleSlots = pgTable(
     slots: integer("slots").notNull(),
     sortOrder: integer("sort_order").notNull().default(0),
     /**
-     * Faixa copiada do template (TASK-057, F6-8) e o valor vigente dentro dela (F6-9). A faixa é
-     * snapshot pelo mesmo motivo das vagas: staff editar o template não pode mudar o prêmio de um
-     * evento já publicado. O valor nasce no mínimo da faixa e o caller sobe até o fechamento.
+     * Faixa copiada do template (TASK-057, F6-8) e o valor vigente (F6-9). A faixa é snapshot pelo
+     * mesmo motivo das vagas: staff editar o template não pode mudar o prêmio de um evento já
+     * publicado. O valor **nasce** no mínimo da faixa (F6-48) e daí em diante a faixa é só sugestão:
+     * quem limita o caller é o teto do sistema (revisão da TASK-072).
      */
     buffunfaMin: bigint("buffunfa_min", { mode: "bigint" }).notNull().default(sql`0`),
     buffunfaMax: bigint("buffunfa_max", { mode: "bigint" }).notNull().default(sql`0`),
@@ -368,8 +369,15 @@ export const eventRoleSlots = pgTable(
     index("event_role_slots_event_idx").on(t.eventId, t.sortOrder),
     uniqueIndex("event_role_slots_event_name_idx").on(t.eventId, t.name),
     check("event_role_slots_slots_positive", sql`${t.slots} > 0`),
-    // O valor vigente nunca sai da faixa: o banco é a última barreira, não a tela (F6-8).
-    check("event_role_slots_buffunfa_range", sql`${t.buffunfaMin} >= 0 and ${t.buffunfaMax} >= ${t.buffunfaMin} and ${t.buffunfaValue} between ${t.buffunfaMin} and ${t.buffunfaMax}`),
+    /**
+     * O que o banco ainda garante depois da TASK-072: a faixa continua coerente (é o valor de
+     * partida) e o **valor vigente** fica entre zero e o teto do sistema. O que ele deixou de
+     * garantir é o valor preso à faixa — isso era teto do template, e virou sugestão.
+     */
+    check(
+      "event_role_slots_buffunfa_bounds",
+      sql`${t.buffunfaMin} >= 0 and ${t.buffunfaMax} >= ${t.buffunfaMin} and ${t.buffunfaValue} between 0 and ${sql.raw(BUFFUNFA_ROLE_MAX.toString())}`,
+    ),
   ],
 );
 

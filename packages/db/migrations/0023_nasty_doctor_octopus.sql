@@ -1,0 +1,2 @@
+ALTER TABLE "event_role_slots" DROP CONSTRAINT "event_role_slots_buffunfa_range";--> statement-breakpoint
+ALTER TABLE "event_role_slots" ADD CONSTRAINT "event_role_slots_buffunfa_bounds" CHECK ("event_role_slots"."buffunfa_min" >= 0 and "event_role_slots"."buffunfa_max" >= "event_role_slots"."buffunfa_min" and "event_role_slots"."buffunfa_value" between 0 and 10000);

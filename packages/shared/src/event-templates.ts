@@ -51,18 +51,23 @@ export type EventRolePatch = z.output<typeof eventRolePatchSchema>;
 const uuid = z.uuid("Role inválida.");
 
 /**
- * Teto da faixa de Buffunfa por role. Existe porque Buffunfa é criada do nada (F6-8): sem um teto no
- * schema, um zero a mais digitado no template viraria inflação que o ledger não desfaz.
+ * Teto de Buffunfa por role, o único que vale em todo lugar: template, evento e tela. Existe porque
+ * Buffunfa é criada do nada — é freio contra o zero a mais digitado, não contra o caller, que é quem
+ * sabe quanto o conteúdo vale naquele dia (revisão da F6-8 em 2026-09-17, TASK-072).
  */
 export const BUFFUNFA_ROLE_MAX = 10_000n;
+
+/** O valor cabe no teto do sistema? Negativo já morre no `amountSchema`, que não aceita sinal. */
+export const isBuffunfaValue = (value: bigint): boolean => value >= 0n && value <= BUFFUNFA_ROLE_MAX;
 
 const buffunfaValue = (label: string) =>
   amountSchema(label, " de Buffunfa").refine((v) => v <= BUFFUNFA_ROLE_MAX, `${label} vai até ${BUFFUNFA_ROLE_MAX} de Buffunfa.`);
 
 /**
- * Role do template com vagas e **faixa obrigatória de Buffunfa** (TASK-057, F6-8). Os dois extremos
- * são exigidos: não existe faixa aberta, porque o caller ajusta o valor dentro dela até o fechamento
- * e o único freio contra o caller generoso demais é o teto que a staff escreveu aqui.
+ * Role do template com vagas e **faixa sugerida de Buffunfa** (TASK-057, revisada na TASK-072). Os
+ * dois extremos continuam exigidos na API e na UI, mas agora como **partida**: o evento nasce no
+ * mínimo (F6-48) e a partir daí o caller leva o valor a qualquer inteiro até `BUFFUNFA_ROLE_MAX`.
+ * A faixa orienta quem cria o evento; ela não amarra quem o está organizando.
  */
 export const eventTemplateRoleInputSchema = z
   .object({
@@ -73,20 +78,22 @@ export const eventTemplateRoleInputSchema = z
   })
   .refine((r) => r.buffunfaMax >= r.buffunfaMin, { path: ["buffunfaMax"], message: "O máximo de Buffunfa não pode ser menor que o mínimo." });
 
-/** Faixa de Buffunfa de uma role, já em bigint. */
+/** Faixa sugerida de Buffunfa de uma role, já em bigint. */
 export interface BuffunfaRange {
   min: bigint;
   max: bigint;
 }
 
-/** O valor cabe na faixa? É a mesma checagem no template, no evento e na tela (F6-8). */
+/** O valor cabe na faixa do template? Vale **no template**; no evento quem manda é `isBuffunfaValue`. */
 export const inBuffunfaRange = (value: bigint, range: BuffunfaRange): boolean => value >= range.min && value <= range.max;
 
-/** Faixa escrita para gente: `10 a 40 BUF`, ou `sem Buffunfa` quando a staff fechou em zero. */
+/** Faixa escrita para gente: `10 a 40 BUF`, ou `0 BUF` quando o template não sugere nada. */
 export function formatBuffunfaRange(range: BuffunfaRange): string {
-  if (range.max === 0n) return "sem Buffunfa";
   return range.min === range.max ? `${range.min} BUF` : `${range.min} a ${range.max} BUF`;
 }
+
+/** A faixa como ela se lê no evento: sugestão de partida, não teto (TASK-072). */
+export const buffunfaSuggestionText = (range: BuffunfaRange): string => `template sugere ${formatBuffunfaRange(range)}`;
 
 const templateFields = {
   name: requiredText("o nome do template", EVENT_TEMPLATE_NAME_MAX),

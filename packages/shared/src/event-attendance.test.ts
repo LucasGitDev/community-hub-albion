@@ -9,7 +9,7 @@ import {
   meetsAttendance,
   type AttendanceInput,
 } from "./event-attendance.js";
-import { formatBuffunfaRange, inBuffunfaRange } from "./event-templates.js";
+import { buffunfaSuggestionText, formatBuffunfaRange, inBuffunfaRange, isBuffunfaValue } from "./event-templates.js";
 import type { SplitPresenceDto } from "./loot-split.js";
 
 const HOUR = 3_600_000;
@@ -46,7 +46,17 @@ describe("faixa de Buffunfa da role (F6-8)", () => {
   it("escreve a faixa para gente", () => {
     expect(formatBuffunfaRange({ min: 10n, max: 40n })).toBe("10 a 40 BUF");
     expect(formatBuffunfaRange({ min: 25n, max: 25n })).toBe("25 BUF");
-    expect(formatBuffunfaRange({ min: 0n, max: 0n })).toBe("sem Buffunfa");
+    expect(formatBuffunfaRange({ min: 0n, max: 0n })).toBe("0 BUF");
+    expect(buffunfaSuggestionText({ min: 10n, max: 40n })).toBe("template sugere 10 a 40 BUF");
+  });
+
+  // TASK-072: no evento quem manda é o teto do sistema, não a faixa que o template escreveu.
+  it("o valor do evento vai de zero ao teto do sistema, independente da faixa do template", () => {
+    expect(isBuffunfaValue(0n)).toBe(true);
+    expect(isBuffunfaValue(500n)).toBe(true);
+    expect(isBuffunfaValue(10_000n)).toBe(true);
+    expect(isBuffunfaValue(10_001n)).toBe(false);
+    expect(isBuffunfaValue(-1n)).toBe(false);
   });
 
   it("o valor enviado pela API é inteiro e sem sinal", () => {

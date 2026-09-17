@@ -126,7 +126,11 @@ export function attendanceMemo(eventName: string, roleName: string): string {
 
 /* ------------------------------------------------------------------- dtos */
 
-/** Troca do valor de Buffunfa de uma role do evento (AC#2): só dentro da faixa, só até o fechamento. */
+/**
+ * Troca do valor de Buffunfa do evento, em lote ou por role (TASK-072): qualquer inteiro de zero ao
+ * teto do sistema, só até o fechamento. O mesmo corpo serve às duas rotas — o alvo está na URL, não
+ * no JSON, então não existe um jeito de pedir o lote "sem querer".
+ */
 export const eventRoleBuffunfaSchema = z.object({
   value: amountSchema("O valor de Buffunfa", " de Buffunfa").refine((v) => v <= BUFFUNFA_ROLE_MAX, `O valor de Buffunfa vai até ${BUFFUNFA_ROLE_MAX}.`),
 });
