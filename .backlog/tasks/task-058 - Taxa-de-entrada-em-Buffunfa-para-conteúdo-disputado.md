@@ -1,10 +1,11 @@
 ---
 id: TASK-058
 title: Taxa de entrada em Buffunfa para conteúdo disputado
-status: To Do
-assignee: []
+status: In Progress
+assignee:
+  - '@lucas'
 created_date: '2026-09-17 17:04'
-updated_date: '2026-09-17 17:08'
+updated_date: '2026-09-17 18:17'
 labels: []
 milestone: m-6
 dependencies:
@@ -44,3 +45,14 @@ A cobrança acontece na inscrição, não no início do evento, porque é o úni
 - [ ] #7 Notas e final summary com evidências; commits Conventional atômicos sem co-autor
 - [ ] #8 PR merged na main com quality gate verde; branch e worktree removidos
 <!-- DOD:END -->
+
+## Implementation Plan
+
+<!-- SECTION:PLAN:BEGIN -->
+1. DB: migration 0019 — event_templates.default_entry_fee, events.entry_fee (bigint >= 0, default 0), event_signups.fee_entry_id -> ledger_entries, e ledger_entry_kind += 'entry_fee'.
+2. shared: LEDGER_ENTRY_KINDS/labels com entry_fee; entryFee no EventDto e defaultEntryFee no EventTemplateDto/schemas; schema do PATCH de taxa de entrada (>= 0, sem teto).
+3. db: extrair o núcleo do spendCurrency (spendCurrencyTx) para a inscrição cobrar DENTRO da transação que dá a vaga; joinEventRole cobra só quando é inscrição nova (troca de role carrega o fee_entry_id); leaveEvent estorna; applyEventTransition estorna a todos no cancelamento e a quem ainda está na espera no start.
+4. server: EventSignupsService/controller/botão traduzem insufficient_funds numa mensagem clara; rota PATCH /api/events/:id/entry-fee liberada só em draft/open; template CRUD carrega a taxa default.
+5. web: campo de taxa de entrada no template e no evento (draft/open), taxa visível no card de inscrição, erro de saldo em toast; embed do Discord mostra a taxa.
+6. testes: integração (cobra, recusa por saldo, estorno ao sair, estorno no cancelamento, sink não credita ninguém, taxa + participação em dois lançamentos) + concorrência (dois inscritos, saldo para um) + e2e do fluxo + screenshots 1280/400.
+<!-- SECTION:PLAN:END -->
