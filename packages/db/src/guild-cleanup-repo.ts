@@ -1,5 +1,5 @@
 import { assessGuildCleanup, type Role } from "@albion-hub/shared";
-import { and, eq, inArray, isNotNull, isNull, sql } from "drizzle-orm";
+import { and, eq, inArray, isNotNull, isNull } from "drizzle-orm";
 import type { Database } from "./client.js";
 import { sessions, userRoles, users } from "./schema.js";
 
@@ -125,12 +125,6 @@ export async function runGuildCleanup(db: Database, input: GuildCleanupInput): P
 export async function getLeftGuildAt(db: Database, userId: string): Promise<Date | null> {
   const [row] = await db.select({ leftGuildAt: users.leftGuildAt }).from(users).where(eq(users.id, userId));
   return row?.leftGuildAt ?? null;
-}
-
-/** Contas marcadas como fora do servidor, para o resumo do disparo manual. */
-export async function countInactiveMembers(db: Database): Promise<number> {
-  const [row] = await db.select({ total: sql<number>`count(*)::int` }).from(users).where(isNotNull(users.leftGuildAt));
-  return row?.total ?? 0;
 }
 
 /**

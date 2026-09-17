@@ -51,7 +51,6 @@ export {
   type UnbanUserResult,
 } from "./bans-repo.js";
 export {
-  countInactiveMembers,
   getLeftGuildAt,
   markLeftGuildForDev,
   runGuildCleanup,
