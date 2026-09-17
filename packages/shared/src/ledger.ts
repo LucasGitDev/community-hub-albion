@@ -4,12 +4,17 @@ import { CURRENCIES, type Currency } from "./currency.js";
  * Ledger (doc-002, TASK-026; duas moedas desde a TASK-056): tabela única append-only em bigint inteiro (Q20).
  * Correção nunca edita lançamento: cria um estorno (`reversal`) ligado ao original.
  */
-export const LEDGER_ENTRY_KINDS = ["split_payout", "split_fee", "withdrawal", "reversal", "adjustment"] as const;
+/**
+ * `purchase` e a origem `shop_order` nascem na TASK-059 **sem consumidor**, pelo mesmo motivo do
+ * `spendCurrency` (F6-33): a compra só reserva, e o débito é lançado na entrega (TASK-060). Ter o tipo e a
+ * origem prontos agora é o que faz a entrega ser uma transição de estado, e não uma migration nova.
+ */
+export const LEDGER_ENTRY_KINDS = ["split_payout", "split_fee", "withdrawal", "reversal", "adjustment", "purchase"] as const;
 
 export type LedgerEntryKind = (typeof LEDGER_ENTRY_KINDS)[number];
 
 /** Tipos de origem de um lançamento (`reference_type`): de onde ele veio. */
-export const LEDGER_REFERENCE_TYPES = ["event", "loot_split", "withdrawal", "manual"] as const;
+export const LEDGER_REFERENCE_TYPES = ["event", "loot_split", "withdrawal", "manual", "shop_order"] as const;
 
 export type LedgerReferenceType = (typeof LEDGER_REFERENCE_TYPES)[number];
 
@@ -23,6 +28,7 @@ export const LEDGER_ENTRY_KIND_LABELS: Record<LedgerEntryKind, string> = {
   withdrawal: "Saque",
   reversal: "Estorno",
   adjustment: "Ajuste",
+  purchase: "Compra na loja",
 };
 
 /**

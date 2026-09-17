@@ -23,7 +23,9 @@ export type Action =
   | "reject"
   | "settle"
   /** Banir e desbanir jogador (TASK-050): corta o acesso na hora, sem apagar a conta. */
-  | "ban";
+  | "ban"
+  /** Entregar o pedido da loja (`shop:fulfill`, F6-25). A entrega em si é a TASK-060. */
+  | "fulfill";
 
 /** Campos de dono por tipo de recurso (condições das regras). */
 interface SubjectFields {
@@ -42,6 +44,10 @@ interface SubjectFields {
    * porta que cria outro admin, e continua só do admin.
    */
   MemberProfile: Record<never, never>;
+  /** Item do catálogo da loja (TASK-059). Quem publica e precifica é `shop:manage` (F6-25). */
+  ShopItem: Record<never, never>;
+  /** Pedido da loja. O dono é quem comprou: o membro lê o próprio, a staff lê e entrega qualquer um. */
+  ShopOrder: { userId: string };
 }
 
 export type SubjectType = keyof SubjectFields | "all";
@@ -69,6 +75,10 @@ export function defineAbilityFor(user: AbilityUser): AppAbility {
     // Entrada/troca de nick (TASK-012, Q14/Q31): pede e acompanha só a própria solicitação.
     can("create", "MemberRequest");
     can("read", "MemberRequest", own);
+    // Loja (TASK-059): qualquer membro vê o catálogo e compra; pedido, só o próprio.
+    can("read", "ShopItem");
+    can("create", "ShopOrder");
+    can("read", "ShopOrder", own);
   }
 
   if (roles.has("caller")) {
@@ -92,6 +102,13 @@ export function defineAbilityFor(user: AbilityUser): AppAbility {
     // e esta linha sai daqui. Não use este `manage` como argumento de que "staff pode tudo em membro":
     // conceder papel (`UserRole`) segue fora, e banir staff/admin segue só do admin (TASK-050).
     can("manage", "MemberProfile");
+    /**
+     * Loja (F6-25): `shop:manage` é publicar/precificar/despublicar o item; `shop:fulfill` é entregar o
+     * pedido (TASK-060). As duas ficam no bloco `staff` e são **provisórias**, com os nomes já registrados
+     * em `SHOP_CAPABILITIES` para a F7 — quando ela chegar, viram permissões atribuíveis uma a uma.
+     */
+    can("manage", "ShopItem");
+    can(["read", "fulfill"], "ShopOrder");
   }
 
   if (roles.has("admin")) {
