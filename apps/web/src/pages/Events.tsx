@@ -241,6 +241,7 @@ function EventRow({
                 key={role.slotId}
                 role={role}
                 busy={busy === `${event.id}:${role.slotId}`}
+                entryFee={signup ? NO_ENTRY_FEE : entryFee}
                 blocked={missing !== null ? entryFeeLabel(entryFee) : null}
                 onClick={() => onJoin(event, role)}
               />
@@ -276,7 +277,12 @@ function EventRow({
  * Botão de role: mostra ocupação, destaca a minha e avisa antes do clique quando a role está lotada
  * ("entrar na espera"), pra ninguém clicar achando que garantiu vaga.
  */
-function RoleButton({ role, busy, blocked, onClick }: { role: RoleView; busy: boolean; blocked: string | null; onClick: () => void }) {
+/**
+ * O botão diz o que o clique faz: num evento cobrado, o custo entra no nome acessível da vaga, e não
+ * só no selo ao lado. Quem já está inscrito não vê o custo de novo — ele já pagou, e trocar de role
+ * não cobra. O selo continua sendo a leitura de relance; isto é a promessa no próprio controle.
+ */
+function RoleButton({ role, busy, entryFee, blocked, onClick }: { role: RoleView; busy: boolean; entryFee: bigint; blocked: string | null; onClick: () => void }) {
   const mineLabel = role.mine === "confirmed" ? "sua role" : role.mine === "waitlist" ? `espera ${role.myPosition}º` : null;
   return (
     <Button
@@ -285,7 +291,9 @@ function RoleButton({ role, busy, blocked, onClick }: { role: RoleView; busy: bo
       title={blocked ?? undefined}
       disabled={busy || role.mine === "confirmed" || blocked !== null}
       onClick={onClick}
-      aria-label={`${role.name}, ${role.confirmed} de ${role.slots} vagas${role.full ? ", lotada" : ""}${role.description ? `. ${role.description}` : ""}`}
+      aria-label={`${role.name}, ${role.confirmed} de ${role.slots} vagas${role.full ? ", lotada" : ""}${
+        entryFee > NO_ENTRY_FEE ? `. Custa ${formatAmount(entryFee, "buffunfa")} para entrar` : ""
+      }${role.description ? `. ${role.description}` : ""}`}
       className={cn("gap-1.5", role.full && !role.mine && "border-dashed text-muted-foreground")}
     >
       <span className="truncate">{role.name}</span>
