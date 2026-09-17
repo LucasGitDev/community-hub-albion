@@ -3,7 +3,7 @@ id: doc-005
 title: Decisões v1
 type: specification
 created_date: '2026-09-15 03:22'
-updated_date: '2026-09-17 17:03'
+updated_date: '2026-09-17 18:14'
 ---
 Resultado do grill (R1–R3, 2026-09-15). Referência pra specs e tasks.
 
@@ -154,3 +154,15 @@ Toca da Turma e Buffunfa"; aqui ficam as regras de economia e de fila.
 ### Fora da F6 (registrado para não voltar como novidade)
 Transações entre jogadores (traz lavagem de taxa de entrada e precisa de limite e rastro próprios),
 ping comprado com Buffunfa (vai com a F7), automação de cargo do Discord.
+
+### Decisões tomadas durante a TASK-056 (não vieram da grelha)
+| # | Decisão |
+|---|---|
+| F6-30 | **Prata é abreviada no chip do header** (`1,9M`); Buffunfa continua por extenso (F6-5). Não é estética: com as duas moedas por extenso o chip estourava o header em 400px e derrubava dois e2e mobile — elementos ficavam inclicáveis em `/eventos`. O valor exato da prata está a um clique, na Carteira. |
+| F6-31 | Os dois saldos viajam no `/api/me/withdrawals` (campo `balances`), sem rota nova: é a chamada que o painel já repete no polling, então o chip do header não custa uma segunda ida ao servidor. |
+| F6-32 | O filtro de moeda do extrato vale **só para a tabela**. Os números do topo leem sempre a lista cronológica completa — senão o saldo sumiria da tela só porque alguém filtrou por Buffunfa. Custa uma segunda request apenas quando há filtro ativo. |
+| F6-33 | `spendCurrency` (débito com `for update` + releitura na transação) nasceu na TASK-056 **sem consumidor**: é a porta que a taxa de entrada (058) e a loja (059) vão usar, e sem ela o critério de "nunca fica negativo" não teria como ser provado. |
+| F6-34 | O seed do dev-login passou de `silver` para `ledger` (com `currency`), e o extrato lido pela staff também mostra os dois saldos, já que a tabela ganhou a coluna Moeda. |
+| F6-35 | `BUFFUNFA_EMOJI_FILE` é env com default apontando para `assets/` do repo (mesmo padrão do `WEB_DIST_DIR`), e o Dockerfile passou a copiar `assets/`. Sem isso o bot não teria o PNG dentro da imagem para criar o emoji (F6-28). |
+
+**Bug encontrado e corrigido no caminho:** "Ganhos no mês" e "Último split" da Carteira somavam o extrato inteiro e passaram a incluir Buffunfa no instante em que ela existiu. É exatamente o esquecimento que a F6-1 previu ao assumir o risco da tabela única — apareceu no primeiro dia, e é por isso que saldo e extrato passaram a exigir moeda explícita na assinatura (F6-3).

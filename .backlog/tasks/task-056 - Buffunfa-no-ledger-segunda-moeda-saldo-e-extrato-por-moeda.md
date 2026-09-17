@@ -1,11 +1,11 @@
 ---
 id: TASK-056
 title: 'Buffunfa no ledger: segunda moeda, saldo e extrato por moeda'
-status: In Progress
+status: Done
 assignee:
   - '@claude'
 created_date: '2026-09-17 17:04'
-updated_date: '2026-09-17 18:11'
+updated_date: '2026-09-17 18:13'
 labels: []
 milestone: m-6
 dependencies:
