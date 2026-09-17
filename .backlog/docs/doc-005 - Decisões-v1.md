@@ -3,7 +3,7 @@ id: doc-005
 title: Decisões v1
 type: specification
 created_date: '2026-09-15 03:22'
-updated_date: '2026-09-17 18:40'
+updated_date: '2026-09-17 18:54'
 ---
 Resultado do grill (R1–R3, 2026-09-15). Referência pra specs e tasks.
 
@@ -178,3 +178,14 @@ ping comprado com Buffunfa (vai com a F7), automação de cargo do Discord.
 | F6-41 | **Teto de preço de 1e9 BUF**, com 400 explicado. Origem: o `security-review` apontou que preço acima do `int8` virava 500 mudo. Não é regra de economia, é limite de tipo. |
 
 **Contrato que a TASK-060 consome:** `shop_orders.status = 'reserved'` — Buffunfa reservada (soma dos `reserved` em `getShopBalance`) e estoque já decrementado. Transições em `ALLOWED_SHOP_ORDER_TRANSITIONS` (`reserved → delivered | cancelled`), com checks no banco: `ledger_entry_id` not null **se e somente se** `delivered`; `handled_by`/`handled_at` sempre juntos e nunca em `reserved`; nota obrigatória no cancelamento. O kind `purchase` e o reference_type `shop_order` já existem no ledger sem consumidor — mesmo precedente do `spendCurrency` (F6-33).
+
+### Decisões tomadas durante a TASK-058 (taxa de entrada)
+| # | Decisão |
+|---|---|
+| F6-42 | **Quem começa o evento ainda na espera recebe a taxa de volta.** A cobrança vale para confirmado **e** para quem entra na espera — senão a espera seria a porta de entrada grátis e a lista seguiria inflada, que é justamente o que a taxa existe para resolver. Mas quem nunca teve vaga não jogou, então o `start` estorna a taxa de quem ficou na espera. Confirmado que desistiu depois do início continua sem devolução (F6-13). |
+| F6-43 | Trocar de role, ou ser movido pelo caller, **não recobra nem devolve**: a taxa é do **evento**, não da vaga. A inscrição nova carrega o `fee_entry_id`. |
+| F6-44 | A taxa congela em `closed`, não no arquivamento — diferente da taxa de prata do split. Dali em diante a lista já foi cobrada, e mexer no valor não teria como alcançar quem pagou. |
+| F6-45 | O vínculo é `fee_entry_id` na inscrição, não uma busca por evento+usuário: quem entra, sai e volta gera mais de uma cobrança no mesmo evento, e a busca não saberia qual estornar. |
+| F6-46 | Teto de `int8` na validação do valor (limite **físico**, não de política — o "sem teto" da F6-12 continua valendo). Sem ele, valor acima de 2^63-1 virava 500 do Postgres. |
+
+**Bug encontrado e corrigido no caminho:** o PATCH de template não carregava `defaultEntryFee` na mesclagem, então **editar o nome do template zerava a taxa em silêncio**. O caller só descobriria na hora em que ninguém pagou para entrar. Os e2e de template pegaram; corrigido com teste de regressão. O mesmo padrão valeu para a faixa de Buffunfa da TASK-057, que é obrigatória e faria o PATCH recusar qualquer edição.

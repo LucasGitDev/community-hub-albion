@@ -1,11 +1,11 @@
 ---
 id: TASK-058
 title: Taxa de entrada em Buffunfa para conteúdo disputado
-status: In Progress
+status: Done
 assignee:
   - '@lucas'
 created_date: '2026-09-17 17:04'
-updated_date: '2026-09-17 18:47'
+updated_date: '2026-09-17 18:51'
 labels: []
 milestone: m-6
 dependencies:
