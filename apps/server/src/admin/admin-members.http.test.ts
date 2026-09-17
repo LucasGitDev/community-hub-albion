@@ -113,6 +113,20 @@ describe.skipIf(!baseUrl)("lista de membros do admin (TASK-043)", () => {
     expect(member.albion.checkedAt).toBe("2026-09-15T12:00:00.000Z");
   });
 
+  it("a lista mostra quem saiu do servidor, com a data, sem confundir com banimento (TASK-049)", async () => {
+    const boss = await session("560000000000000015", "chefe-limpeza", ["admin"]);
+    const saiu = await session("560000000000000016", "saiu-do-servidor");
+    const ficou = await session("560000000000000017", "continua-no-servidor");
+    const saida = new Date("2026-09-18T07:00:00.000Z");
+    await handle.db.update(schema.users).set({ leftGuildAt: saida }).where(eq(schema.users.id, saiu.id));
+
+    const res = await list(boss.cookie, "?search=servidor");
+    const inativo = res.body.members.find((m: { id: string }) => m.id === saiu.id);
+    const ativo = res.body.members.find((m: { id: string }) => m.id === ficou.id);
+    expect(inativo).toMatchObject({ leftGuildAt: saida.toISOString(), ban: null });
+    expect(ativo).toMatchObject({ leftGuildAt: null, ban: null });
+  });
+
   it("busca acha por nick ou por usuário do Discord, e trata % como texto (AC#4)", async () => {
     const boss = await session("560000000000000020", "chefe-busca", ["admin"]);
     const byNick = await session("560000000000000021", "usuario-um");
