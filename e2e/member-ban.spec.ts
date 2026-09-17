@@ -154,13 +154,19 @@ test("ninguém bane a si mesmo: a ação não aparece na própria linha e a API 
 test("staff bane pela mesma tela, sem ganhar as ações de admin (AC#1, AC#2)", async ({ page }) => {
   await como(page, "30", u("ban-staff-alvo"));
   await como(page, "31", u("ban-staffer"), ["staff"]);
-  await page.goto("/admin/membros");
+  // A staff chega pelo menu: sem entrada na navegação, ela poderia banir mas não acharia a tela.
+  await page.goto("/carteira");
+  await page.getByRole("link", { name: "Membros do painel" }).first().click();
   await expect(page.getByRole("heading", { name: "Membros", exact: true })).toBeVisible();
   // Staff não importa membro nem gerencia nick: essas ações continuam sendo de admin.
   await expect(page.getByRole("button", { name: "Importar membros do Discord" })).toHaveCount(0);
   await page.getByLabel("Buscar por nick ou usuário do Discord").fill(u("ban-staff-alvo"));
   const row = page.getByRole("row").filter({ hasText: `@${u("ban-staff-alvo")}` });
   await expect(row.getByRole("button", { name: /^Gerenciar / })).toHaveCount(0);
+  // E a staff não vê a ação em quem ela não pode banir: outro staff ou um admin.
+  await page.getByLabel("Buscar por nick ou usuário do Discord").fill(u("ban-staffer"));
+  await expect(page.getByRole("row").filter({ hasText: `@${u("ban-staffer")}` }).getByRole("button", { name: /^Banir / })).toHaveCount(0);
+  await page.getByLabel("Buscar por nick ou usuário do Discord").fill(u("ban-staff-alvo"));
   await snap(page, "ban-visao-staff");
 
   await row.getByRole("button", { name: /^Banir / }).click();

@@ -47,7 +47,9 @@ export function AppShell() {
       { to: "/staff/roles", label: "Roles", icon: <Shield />, can: ["update", "EventTemplate"] },
       { to: "/staff/membros", label: "Membros", icon: <Users />, can: ["approve", "MemberRequest"] },
       { to: "/staff/splits", label: "Loot splits", icon: <ScrollText />, can: ["update", "LootSplit"] },
-      { to: "/admin/membros", label: "Membros do painel", icon: <UsersRound />, can: ["read", "UserRole"] },
+      // `ban`/`Ban` e não `read`/`UserRole`: a staff precisa achar a tela para banir (TASK-050), e o
+      // admin continua entrando porque tem `manage all`.
+      { to: "/admin/membros", label: "Membros do painel", icon: <UsersRound />, can: ["ban", "Ban"] },
       { to: "/admin/papeis", label: "Papéis", icon: <KeyRound />, can: ["read", "UserRole"] },
     ] satisfies NavItem[]
   ).filter(allowed);
