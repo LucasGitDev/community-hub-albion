@@ -23,6 +23,13 @@ export const transitionEvent = (eventId: string, transition: EventTransition, re
 export const updateEvent = (eventId: string, body: { name: string; description: string | null }): Promise<EventDto> =>
   api(`/api/events/${eventId}`, { method: "PATCH", body: JSON.stringify(body) });
 
+/**
+ * Taxa de entrada em Buffunfa (TASK-058). Vai como string, como todo valor inteiro do projeto (Q20).
+ * A API recusa com 409 depois que as inscrições fecham, mesmo que a tela deixe o campo à vista.
+ */
+export const setEventEntryFee = (eventId: string, entryFee: bigint): Promise<EventDto> =>
+  api(`/api/events/${eventId}/entry-fee`, { method: "PATCH", body: JSON.stringify({ entryFee: entryFee.toString() }) });
+
 export const transferEventOwner = (eventId: string, ownerUserId: string): Promise<EventDto> =>
   api(`/api/events/${eventId}/owner`, { method: "POST", body: JSON.stringify({ ownerUserId }) });
 

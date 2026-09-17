@@ -11,11 +11,11 @@ import {
   type EventTemplateDto,
   type EventTemplateYaml,
 } from "@albion-hub/shared";
-import { Check, Download, Info, LayoutTemplate, Pencil, Plus, Shield, Sparkles, Trash2, Upload, Users, X } from "lucide-react";
+import { Check, Download, Info, LayoutTemplate, Pencil, Plus, Shield, Sparkles, Ticket, Trash2, Upload, Users, X } from "lucide-react";
 import { useCallback, useEffect, useId, useMemo, useState } from "react";
 import { NavLink } from "react-router";
 import { toast } from "sonner";
-import { EmptyState, PageHeader, Panel, Pill, StatCard } from "@/components/display";
+import { Amount, EmptyState, PageHeader, Panel, Pill, StatCard } from "@/components/display";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
@@ -38,17 +38,20 @@ interface TemplateDraft {
   description: string;
   minPartySize: string;
   maxPartySize: string;
+  /** Taxa de entrada default em Buffunfa, como o texto digitado. `"0"` é o normal (F6-12). */
+  defaultEntryFee: string;
   active: boolean;
   roles: DraftRole[];
 }
 
-const emptyDraft = (): TemplateDraft => ({ name: "", description: "", minPartySize: "5", maxPartySize: "", active: true, roles: [] });
+const emptyDraft = (): TemplateDraft => ({ name: "", description: "", minPartySize: "5", maxPartySize: "", defaultEntryFee: "0", active: true, roles: [] });
 
 const draftFrom = (t: EventTemplateDto): TemplateDraft => ({
   name: t.name,
   description: t.description ?? "",
   minPartySize: String(t.minPartySize),
   maxPartySize: t.maxPartySize === null ? "" : String(t.maxPartySize),
+  defaultEntryFee: t.defaultEntryFee,
   active: t.active,
   roles: t.roles.map((r) => ({ roleId: r.roleId, slots: String(r.slots) })),
 });
@@ -58,6 +61,8 @@ const toInput = (draft: TemplateDraft) => ({
   description: draft.description,
   minPartySize: Number(draft.minPartySize),
   maxPartySize: draft.maxPartySize.trim() === "" ? null : Number(draft.maxPartySize),
+  // Vazio é zero: quem deixa o campo em branco quer evento gratuito, não um erro de validação.
+  defaultEntryFee: draft.defaultEntryFee.trim() === "" ? "0" : draft.defaultEntryFee.trim(),
   active: draft.active,
   roles: draft.roles.map((r) => ({ roleId: r.roleId, slots: Number(r.slots) })),
 });
@@ -277,6 +282,13 @@ function TemplateRow({ template, onEdit, onRemove }: { template: EventTemplateDt
           <span>
             <span className="num font-medium text-foreground">{template.totalSlots}</span> vagas
           </span>
+          {/* Só aparece quando cobra: "entrada gratuita" em todo card seria ruído no caso normal. */}
+          {template.defaultEntryFee !== "0" && (
+            <span className="inline-flex items-center gap-1.5">
+              <Ticket className="size-3.5" aria-hidden />
+              entrada <Amount value={BigInt(template.defaultEntryFee)} currency="buffunfa" className="font-medium" />
+            </span>
+          )}
         </p>
         <ul className="mt-2 flex flex-wrap gap-1.5">
           {/* A descrição da role (TASK-039) fica no hover/foco da pill: o card do template é um resumo,
@@ -347,7 +359,7 @@ function TemplateDialog({
   onClose: () => void;
   onSaved: (t: EventTemplateDto) => void;
 }) {
-  const ids = { name: useId(), description: useId(), min: useId(), max: useId() };
+  const ids = { name: useId(), description: useId(), min: useId(), max: useId(), entryFee: useId() };
   const [draft, setDraft] = useState<TemplateDraft>(() => (template ? draftFrom(template) : emptyDraft()));
   const [busy, setBusy] = useState(false);
   const patch = (values: Partial<TemplateDraft>) => setDraft((d) => ({ ...d, ...values }));
@@ -408,6 +420,24 @@ function TemplateDialog({
               <Label htmlFor={ids.max}>Máximo (vazio = sem teto)</Label>
               <Input id={ids.max} inputMode="numeric" value={draft.maxPartySize} onChange={(e) => patch({ maxPartySize: e.target.value })} placeholder="∞" className="num mt-1.5" />
             </div>
+          </div>
+
+          <div>
+            <Label htmlFor={ids.entryFee}>Taxa de entrada em Buffunfa</Label>
+            <Input
+              id={ids.entryFee}
+              inputMode="numeric"
+              value={draft.defaultEntryFee}
+              onChange={(e) => patch({ defaultEntryFee: e.target.value })}
+              placeholder="0"
+              aria-describedby={`${ids.entryFee}-hint`}
+              className="num mt-1.5"
+            />
+            {/* O default é zero e o texto diz isso: a taxa é decisão do caller, evento a evento (F6-12). */}
+            <p id={`${ids.entryFee}-hint`} className="mt-1.5 text-sm text-muted-foreground">
+              <span className="num font-medium text-foreground">0</span> = entrada gratuita. O caller ainda pode mudar o valor em cada evento, até as inscrições
+              fecharem. A Buffunfa cobrada some: não vai para ninguém.
+            </p>
           </div>
 
           <fieldset>

@@ -52,6 +52,8 @@ const toneClass = {
   destructive:
     "border-destructive/35 bg-destructive/10 text-destructive",
   success: "border-success/35 bg-success/10 text-success",
+  /** Buffunfa, e só ela: `--brand` é o ouro dela desde a TASK-055. Âmbar continua reservado a CTA. */
+  brand: "border-brand/35 bg-brand/10 text-brand",
   neutral: "border-border bg-muted text-muted-foreground",
 } as const;
 
