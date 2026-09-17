@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { ENTRY_FEE_REFUND_REASONS, entryFeeLabel, entryFeeSchema, eventEntryFeeSchema, insufficientEntryFeeMessage, NO_ENTRY_FEE } from "./entry-fee.js";
+import { ENTRY_FEE_MAX, ENTRY_FEE_REFUND_REASONS, entryFeeLabel, entryFeeSchema, eventEntryFeeSchema, insufficientEntryFeeMessage, NO_ENTRY_FEE } from "./entry-fee.js";
 import { entryFeeEditable, entryFeeFrozenError } from "./events.js";
 
 describe("taxa de entrada em Buffunfa (TASK-058)", () => {
@@ -7,8 +7,9 @@ describe("taxa de entrada em Buffunfa (TASK-058)", () => {
     const schema = entryFeeSchema();
     expect(schema.parse("0")).toBe(NO_ENTRY_FEE);
     expect(schema.parse(" 250 ")).toBe(250n);
-    // Sem teto: quem calibra o filtro é o caller (F6-12).
-    expect(schema.parse("99999999999999999999")).toBe(99999999999999999999n);
+    // Sem teto de política (F6-12), mas a borda do int8 vira 400 legível em vez de 500 do banco.
+    expect(schema.parse(String(ENTRY_FEE_MAX))).toBe(ENTRY_FEE_MAX);
+    expect(schema.safeParse("99999999999999999999").success).toBe(false);
     for (const bad of ["-1", "1,5", "1.5", "2k", "", "abc", "+3"]) expect(schema.safeParse(bad).success).toBe(false);
     // Número não passa: no fio o valor é string, como todo bigint do projeto (Q20).
     expect(schema.safeParse(20).success).toBe(false);
