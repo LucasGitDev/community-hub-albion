@@ -62,6 +62,8 @@ export function AdminMembers() {
   // Staff entra aqui só para banir (TASK-050): o resto da tela é do admin e fica escondido em vez de dar 403.
   const canManage = ability.can("read", "UserRole");
   const canBan = ability.can("ban", "Ban");
+  // Staff bane quem está abaixo dela; banir staff ou admin é coisa de admin (a API recusa igual).
+  const isAdmin = user.roles.includes("admin");
   /**
    * O que a tela já sabe e o servidor ainda não repetiu: conferir o nick ou editar o membro troca só a linha,
    * sem recarregar a lista (AC#1/AC#2). O próximo carregamento traz o valor do servidor e o mapa é descartado.
@@ -236,7 +238,7 @@ export function AdminMembers() {
                   member={m}
                   isSelf={m.id === user.id}
                   canManage={canManage}
-                  canBan={canBan}
+                  canBan={canBan && (isAdmin || !m.roles.some((r) => r === "staff" || r === "admin"))}
                   onChecked={(albion) => patch(m.id, { albion })}
                   onManage={() => setManaging(m.id)}
                   onBan={() => setBanning(m.id)}
