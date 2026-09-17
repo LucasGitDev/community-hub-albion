@@ -67,7 +67,10 @@ test("caller cobra entrada, membro sem Buffunfa lê quanto falta, membro com sal
   const pobre = page.getByRole("listitem").filter({ hasText: eventName }).first();
   await expect(pobre.getByText("entrada 30 BUF")).toBeVisible();
   await expect(pobre.getByText("Faltam 20 BUF para a entrada deste evento.")).toBeVisible();
-  await expect(pobre.getByRole("button", { name: /^Tank, 0 de 1/ })).toBeDisabled();
+  // O custo está no nome acessível da vaga, não só no selo ao lado (um CTA que diz o que acontece).
+  const vagas = pobre.getByRole("button", { name: /Custa 30 BUF para entrar/ });
+  await expect(vagas).toHaveCount(2);
+  for (const vaga of await vagas.all()) await expect(vaga).toBeDisabled();
   await snap(page, `taxa-entrada-sem-saldo-${tag()}`);
 
   // Membro com saldo: paga na inscrição e o chip do header cai na hora (F6-13).
@@ -76,7 +79,7 @@ test("caller cobra entrada, membro sem Buffunfa lê quanto falta, membro com sal
   const chip = page.getByRole("link", { name: "Meus saldos" });
   await expect(chip).toContainText("100 BUF");
   const card = page.getByRole("listitem").filter({ hasText: eventName }).first();
-  await card.getByRole("button", { name: /^Tank, 0 de 1/ }).click();
+  await card.getByRole("button", { name: /^Tank, 0 de 1 vagas\. Custa 30 BUF para entrar/ }).click();
   await expect(page.getByText("Vaga garantida em Tank")).toBeVisible();
   await expect(chip).toContainText("70 BUF");
   await snap(page, `taxa-entrada-pago-${tag()}`);
