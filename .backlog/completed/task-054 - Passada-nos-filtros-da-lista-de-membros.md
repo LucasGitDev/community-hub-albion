@@ -1,11 +1,11 @@
 ---
 id: TASK-054
 title: Passada nos filtros da lista de membros
-status: In Progress
+status: Done
 assignee:
   - '@claude'
 created_date: '2026-09-17 12:15'
-updated_date: '2026-09-17 14:32'
+updated_date: '2026-09-17 14:39'
 labels:
   - web
   - admin
@@ -37,7 +37,7 @@ Hoje a lista de membros filtra por todos / não encontrados / sem nick / banidos
 - [x] #5 Comportamento confere com decisões do doc-005 (Qs citadas) e nada fora do escopo da task
 - [x] #6 Toca auth, ledger, prata ou saque: security-review sem achado crítico
 - [x] #7 Notas e final summary com evidências; commits Conventional atômicos sem co-autor
-- [ ] #8 PR merged na main com quality gate verde; branch e worktree removidos
+- [x] #8 PR merged na main com quality gate verde; branch e worktree removidos
 <!-- DOD:END -->
 
 ## Implementation Plan
