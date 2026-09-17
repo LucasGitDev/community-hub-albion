@@ -1,17 +1,27 @@
 import type { ReactNode } from "react";
 import { Check, Hourglass, PackageCheck, X } from "lucide-react";
-import { formatSilver, type WithdrawalStatus } from "@albion-hub/shared";
+import { formatAmount, type Currency, type WithdrawalStatus } from "@albion-hub/shared";
 import { cn } from "@/lib/utils";
 
-/** Valor em prata. Sinal explícito quando `signed`. */
-export function Silver({ value, signed, className }: { value: bigint; signed?: boolean; className?: string }) {
+/**
+ * **O** renderizador de valor do sistema, agora por moeda (F6-4). A moeda é obrigatória: um valor sem
+ * moeda declarada não existe mais, nem no ledger nem na tela.
+ *
+ * A cor é identidade, não decoração (doc-009): prata é neutra (`foreground`), Buffunfa é o ouro do
+ * `--brand`, reservado a ela desde a TASK-055. Âmbar continua sendo só CTA e não aparece aqui. Quem
+ * chama pode sobrescrever (valor estornado fica cinza, crédito fica verde) — o default é a moeda.
+ *
+ * Sinal explícito quando `signed`. Prata abrevia em contexto secundário; Buffunfa nunca (F6-5), e é o
+ * `formatAmount` compartilhado que garante isso no painel e no bot ao mesmo tempo.
+ */
+export function Amount({ value, currency, signed, className }: { value: bigint; currency: Currency; signed?: boolean; className?: string }) {
   const negative = value < 0n;
   const abs = negative ? -value : value;
   const sign = signed ? (negative ? "−" : "+") : negative ? "−" : "";
   return (
-    <span className={cn("num whitespace-nowrap", className)}>
+    <span className={cn("num whitespace-nowrap", currency === "buffunfa" && "text-brand", className)}>
       {sign}
-      {formatSilver(abs)}
+      {formatAmount(abs, currency)}
     </span>
   );
 }
@@ -74,7 +84,7 @@ export function PageHeader({ title, description, action, badge }: { title: strin
   );
 }
 
-/** Card de número. `emphasis` = o número principal da tela (maior, não colorido: prata é neutra). */
+/** Card de número. `emphasis` = o número principal da tela (maior; a cor, quando há, vem da moeda). */
 export function StatCard({
   label,
   labelId,

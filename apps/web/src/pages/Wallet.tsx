@@ -1,14 +1,15 @@
-import { useCallback, type ReactNode } from "react";
+import { useCallback, useState, type ReactNode } from "react";
 import { Link } from "react-router";
-import { ArrowUpRight, CalendarDays, Check, Coins, Lock, Receipt, RefreshCw, Swords, TriangleAlert } from "lucide-react";
+import { ArrowUpRight, CalendarDays, Check, Coins, Lock, Receipt, RefreshCw, Sparkles, Swords, TriangleAlert } from "lucide-react";
 import { usePoll } from "@/api/use-poll";
 import { useWallet } from "@/api/WalletProvider";
 import { fetchMyStatement, type LedgerEntry, type Statement } from "@/api/wallet";
 import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
 import { Skeleton } from "@/components/ui/skeleton";
-import { PageHeader, Panel, Silver, StatCard, StatusBadge } from "@/components/display";
-import { LedgerTable } from "@/components/ledger";
+import { PageHeader, Panel, Amount, StatCard, StatusBadge } from "@/components/display";
+import type { LedgerCurrencyFilter } from "@albion-hub/shared";
+import { CurrencyFilterTabs, LedgerTable } from "@/components/ledger";
 import { WithdrawDialog } from "@/components/WithdrawDialog";
 import { ErrorState } from "@/pages/MyWithdrawals";
 import { formatDateTime } from "@/lib/format";
@@ -27,8 +28,11 @@ const monthFmt = new Intl.DateTimeFormat("pt-BR", { month: "long" });
  * que está `pending`, porque a partir de `approved` o débito já está no ledger (Q25).
  */
 export function Wallet() {
-  const { balance, withdrawals, loading, error, refresh } = useWallet();
-  const load = useCallback(() => fetchMyStatement(), []);
+  const { balance, balances, withdrawals, loading, error, refresh } = useWallet();
+  // Um extrato só, recortado por moeda (F6-27): o filtro vive aqui e vai na query, não filtra em memória —
+  // senão "Buffunfa" mostraria só o que coube nos 50 lançamentos mais recentes das duas moedas juntas.
+  const [currency, setCurrency] = useState<LedgerCurrencyFilter>("all");
+  const load = useCallback(() => fetchMyStatement(currency), [currency]);
   const statement = usePoll<Statement>(load, "Não foi possível carregar o extrato.");
 
   const entries = statement.data?.entries ?? [];
@@ -56,7 +60,7 @@ export function Wallet() {
     <>
       <PageHeader
         title="Carteira"
-        description="Sua prata dos loot splits da comunidade. Cada evento vira uma linha no extrato."
+        description="Sua prata dos loot splits e sua Buffunfa da comunidade. Cada evento vira uma linha no extrato."
         action={
           <>
             <Button variant="outline" asChild>
@@ -81,14 +85,14 @@ export function Wallet() {
         </p>
       )}
 
-      <div className="grid grid-cols-2 gap-3 xl:grid-cols-4">
+      <div className="grid grid-cols-2 gap-3 xl:grid-cols-5">
         <StatCard
           emphasis
           labelId="balance-label"
           label="Disponível pra saque"
           icon={<Coins />}
           className="col-span-2 xl:col-span-1"
-          value={balance ? <Silver value={available} className={negative ? "text-destructive" : undefined} /> : <Skeleton className="h-8 w-40" />}
+          value={balance ? <Amount currency="silver" value={available} className={negative ? "text-destructive" : undefined} /> : <Skeleton className="h-8 w-40" />}
           hint={
             !balance ? (
               " "
@@ -96,29 +100,36 @@ export function Wallet() {
               "Saques bloqueados até o saldo voltar a zero"
             ) : (
               <>
-                Saldo total <Silver value={total} className="text-foreground" />
+                Saldo total <Amount currency="silver" value={total} className="text-foreground" />
                 {reserved > 0n && " (reserva já descontada)"}
               </>
             )
           }
         />
+        {/* Os dois saldos ficam lado a lado e **nunca somados** (F6-27): moedas diferentes, números diferentes. */}
+        <StatCard
+          label="Buffunfa"
+          icon={<Sparkles />}
+          value={balances ? <Amount value={balances.buffunfa} currency="buffunfa" /> : <Skeleton className="h-7 w-28" />}
+          hint="A moeda da comunidade. Não tem saque."
+        />
         <StatCard
           label="Reservado em saques"
           icon={<Lock />}
-          value={balance ? <Silver value={reserved} /> : <Skeleton className="h-7 w-28" />}
+          value={balance ? <Amount currency="silver" value={reserved} /> : <Skeleton className="h-7 w-28" />}
           hint={pendingCount === 0 ? "Nenhum saque em análise" : `${pendingCount} ${pendingCount === 1 ? "saque em análise" : "saques em análise"}`}
         />
         <StatCard
           label={`Ganhos em ${monthFmt.format(now)}`}
           icon={<CalendarDays />}
-          value={statement.data ? <Silver value={month.total} signed={month.total > 0n} className={month.total > 0n ? "text-success" : undefined} /> : <Skeleton className="h-7 w-28" />}
+          value={statement.data ? <Amount currency="silver" value={month.total} signed={month.total > 0n} className={month.total > 0n ? "text-success" : undefined} /> : <Skeleton className="h-7 w-28" />}
           hint={month.splits === 0 ? "Nenhum split neste mês ainda" : `${month.splits} ${month.splits === 1 ? "split recebido" : "splits recebidos"}`}
         />
         <StatCard
           label="Último split"
           className="col-span-2 xl:col-span-1"
           icon={<Swords />}
-          value={!statement.data ? <Skeleton className="h-7 w-28" /> : last ? <Silver value={last.amount} signed /> : <span className="text-muted-foreground">—</span>}
+          value={!statement.data ? <Skeleton className="h-7 w-28" /> : last ? <Amount currency="silver" value={last.amount} signed /> : <span className="text-muted-foreground">—</span>}
           hint={last ? <span className="block truncate">{formatDateTime(last.createdAt)}</span> : "Participe de um evento pra receber"}
         />
       </div>
@@ -130,8 +141,9 @@ export function Wallet() {
           title="Extrato"
           titleId="extrato"
           action={
-            <span className="flex items-center gap-3">
-              {entries.length > 0 && <span className="num text-xs text-muted-foreground">{entries.length} lançamentos</span>}
+            <span className="flex items-center gap-2 sm:gap-3">
+              <CurrencyFilterTabs value={currency} onChange={setCurrency} />
+              {entries.length > 0 && <span className="num hidden text-xs text-muted-foreground sm:inline">{entries.length} lançamentos</span>}
               <button onClick={reloadAll} className="press rounded-md p-1 text-muted-foreground hover:text-foreground" aria-label="Atualizar extrato">
                 <RefreshCw className="size-4" />
               </button>
@@ -146,6 +158,8 @@ export function Wallet() {
             <StatementSkeleton />
           ) : entries.length > 0 ? (
             <Statement entries={entries} hasMore={!!statement.data.nextCursor} />
+          ) : currency !== "all" ? (
+            <p className="px-4 py-8 text-center text-sm text-muted-foreground">Nenhum lançamento nesta moeda ainda.</p>
           ) : (
             <FirstSteps />
           )}
@@ -169,7 +183,7 @@ export function Wallet() {
                 {open.map((w) => (
                   <li key={w.id} className="flex flex-col gap-1.5 px-4 py-3">
                     <div className="flex items-center justify-between gap-2">
-                      <Silver value={w.amount} className="text-lg font-semibold" />
+                      <Amount currency="silver" value={w.amount} className="text-lg font-semibold" />
                       <StatusBadge status={w.status} />
                     </div>
                     <span className="text-xs text-muted-foreground">Pedido em {formatDateTime(w.createdAt)}</span>
@@ -217,7 +231,7 @@ function WithdrawalSummary() {
     { label: "Pedidos", value: <span className="num">{withdrawals.length}</span> },
     { label: "Entregues", value: <span className="num">{settled.length}</span> },
     { label: "Recusados", value: <span className="num">{withdrawals.filter((w) => w.status === "rejected").length}</span> },
-    { label: "Prata já sacada", value: <Silver value={settled.reduce((s, w) => s + w.amount, 0n)} /> },
+    { label: "Prata já sacada", value: <Amount currency="silver" value={settled.reduce((s, w) => s + w.amount, 0n)} /> },
   ];
   return (
     <Panel title="Histórico de saques">

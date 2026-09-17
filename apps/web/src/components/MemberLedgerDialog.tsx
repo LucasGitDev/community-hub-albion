@@ -1,11 +1,11 @@
 import { useEffect, useState } from "react";
-import { Coins, Loader2, Lock, Receipt, RefreshCw, TriangleAlert, Wallet } from "lucide-react";
+import { Coins, Loader2, Lock, Receipt, RefreshCw, Sparkles, TriangleAlert } from "lucide-react";
 import { fetchMemberLedger, type MemberLedgerEntry, type MemberLedgerPage } from "@/api/member-ledger";
 import { errorText } from "@/api/http";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Skeleton } from "@/components/ui/skeleton";
-import { EmptyState, Silver } from "@/components/display";
+import { EmptyState, Amount } from "@/components/display";
 import { LedgerTable } from "@/components/ledger";
 import { cn } from "@/lib/utils";
 
@@ -86,7 +86,7 @@ function MemberLedger({ member }: { member: { id: string; name: string } }) {
           <Receipt className="size-4 text-muted-foreground" aria-hidden />
           Extrato de {member.name}
         </DialogTitle>
-        <DialogDescription>Só leitura: cada linha diz de onde veio a prata, quem lançou e por quê. Ajuste de saldo é feito pela manutenção.</DialogDescription>
+        <DialogDescription>Só leitura: cada linha diz a moeda, de onde veio, quem lançou e por quê. Ajuste de saldo é feito pela manutenção.</DialogDescription>
       </DialogHeader>
 
       <div className="grid shrink-0 grid-cols-3 divide-x border-b">
@@ -94,10 +94,16 @@ function MemberLedger({ member }: { member: { id: string; name: string } }) {
           label="Disponível"
           icon={<Coins />}
           emphasis
-          value={balance ? <Silver value={balance.available} className={cn(negative && "text-destructive")} /> : <Skeleton className="h-6 w-24" />}
+          value={balance ? <Amount currency="silver" value={balance.available} className={cn(negative && "text-destructive")} /> : <Skeleton className="h-6 w-24" />}
         />
-        <Figure label="Reservado" icon={<Lock />} value={balance ? <Silver value={balance.reserved} /> : <Skeleton className="h-6 w-20" />} hint="Em análise" />
-        <Figure label="Saldo total" icon={<Wallet />} value={balance ? <Silver value={balance.balance} /> : <Skeleton className="h-6 w-20" />} />
+        <Figure label="Reservado" icon={<Lock />} value={balance ? <Amount currency="silver" value={balance.reserved} /> : <Skeleton className="h-6 w-20" />} hint="Em análise" />
+        {/* Os dois saldos lado a lado, nunca somados (F6-27): moedas diferentes contam histórias diferentes. */}
+        <Figure
+          label="Buffunfa"
+          icon={<Sparkles />}
+          value={page ? <Amount value={page.balances.buffunfa} currency="buffunfa" /> : <Skeleton className="h-6 w-20" />}
+          hint="Sem saque"
+        />
       </div>
 
       {negative && (

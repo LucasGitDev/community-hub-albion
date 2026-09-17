@@ -5,7 +5,7 @@ import {
   feeBreakdown,
   feeFromDto,
   formatEventFee,
-  formatSilver,
+  formatAmount,
   hasFee,
   splitConfirmRefusalMessage,
   splitShareSum,
@@ -153,7 +153,7 @@ export function feePreviewText(total: bigint, fee: EventFee, ownerNick: string):
   if (total <= 0n) return `Taxa de ${formatEventFee(fee)} para ${ownerNick}, retirada antes da divisão. Informe o total da leva para ver quanto é.`;
   const breakdown = feeBreakdown(total, fee);
   if (breakdown.exceedsTotal) return FEE_EXCEEDS_TOTAL;
-  return `De ${formatSilver(total)}, retém ${formatSilver(breakdown.feeSilver)} (${formatEventFee(fee)}) para ${ownerNick}; sobram ${formatSilver(breakdown.distributable)} para dividir.`;
+  return `De ${formatAmount(total, "silver")}, retém ${formatAmount(breakdown.feeSilver, "silver")} (${formatEventFee(fee)}) para ${ownerNick}; sobram ${formatAmount(breakdown.distributable, "silver")} para dividir.`;
 }
 
 /**

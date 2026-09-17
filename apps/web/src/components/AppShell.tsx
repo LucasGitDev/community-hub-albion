@@ -1,11 +1,11 @@
 import { ROLE_LABELS, type Action, type SubjectType } from "@albion-hub/shared";
 import { NavLink, Outlet, useLocation } from "react-router";
-import { CalendarPlus, CalendarRange, Coins, LayoutTemplate, HandCoins, CircleUser, KeyRound, LogOut, ScrollText, Shield, Swords, Users, UsersRound, Vault } from "lucide-react";
+import { CalendarPlus, CalendarRange, Coins, Sparkles, LayoutTemplate, HandCoins, CircleUser, KeyRound, LogOut, ScrollText, Shield, Swords, Users, UsersRound, Vault } from "lucide-react";
 import type { ReactNode } from "react";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import { useAuth, useCurrentUser } from "@/auth/AuthProvider";
-import { Silver } from "@/components/display";
+import { Amount } from "@/components/display";
 import { useWallet } from "@/api/WalletProvider";
 import { useWithdrawalQueue } from "@/api/QueueProvider";
 import { ThemeToggle } from "@/theme/theme";
@@ -25,7 +25,7 @@ export function AppShell() {
   const { logout } = useAuth();
   // Saldo e meus saques (TASK-031) e a fila da staff (TASK-032) vêm da API real, do mesmo provider que
   // as telas leem: o contador do menu nunca diverge do número que a fila mostra.
-  const { balance, withdrawals } = useWallet();
+  const { balance, balances, withdrawals } = useWallet();
   const { items: queueItems } = useWithdrawalQueue();
   const { pathname } = useLocation();
   const allowed = (item: NavItem) => !item.can || ability.can(item.can[0], item.can[1]);
@@ -89,13 +89,29 @@ export function AppShell() {
             <span className="truncate font-medium">{current?.label ?? "Painel"}</span>
           </p>
           <div className="flex items-center gap-2">
+            {/*
+              As duas moedas no chip (F6-26): Buffunfa só visível dentro da loja seria invisível até o
+              membro já ter decidido comprar — ver o número subir é o que faz voltar ao evento. Ela vem
+              primeiro e no ouro do `--brand`; a prata fica neutra, atrás do divisor. Nunca somadas (F6-27).
+            */}
             <NavLink
               to="/carteira"
               className="press flex h-8 items-center gap-2 rounded-full border bg-card px-3 text-sm hover:bg-accent"
-              aria-label="Saldo disponível"
+              aria-label="Meus saldos"
             >
+              <Sparkles className="size-4 text-brand" aria-hidden />
+              {balances ? (
+                <Amount value={balances.buffunfa} currency="buffunfa" className="font-semibold" />
+              ) : (
+                <span className="h-3 w-10 animate-pulse rounded bg-muted" aria-hidden />
+              )}
+              <span className="h-4 w-px bg-border" aria-hidden />
               <Coins className="size-4 text-muted-foreground" aria-hidden />
-              {balance ? <Silver value={balance.available} className="font-semibold" /> : <span className="h-3 w-12 animate-pulse rounded bg-muted" aria-hidden />}
+              {balance ? (
+                <Amount currency="silver" value={balance.available} className="text-muted-foreground" />
+              ) : (
+                <span className="h-3 w-12 animate-pulse rounded bg-muted" aria-hidden />
+              )}
             </NavLink>
             <ThemeToggle />
             <button onClick={onLogout} className="press rounded-md p-2 text-muted-foreground hover:bg-accent md:hidden" aria-label="Sair">

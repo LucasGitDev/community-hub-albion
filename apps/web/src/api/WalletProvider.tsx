@@ -1,5 +1,5 @@
 import { createContext, useCallback, useContext, useMemo, useState, type ReactNode } from "react";
-import { fetchMyWallet, type Balance, type MyWallet, type Withdrawal } from "./wallet";
+import { fetchMyWallet, type Balance, type Balances, type MyWallet, type Withdrawal } from "./wallet";
 import { usePoll } from "./use-poll";
 
 /**
@@ -11,6 +11,8 @@ import { usePoll } from "./use-poll";
  */
 export interface WalletState {
   balance: Balance | null;
+  /** Os dois saldos, separados (F6-27); null enquanto a primeira resposta não chegou. */
+  balances: Balances | null;
   withdrawals: Withdrawal[];
   loading: boolean;
   /** Erro só quando não há nada em tela; com dados velhos o painel prefere continuar mostrando. */
@@ -42,6 +44,7 @@ export function WalletProvider({ children }: { children: ReactNode }) {
   const value = useMemo<WalletState>(
     () => ({
       balance: data?.balance ?? null,
+      balances: data?.balances ?? null,
       withdrawals: data?.withdrawals ?? EMPTY,
       loading: poll.loading,
       error: data ? null : poll.error,

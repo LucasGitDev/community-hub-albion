@@ -3,12 +3,14 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import {
   createDb,
   getLedgerBalance,
+  getLedgerBalancesByCurrency,
   insertLedgerEntry,
   listLedgerEntries,
   listLedgerEntriesByReference,
   reverseLedgerEntry,
   runMigrations,
   schema,
+  spendCurrency,
   upsertUserByDiscordId,
   type DbHandle,
   type LedgerEntry,
@@ -171,6 +173,83 @@ describe.skipIf(!baseUrl)("ledger append-only de prata (TASK-026, Postgres real)
       const original = await insertLedgerEntry(handle.db, { currency: "silver", userId, amount: 10n, kind: "adjustment" });
       const insert = handle.db.insert(schema.ledgerEntries).values({ userId, currency: "silver", amount: -10n, kind: "adjustment", reversalOf: original.id });
       expect(await pgCode(insert)).toBe("23514");
+    });
+  });
+
+  /** TASK-056: a coluna de moeda e o que a migration tinha que deixar pronto (F6-2, F6-3). */
+  describe("moeda (AC#1, AC#2)", () => {
+    it("currency é NOT NULL e **sem default**: insert sem moeda é erro, não vira prata em silêncio", async () => {
+      const [column] = await handle.db.execute<{ is_nullable: string; column_default: string | null }>(
+        sql`select is_nullable, column_default from information_schema.columns where table_name = 'ledger_entries' and column_name = 'currency'`,
+      );
+      expect(column?.is_nullable).toBe("NO");
+      // O default existiu só para preencher as linhas antigas (as triggers recusam UPDATE) e caiu na mesma migration.
+      expect(column?.column_default).toBeNull();
+
+      const userId = await nextUser();
+      const semMoeda = handle.db.execute(sql`insert into ledger_entries (user_id, amount, kind) values (${userId}, 10, 'adjustment')`);
+      expect(await pgCode(semMoeda)).toBe("23502");
+    });
+
+    it("o índice de extrato tem currency antes de created_at (F6-3)", async () => {
+      const [index] = await handle.db.execute<{ indexdef: string }>(
+        sql`select indexdef from pg_indexes where tablename = 'ledger_entries' and indexname = 'ledger_entries_user_currency_idx'`,
+      );
+      expect(index?.indexdef).toMatch(/\(user_id, currency, created_at, id\)/);
+    });
+
+    it("as duas moedas convivem na mesma tabela sem nunca se somarem (F6-1)", async () => {
+      const userId = await nextUser();
+      await insertLedgerEntry(handle.db, { currency: "silver", userId, amount: 1_000_000n, kind: "split_payout" });
+      await insertLedgerEntry(handle.db, { currency: "buffunfa", userId, amount: 340n, kind: "split_payout" });
+
+      expect(await getLedgerBalance(handle.db, userId, "silver")).toBe(1_000_000n);
+      expect(await getLedgerBalance(handle.db, userId, "buffunfa")).toBe(340n);
+      expect(await getLedgerBalancesByCurrency(handle.db, userId)).toEqual({ silver: 1_000_000n, buffunfa: 340n });
+      expect((await listLedgerEntries(handle.db, userId, "all")).entries).toHaveLength(2);
+      expect((await listLedgerEntries(handle.db, userId, "buffunfa")).entries.map((e) => e.amount)).toEqual([340n]);
+    });
+
+    it("estorno herda a moeda do original", async () => {
+      const userId = await nextUser();
+      const original = await insertLedgerEntry(handle.db, { currency: "buffunfa", userId, amount: 40n, kind: "adjustment" });
+      const result = await reverseLedgerEntry(handle.db, original.id, { reason: "engano" });
+      expect(result.ok).toBe(true);
+      if (result.ok) expect(result.entry.currency).toBe("buffunfa");
+      expect(await getLedgerBalance(handle.db, userId, "buffunfa")).toBe(0n);
+    });
+
+    it("gasto que deixaria a moeda negativa é recusado; o ajuste da staff pode cravar negativo (F6-7)", async () => {
+      const userId = await nextUser();
+      await insertLedgerEntry(handle.db, { currency: "buffunfa", userId, amount: 50n, kind: "adjustment" });
+
+      expect(await spendCurrency(handle.db, { userId, currency: "buffunfa", amount: 80n, kind: "adjustment", memo: "compra" })).toEqual({
+        ok: false,
+        reason: "insufficient_funds",
+        balance: 50n,
+      });
+      expect(await getLedgerBalance(handle.db, userId, "buffunfa")).toBe(50n);
+
+      const ok = await spendCurrency(handle.db, { userId, currency: "buffunfa", amount: 50n, kind: "adjustment", memo: "compra" });
+      expect(ok.ok).toBe(true);
+      expect(await getLedgerBalance(handle.db, userId, "buffunfa")).toBe(0n);
+      // Gasto de zero ou negativo não existe: quem credita usa `insertLedgerEntry`.
+      expect(await spendCurrency(handle.db, { userId, currency: "buffunfa", amount: 0n, kind: "adjustment" })).toEqual({ ok: false, reason: "invalid_amount" });
+
+      // A exceção registrada: a manutenção lança direto e o saldo vai a negativo.
+      await insertLedgerEntry(handle.db, { currency: "buffunfa", userId, amount: -25n, kind: "adjustment", memo: "estorno da staff" });
+      expect(await getLedgerBalance(handle.db, userId, "buffunfa")).toBe(-25n);
+    });
+
+    it("dois gastos simultâneos com saldo para um só terminam em um aprovado e um recusado", async () => {
+      const userId = await nextUser();
+      await insertLedgerEntry(handle.db, { currency: "buffunfa", userId, amount: 30n, kind: "adjustment" });
+      const [a, b] = await Promise.all([
+        spendCurrency(handle.db, { userId, currency: "buffunfa", amount: 30n, kind: "adjustment", memo: "a" }),
+        spendCurrency(handle.db, { userId, currency: "buffunfa", amount: 30n, kind: "adjustment", memo: "b" }),
+      ]);
+      expect([a!.ok, b!.ok].sort()).toEqual([false, true]);
+      expect(await getLedgerBalance(handle.db, userId, "buffunfa")).toBe(0n);
     });
   });
 
