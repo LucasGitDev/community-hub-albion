@@ -10,7 +10,7 @@ import { MAINTENANCE_CLEANUP, type MaintenanceCleanup, type MaintenanceCleanupRe
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 /** Origem fixa dos lançamentos de manutenção: `byReference("manual", "maintenance")` lista todos eles. */
-export const MAINTENANCE_REFERENCE = { type: "manual", id: "maintenance" } as const;
+const MAINTENANCE_REFERENCE = { type: "manual", id: "maintenance" } as const;
 
 export interface MaintenanceAdjustmentResponse {
   entryId: string;

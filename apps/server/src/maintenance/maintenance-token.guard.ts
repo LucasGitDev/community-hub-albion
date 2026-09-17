@@ -54,7 +54,7 @@ function notFoundLike(req: Request): NotFoundException {
   return new NotFoundException(`Cannot ${req.method} ${req.originalUrl}`);
 }
 
-export class TooManyMaintenanceRequests extends HttpException {
+class TooManyMaintenanceRequests extends HttpException {
   constructor(retryAfterSeconds: number) {
     super({ statusCode: HttpStatus.TOO_MANY_REQUESTS, error: "Too Many Requests", message: `Limite de manutenção atingido. Tente de novo em ${retryAfterSeconds}s.` }, HttpStatus.TOO_MANY_REQUESTS);
   }
