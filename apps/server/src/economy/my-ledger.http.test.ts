@@ -15,6 +15,7 @@ if (!baseUrl && process.env.CI) throw new Error("CI sem TEST_DATABASE_URL: teste
 const PUBLIC_URL = "http://localhost:3000";
 
 interface Page {
+  currency: string;
   entries: LedgerEntryDto[];
   nextCursor: string | null;
 }
@@ -84,6 +85,22 @@ describe.skipIf(!baseUrl)("GET /api/me/ledger (TASK-031)", () => {
     expect(body.entries.map((e) => e.amount)).toEqual(["250000", "-400000", "1000000"]);
     expect(body.entries[0]!.kind).toBe("split_payout");
     expect(res.headers["cache-control"]).toBe("no-store");
+  });
+
+  it("traz as duas moedas por default e recorta com ?currency= (F6-27)", async () => {
+    const me = await member([1_000_000n]);
+    await insertLedgerEntry(handle.db, { currency: "buffunfa", userId: me.id, amount: 340n, kind: "split_payout", memo: "Buffunfa do evento" });
+
+    const todas = await get("/api/me/ledger", me.cookie).expect(200);
+    expect((todas.body as Page).currency).toBe("all");
+    expect((todas.body as Page).entries.map((e) => e.currency).sort()).toEqual(["buffunfa", "silver"]);
+
+    const so = await get("/api/me/ledger?currency=buffunfa", me.cookie).expect(200);
+    expect((so.body as Page).entries.map((e) => e.amount)).toEqual(["340"]);
+    expect((so.body as Page).entries.every((e) => e.currency === "buffunfa")).toBe(true);
+
+    // Moeda inventada é recusada em vez de virar "todas" em silêncio.
+    await get("/api/me/ledger?currency=ouro", me.cookie).expect(400);
   });
 
   it("extrato vazio é 200 com lista vazia, não erro", async () => {

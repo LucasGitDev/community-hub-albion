@@ -4,6 +4,7 @@ import { NecordModule } from "necord";
 import type { Env } from "../config/env.js";
 import { DISCORD_GUILD_GATEWAY, DISCORD_GUILD_ID, DiscordJsGuildGateway } from "./discord-guild.gateway.js";
 import { DISCORD_GUILD_MEMBERS_GATEWAY, DiscordJsGuildMembersGateway } from "./discord-guild-members.gateway.js";
+import { BUFFUNFA_EMOJI_FILE, BUFFUNFA_EMOJI_GATEWAY, BUFFUNFA_EMOJI_ID, BuffunfaEmojiService, DiscordJsGuildEmojiGateway } from "./buffunfa-emoji.service.js";
 import { DISCORD_MEMBER_ROLE_ID, DiscordMemberSync } from "./discord-member-sync.service.js";
 import { DiscordMemberImportService } from "../members/discord-member-import.service.js";
 import { MEMBER_IMPORTER } from "../members/member-importer.token.js";
@@ -27,7 +28,20 @@ import { VOICE_GUILD_ID, VoiceListener } from "./voice.listener.js";
 
 @Module({})
 export class BotModule {
-  static register(env: Pick<Env, "DISCORD_TOKEN" | "GUILD_ID" | "DISCORD_MEMBER_ROLE_ID" | "DISCORD_STAFF_CHANNEL_ID" | "DISCORD_EVENTS_CHANNEL_ID" | "DISCORD_WAITING_VOICE_CHANNEL_ID" | "DISCORD_EVENT_CATEGORY_ID">): DynamicModule {
+  static register(
+    env: Pick<
+      Env,
+      | "DISCORD_TOKEN"
+      | "GUILD_ID"
+      | "DISCORD_MEMBER_ROLE_ID"
+      | "DISCORD_STAFF_CHANNEL_ID"
+      | "DISCORD_EVENTS_CHANNEL_ID"
+      | "DISCORD_WAITING_VOICE_CHANNEL_ID"
+      | "DISCORD_EVENT_CATEGORY_ID"
+      | "DISCORD_BUFFUNFA_EMOJI_ID"
+      | "BUFFUNFA_EMOJI_FILE"
+    >,
+  ): DynamicModule {
     if (!env.DISCORD_MEMBER_ROLE_ID) throw new Error("DISCORD_MEMBER_ROLE_ID obrigatória com o bot ligado");
     if (!env.DISCORD_STAFF_CHANNEL_ID) throw new Error("DISCORD_STAFF_CHANNEL_ID obrigatória com o bot ligado");
     if (!env.DISCORD_EVENTS_CHANNEL_ID) throw new Error("DISCORD_EVENTS_CHANNEL_ID obrigatória com o bot ligado");
@@ -84,9 +98,14 @@ export class BotModule {
         { provide: EVENT_VOICE_GATEWAY, useClass: DiscordJsEventVoiceGateway },
         EventVoiceService,
         EventCommand,
+        // TASK-056: emoji da Buffunfa resolvido no boot (env > descoberto > texto puro, F6-28).
+        { provide: BUFFUNFA_EMOJI_GATEWAY, useClass: DiscordJsGuildEmojiGateway },
+        { provide: BUFFUNFA_EMOJI_ID, useValue: env.DISCORD_BUFFUNFA_EMOJI_ID ?? null },
+        { provide: BUFFUNFA_EMOJI_FILE, useValue: env.BUFFUNFA_EMOJI_FILE },
+        BuffunfaEmojiService,
       ],
       // DISCORD_GUILD_MEMBERS_GATEWAY sai daqui para a limpeza diária (TASK-049) ler a guild com o mesmo cliente.
-      exports: [DiscordMemberImportService, MEMBER_IMPORTER, DISCORD_GUILD_MEMBERS_GATEWAY],
+      exports: [DiscordMemberImportService, MEMBER_IMPORTER, DISCORD_GUILD_MEMBERS_GATEWAY, BuffunfaEmojiService],
     };
   }
 }
