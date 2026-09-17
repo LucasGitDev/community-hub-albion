@@ -8,6 +8,10 @@ on:
     branches: [main]
   push:
     branches: [main]
+    # Commit só de backlog (task, doc, decisão) não muda comportamento nenhum: não roda gate nem
+    # dispara deploy. Vale só no push; em PR o gate roda sempre, senão o check obrigatório `summary`
+    # nunca reportaria e o PR ficaria travado para sempre.
+    paths-ignore: ['.backlog/**']
 
 permissions:
   contents: read
