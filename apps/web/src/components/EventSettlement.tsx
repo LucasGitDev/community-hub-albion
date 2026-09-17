@@ -588,7 +588,7 @@ function DraftEditor({ event, split, open, onChanged }: { event: EventDto; split
       {/* Rodapé do dinheiro: a soma é o número-chave da tela, e o botão de confirmar fica do lado dela. */}
       <div className="flex flex-wrap items-center justify-between gap-x-6 gap-y-3 rounded-xl border bg-muted/40 px-4 py-3">
         <p className="flex items-baseline gap-2">
-          <span className={cn("num text-3xl font-semibold", sum.ok ? "text-brand" : "text-foreground")}>{formatShare(sum.sumBp)}</span>
+          <span className={cn("num text-3xl font-semibold", sum.ok ? "text-success" : "text-foreground")}>{formatShare(sum.sumBp)}</span>
           <span className="text-sm text-muted-foreground">{sum.ok ? "a divisão fecha" : shareSumText(sum)}</span>
         </p>
         {open && (
@@ -734,7 +734,7 @@ function SettlementTable({
               <TableRow className="border-t-2">
                 <TableCell className="whitespace-normal">
                   <span className="flex items-center gap-1.5 font-medium">
-                    <Crown className="size-3.5 text-brand" aria-hidden />
+                    <Crown className="size-3.5 text-muted-foreground" aria-hidden />
                     Taxa do evento
                   </span>
                   <span className="text-xs text-muted-foreground">{formatEventFee(fee)} retidos antes da divisão, para {owner}</span>
@@ -748,7 +748,7 @@ function SettlementTable({
               <TableRow>
                 <TableCell className="whitespace-normal">
                   <span className="flex items-center gap-1.5 font-medium">
-                    <Crown className="size-3.5 text-brand" aria-hidden />
+                    <Crown className="size-3.5 text-muted-foreground" aria-hidden />
                     Sobra do arredondamento
                   </span>
                   <span className="text-xs text-muted-foreground">sobra que não coube na divisão, também para {owner}</span>
@@ -852,7 +852,7 @@ function ConfirmSplitDialog({
             <Silver value={totals.paid} className="font-semibold" />
           </dd>
           <dt className="flex items-center gap-1.5">
-            <Crown className="size-3.5 text-brand" aria-hidden />
+            <Crown className="size-3.5 text-muted-foreground" aria-hidden />
             {ownerNick ?? "Caller do evento"} recebe
           </dt>
           <dd>

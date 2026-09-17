@@ -102,7 +102,7 @@ export function WithdrawDialog({ trigger }: { trigger: ReactNode }) {
                   {amount !== null && amount > 0n && `, você digitou ${formatSilver(amount)}`}
                 </span>
               )}
-              <button type="button" className="font-medium text-brand underline-offset-4 hover:underline" onClick={() => setInput(formatSilver(available))}>
+              <button type="button" className="font-medium text-primary underline-offset-4 hover:underline" onClick={() => setInput(formatSilver(available))}>
                 Usar tudo ({formatSilverShort(available)})
               </button>
             </div>

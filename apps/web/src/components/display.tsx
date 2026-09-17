@@ -74,7 +74,7 @@ export function PageHeader({ title, description, action, badge }: { title: strin
   );
 }
 
-/** Card de número. `emphasis` = o número principal da tela (maior, cor de destaque na B). */
+/** Card de número. `emphasis` = o número principal da tela (maior, não colorido: prata é neutra). */
 export function StatCard({
   label,
   labelId,
@@ -97,7 +97,7 @@ export function StatCard({
       aria-labelledby={labelId}
       className={cn(
         "flex min-w-0 flex-col justify-between gap-3 rounded-xl border bg-card p-4 text-card-foreground",
-        emphasis && "dark:border-brand/40",
+        emphasis && "dark:border-foreground/25",
         className,
       )}
     >
@@ -107,7 +107,7 @@ export function StatCard({
         </p>
         {icon && <span className="[&_svg]:size-4">{icon}</span>}
       </div>
-      <div className={cn("min-w-0 font-semibold", emphasis ? "text-3xl text-brand" : "text-xl sm:text-2xl")}>{value}</div>
+      <div className={cn("min-w-0 font-semibold", emphasis ? "text-3xl" : "text-xl sm:text-2xl")}>{value}</div>
       {hint && <div className="text-xs text-muted-foreground">{hint}</div>}
     </section>
   );

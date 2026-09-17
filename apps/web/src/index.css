@@ -5,9 +5,19 @@
 /*
   TASK-036. Base: tema preto e branco do shadcn (shadcnthemer 418a8650…), sem ponte de tokens própria.
   Os tokens semânticos do shadcn (background, card, primary, muted-foreground…) dirigem tudo.
-  Extras: 4 cores de estado (success, warning, info, destructive) e uma cor de destaque (brand).
-  Claro = P&B puro (brand = foreground). Escuro (padrão) = P&B + ouro de Albion só no CTA principal,
-  no número-chave da tela e no ícone do item ativo. Classe `dark` no <html> (script inline no index.html).
+  Extras: 4 cores de estado (success, warning, info, destructive) e uma cor de moeda (brand).
+  Classe `dark` no <html> (script inline no index.html).
+
+  TASK-055. Três papéis, três matizes, três volumes — antes `brand` e `warning` eram a mesma tinta
+  (ambos `0.15 80`), então ouro de moeda, CTA e selo de pendente brigavam entre si:
+    - `brand`   = Buffunfa. Ouro amarelo de croma baixo. Só número e ícone, nunca fundo nem botão:
+                  saldo aparece em toda tela, e cor de alta frequência tem que ser quieta.
+    - `primary` = CTA e foco. Âmbar alaranjado, o único elemento saturado da tela. Aparece uma vez
+                  por tela, então pode ser alto. Não aponta mais para `brand`.
+    - `warning` = estado (pendente). Mesma família do CTA, croma cortado pela metade: é selo pequeno
+                  com rótulo ao lado, não precisa gritar nem competir com a ação.
+  Prata não tem token: é `foreground`, o cinza/branco que o tema já tem. Uma quarta tinta só para ela
+  competiria com as outras três sem dizer nada que o rótulo já não diga.
 */
 
 @theme inline {
@@ -105,10 +115,12 @@
   --radius: 0.625rem;
 
   --success: oklch(0.52 0.13 155);
-  --warning: oklch(0.6 0.14 70);
+  /* estado, não ação: croma baixo para não competir com o CTA */
+  --warning: oklch(0.58 0.08 70);
   --info: oklch(0.5 0.14 255);
-  --brand: var(--foreground);
-  --brand-foreground: var(--background);
+  /* Buffunfa: ouro escuro o suficiente para ler sobre branco */
+  --brand: oklch(0.58 0.11 92);
+  --brand-foreground: oklch(1 0 0);
 
   /* densidade: altura de linha das listas/tabelas */
   --row-py: 0.75rem;
@@ -140,13 +152,16 @@
   --sidebar-border: oklch(0.22 0 0);
 
   --success: oklch(0.76 0.15 155);
-  --warning: oklch(0.82 0.15 80);
+  /* estado, não ação: croma cortado pela metade em relação ao CTA */
+  --warning: oklch(0.7 0.08 70);
   --info: oklch(0.72 0.13 250);
-  --brand: oklch(0.8 0.15 80);
-  --brand-foreground: oklch(0.16 0.03 70);
-  --primary: var(--brand);
-  --primary-foreground: var(--brand-foreground);
-  --ring: var(--brand);
+  /* Buffunfa: ouro amarelo (matiz 95), ~37 de distância do âmbar do CTA */
+  --brand: oklch(0.84 0.11 95);
+  --brand-foreground: oklch(0.16 0.03 95);
+  /* CTA com valor próprio: âmbar alaranjado (matiz 58), o único saturado da tela */
+  --primary: oklch(0.75 0.16 58);
+  --primary-foreground: oklch(0.16 0.03 58);
+  --ring: var(--primary);
 }
 
 @layer base {

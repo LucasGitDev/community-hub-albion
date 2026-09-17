@@ -94,7 +94,7 @@ export function AppShell() {
               className="press flex h-8 items-center gap-2 rounded-full border bg-card px-3 text-sm hover:bg-accent"
               aria-label="Saldo disponível"
             >
-              <Coins className="size-4 text-brand" aria-hidden />
+              <Coins className="size-4 text-muted-foreground" aria-hidden />
               {balance ? <Silver value={balance.available} className="font-semibold" /> : <span className="h-3 w-12 animate-pulse rounded bg-muted" aria-hidden />}
             </NavLink>
             <ThemeToggle />
@@ -185,7 +185,7 @@ function NavGroup({ title, items, className }: { title: string; items: NavItem[]
                 cn(
                   "flex h-9 items-center gap-2.5 rounded-md px-2 text-sm transition-colors duration-150 [&_svg]:size-4",
                   isActive
-                    ? "bg-sidebar-accent font-medium text-sidebar-accent-foreground [&_svg]:text-brand"
+                    ? "bg-sidebar-accent font-medium text-sidebar-accent-foreground"
                     : "text-muted-foreground hover:bg-sidebar-accent/60 hover:text-foreground",
                 )
               }
