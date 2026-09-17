@@ -63,3 +63,20 @@ Resultado do grill (R1–R3, 2026-09-15). Referência pra specs e tasks.
 ## Pendentes (não bloqueiam)
 - Q15: servidor Albion → `ALBION_REGION` em env; confirmar com staff. Bloqueia só validação opcional de nick.
 - Q16: proxy/orquestrador da VPS → rodar `docker ps --format '{{.Names}}\t{{.Image}}'` antes do deploy.
+
+## Grelha de 2026-09-16 (pendências do usuário)
+| # | Decisão |
+|---|---|
+| G1 | Evento `cancelled` **continua editável** pela API (só `archived` trava). Sem exploit, sem valor em travar. |
+| G2 | Nick **único**: edição recusa nick já usado por outro membro. |
+| G3 | Staff alcança a gestão de usuários (buscar nick, editar nick/tag, ler e escrever notas). `/admin/papeis` segue só admin. Provisório até TASK-052. |
+| G4 | Semear prata pelo dev-login **fica** (mesmo portão `AUTH_DEV_LOGIN`, proibido em produção pelo env). |
+| G5 | **Rotas de manutenção** (TASK-048) atrás de guard de header com token do env, sem sessão, válidas em dev e produção: ajuste de prata (`adjustment` com motivo), revalidação de nick, disparo da limpeza. **Não** permitem agir como outro usuário em produção. |
+| G6 | Sessão de 30 dias mantida; quem saiu da guilda é removido pela **limpeza diária** (TASK-049): sessões e papéis caem, conta vira inativa. **Saldo e ledger nunca são tocados.** |
+| G7 | `BOOTSTRAP_ADMIN_DISCORD_IDS` é semente: tirar id do env **não** revoga admin; revogação é manual pela tela de papéis. |
+| G8 | Staff **pode** aprovar o próprio nick. |
+| G9 | **Banimento** (TASK-050): corta acesso na hora (login, inscrição pelo embed, cargo Membro), **não** expulsa do Discord, soft delete com motivo/autor/data e desbanir, nick segue ocupado, **saldo congelado** (não zera, não saca, saque pendente não é aprovado). Staff e admin banem — provisório até TASK-052. |
+| G10 | Staff e admin **leem o extrato** de qualquer jogador (TASK-051); ajuste de prata só pelo namespace de manutenção. |
+| G11 | `main` protegida por ruleset do GitHub (PR + check `summary`, sem push forçado, sem deleção, sem exceção). |
+| G12 | **Saque sem mínimo** confirmado. Plano B, se a fila entupir: um pedido pendente por membro — nunca ressuscitar o mínimo. |
+| G13 | UI: descrição da role não entra no formulário de criação (criar é em lote, descrever é reflexivo); perfil mostra saldo disponível **e** reservado. |
