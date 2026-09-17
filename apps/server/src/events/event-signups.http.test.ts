@@ -1,7 +1,7 @@
 import "reflect-metadata";
 import type { INestApplication } from "@nestjs/common";
 import { Test } from "@nestjs/testing";
-import { banUser, createDb, createSession, grantRole, runMigrations, unbanUser, upsertUserByDiscordId, type DbHandle } from "@albion-hub/db";
+import { banUser, createDb, createSession, getLedgerBalance, grantRole, insertLedgerEntry, runMigrations, unbanUser, upsertUserByDiscordId, type DbHandle } from "@albion-hub/db";
 import type { EventDto, EventSignupDto, Role } from "@albion-hub/shared";
 import { sql } from "drizzle-orm";
 import request from "supertest";
@@ -113,6 +113,74 @@ describe.skipIf(!baseUrl)("inscrição em evento HTTP (TASK-022, Q27)", () => {
   const join = (cookie: string, eventId: string, slotId: string) => send("post", `/api/events/${eventId}/signups`, cookie, { slotId });
   const leave = (cookie: string, eventId: string) => send("delete", `/api/events/${eventId}/signups/me`, cookie);
   const list = async (cookie: string, eventId: string) => (await http().get(`/api/events/${eventId}/signups`).set("Cookie", cookie)).body.signups as EventSignupDto[];
+
+  /** Evento aberto com taxa de entrada, pelo caminho que o painel usa (PATCH da rota nova). */
+  async function openPaidEvent(name: string, entryFee: string) {
+    const created = await send("post", "/api/events", caller, { templateId, name });
+    const event = created.body as EventDto;
+    expect((await send("patch", `/api/events/${event.id}/entry-fee`, caller, { entryFee })).body.entryFee).toBe(entryFee);
+    expect((await send("post", `/api/events/${event.id}/transitions/open`, caller)).status).toBe(200);
+    return { event, tank: event.roles.find((r) => r.name === "Tank")!, healer: event.roles.find((r) => r.name === "Healer")! };
+  }
+
+  const giveBuffunfa = (userId: string, amount: bigint) =>
+    insertLedgerEntry(handle.db, { userId, currency: "buffunfa", amount, kind: "adjustment", memo: "saldo do teste" });
+
+  describe("taxa de entrada em Buffunfa (TASK-058)", () => {
+    it("a rota da taxa só aceita inteiro >= 0, e só de quem conduz o evento", async () => {
+      const created = await send("post", "/api/events", caller, { templateId, name: "Taxa validada" });
+      const id = (created.body as EventDto).id;
+      expect((created.body as EventDto).entryFee).toBe("0");
+
+      expect((await send("patch", `/api/events/${id}/entry-fee`, caller, { entryFee: "-5" })).status).toBe(400);
+      expect((await send("patch", `/api/events/${id}/entry-fee`, caller, { entryFee: "1,5" })).status).toBe(400);
+      expect((await send("patch", `/api/events/${id}/entry-fee`, caller, { entryFee: 20 })).status).toBe(400);
+      // Sem teto (decisão do usuário): um valor absurdo passa, e volta inteiro.
+      expect((await send("patch", `/api/events/${id}/entry-fee`, caller, { entryFee: "999999999999" })).body.entryFee).toBe("999999999999");
+      // Membro comum não mexe na taxa de evento que não é dele.
+      expect((await send("patch", `/api/events/${id}/entry-fee`, membro, { entryFee: "1" })).status).toBe(403);
+      expect((await send("patch", `/api/events/${id}/entry-fee`, null, { entryFee: "1" })).status).toBe(401);
+      expect((await send("patch", `/api/events/${id}/entry-fee`, caller, { entryFee: "1" }, "http://evil.example")).status).toBe(403);
+    });
+
+    it("a taxa congela quando as inscrições fecham (AC#1)", async () => {
+      const { event } = await openPaidEvent("Taxa congelada", "10");
+      expect((await send("patch", `/api/events/${event.id}/entry-fee`, caller, { entryFee: "12" })).body.entryFee).toBe("12");
+      expect((await send("post", `/api/events/${event.id}/transitions/close`, caller)).status).toBe(200);
+      const frozen = await send("patch", `/api/events/${event.id}/entry-fee`, caller, { entryFee: "1" });
+      expect(frozen.status).toBe(409);
+      expect(frozen.body.message).toContain("inscrições");
+    });
+
+    it("a inscrição debita, a desistência devolve, e saldo insuficiente é 409 com o número que falta (AC#2, AC#3)", async () => {
+      const { event, tank } = await openPaidEvent("Cobrada", "20");
+      // Sem Buffunfa nenhuma: recusa, e a mensagem diz quanto falta.
+      const broke = await join(terceiro, event.id, tank.id);
+      expect(broke.status).toBe(409);
+      expect(broke.body.message).toContain("20 BUF");
+      expect(await list(caller, event.id)).toHaveLength(0);
+
+      await giveBuffunfa(membroId, 50n);
+      expect((await join(membro, event.id, tank.id)).status).toBe(200);
+      expect(await getLedgerBalance(handle.db, membroId, "buffunfa")).toBe(30n);
+
+      expect((await leave(membro, event.id)).status).toBe(200);
+      expect(await getLedgerBalance(handle.db, membroId, "buffunfa")).toBe(50n);
+    });
+
+    it("cancelar o evento devolve a taxa a todos os inscritos (AC#4)", async () => {
+      const { event, healer } = await openPaidEvent("Cancelada", "15");
+      await giveBuffunfa(outroId, 15n);
+      await giveBuffunfa(terceiroId, 15n);
+      expect((await join(outro, event.id, healer.id)).status).toBe(200);
+      expect((await join(terceiro, event.id, healer.id)).status).toBe(200);
+      expect(await getLedgerBalance(handle.db, outroId, "buffunfa")).toBe(0n);
+
+      expect((await send("post", `/api/events/${event.id}/transitions/cancel`, caller, { reason: "chuva" })).status).toBe(200);
+      expect(await getLedgerBalance(handle.db, outroId, "buffunfa")).toBe(15n);
+      expect(await getLedgerBalance(handle.db, terceiroId, "buffunfa")).toBe(15n);
+    });
+  });
 
   it("sem sessão 401; de outra origem 403 (CSRF)", async () => {
     const { event, tank } = await openEvent("CSRF");

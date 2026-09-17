@@ -1,4 +1,17 @@
-import { eventCancelledText, eventJoinButtonId, eventLeaveButtonId, eventStatusLabel, freeSlots, MAX_EVENT_ROLE_BUTTONS, roleButtonLabel, type EventStatus } from "@albion-hub/shared";
+import {
+  entryFeeLabel,
+  eventCancelledText,
+  eventJoinButtonId,
+  eventLeaveButtonId,
+  eventStatusLabel,
+  formatAmount,
+  freeSlots,
+  insufficientEntryFeeMessage,
+  MAX_EVENT_ROLE_BUTTONS,
+  NO_ENTRY_FEE,
+  roleButtonLabel,
+  type EventStatus,
+} from "@albion-hub/shared";
 import type { EmbedButton, EmbedField, EmbedView } from "./embed-view.js";
 
 /**
@@ -50,6 +63,11 @@ export interface EventEmbedInput {
   roles: EventEmbedRole[];
   /** Motivo do cancelamento (TASK-025); só aparece com o evento cancelado. */
   cancelReason?: string | null;
+  /**
+   * Taxa de entrada em Buffunfa (TASK-058, F6-12). Vai no embed porque é cobrada **no clique**: quem
+   * descobre o preço depois de pagar não teve escolha nenhuma. Zero não aparece — evento gratuito é o normal.
+   */
+  entryFee?: bigint;
 }
 
 const when = (date: Date) => `<t:${Math.floor(date.getTime() / 1000)}:f>`;
@@ -121,7 +139,11 @@ export function buildEventEmbed(input: EventEmbedInput): EmbedView {
   const cancelled = input.status === "cancelled";
   const archived = input.status === "archived";
   const fields: EmbedField[] = [];
-  const header = [input.templateName ? `Template: ${input.templateName}` : null, input.startsAt ? `Início: ${when(input.startsAt)}` : "Sem horário marcado"].filter(Boolean);
+  const header = [
+    input.templateName ? `Template: ${input.templateName}` : null,
+    input.startsAt ? `Início: ${when(input.startsAt)}` : "Sem horário marcado",
+    input.entryFee && input.entryFee > NO_ENTRY_FEE ? entryFeeLabel(input.entryFee) : null,
+  ].filter(Boolean);
   fields.push({ name: "Evento", value: header.join(" · ") });
   if (cancelled)
     return {
@@ -172,6 +194,10 @@ export const EVENT_BUTTON_REPLIES = {
   alreadyInRole: (role: string) => `Você já está em ${role}.`,
   notSignedUp: "Você não está inscrito neste evento.",
   confirmed: (role: string) => `Inscrição confirmada em ${role}.`,
+  /** Cobrança feita: o membro vê o que saiu da conta dele no mesmo instante em que entra na lista (F6-13). */
+  charged: (fee: bigint) => `Taxa de entrada: ${formatAmount(fee, "buffunfa")} debitados da sua carteira. Saindo antes do evento começar, a gente devolve.`,
+  refunded: (fee: bigint) => `Taxa de entrada devolvida: ${formatAmount(fee, "buffunfa")}.`,
+  insufficientFunds: (fee: bigint, balance: bigint) => insufficientEntryFeeMessage(fee, balance),
   waitlisted: (role: string, position: number) => `${role} está lotada: você entrou na lista de espera, na posição ${position}. Se abrir vaga, você sobe automaticamente.`,
   left: "Você saiu do evento.",
   failed: "Não consegui registrar sua inscrição. Tente de novo em instantes.",

@@ -6,6 +6,7 @@ import {
   getEvent,
   listEventOwnerHistory,
   listEvents,
+  setEventEntryFee,
   transferEventOwner,
   updateEventDetails,
   type CreateEventResult,
@@ -83,6 +84,14 @@ export class EventsService {
    * Corrige nome e descrição do evento (TASK-029, AC#2). Quem barra evento arquivado é o
    * `assertEventEditable` do controller, pelo mesmo caminho da taxa: uma frase só para todo o acerto.
    */
+  /**
+   * Taxa de entrada do evento (TASK-058, F6-12). Serviço único (doc-002): painel, comando e botão
+   * passam por aqui. Quem decide **quando** ainda dá para mexer é o controller, com `entryFeeEditable`.
+   */
+  setEntryFee(id: string, entryFee: bigint): Promise<EventDto | null> {
+    return setEventEntryFee(this.handle.db, id, entryFee);
+  }
+
   update(id: string, fields: EventUpdateInput): Promise<EventDto | null> {
     return updateEventDetails(this.handle.db, id, fields);
   }

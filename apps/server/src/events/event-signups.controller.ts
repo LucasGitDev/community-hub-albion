@@ -1,5 +1,15 @@
 import { BadRequestException, Body, ConflictException, Controller, Delete, ForbiddenException, Get, HttpCode, Inject, NotFoundException, Param, Patch, Post, Res, UseGuards } from "@nestjs/common";
-import { asSubject, eventJoinSchema, eventSignupMoveSchema, eventStatusLabel, firstIssue, isUuid, type EventMemberDto, type EventSignupDto } from "@albion-hub/shared";
+import {
+  asSubject,
+  eventJoinSchema,
+  eventSignupMoveSchema,
+  eventStatusLabel,
+  firstIssue,
+  insufficientEntryFeeMessage,
+  isUuid,
+  type EventMemberDto,
+  type EventSignupDto,
+} from "@albion-hub/shared";
 import type { Response } from "express";
 import { Authorize, CurrentAuth, type AuthorizedRequest } from "../auth/authorize.js";
 import { SameOriginGuard } from "../auth/same-origin.guard.js";
@@ -67,6 +77,9 @@ export class EventSignupsController {
     // serviço, que vale também para qualquer caminho que não passe pelo guard.
     if (result.reason === "banned") throw new ForbiddenException(`Sua conta está banida e não pode se inscrever em eventos. Motivo: ${result.banReason}`);
     if (result.reason === "not_open") throw new ConflictException(SIGNUP_ERRORS.notOpen(eventStatusLabel(result.status)));
+    // Taxa de entrada maior que o saldo (TASK-058, AC#2): a inscrição inteira é recusada, e a
+    // mensagem diz quanto falta em vez de só avisar que faltou.
+    if (result.reason === "insufficient_funds") throw new ConflictException(insufficientEntryFeeMessage(result.fee, result.balance));
     if (result.reason === "unknown_role") throw new BadRequestException(SIGNUP_ERRORS.unknownRole);
     if (result.reason === "already_in_role") throw new ConflictException(SIGNUP_ERRORS.alreadyInRole);
     throw new NotFoundException("Evento não encontrado.");
