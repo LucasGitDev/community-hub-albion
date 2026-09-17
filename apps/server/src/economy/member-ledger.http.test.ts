@@ -80,7 +80,7 @@ describe.skipIf(!baseUrl)("GET /api/admin/members/:userId/ledger (TASK-051)", ()
   it("staff lê o extrato de qualquer jogador, com saldo, autor e prata em string (AC#1/AC#2/AC#4)", async () => {
     const staff = await user(["member", "staff"], "StaffNick");
     const alvo = await user(["member"], "AlvoNick");
-    await insertLedgerEntry(handle.db, { userId: alvo.id, amount: 1_000_000n, kind: "split_payout", createdBy: staff.id, memo: "Split do evento" });
+    await insertLedgerEntry(handle.db, { currency: "silver", userId: alvo.id, amount: 1_000_000n, kind: "split_payout", createdBy: staff.id, memo: "Split do evento" });
 
     const res = await get(`/api/admin/members/${alvo.id}/ledger`, staff.cookie);
     expect(res.status).toBe(200);
@@ -97,7 +97,7 @@ describe.skipIf(!baseUrl)("GET /api/admin/members/:userId/ledger (TASK-051)", ()
   it("admin também lê (AC#1)", async () => {
     const admin = await user(["member", "admin"]);
     const alvo = await user(["member"]);
-    await insertLedgerEntry(handle.db, { userId: alvo.id, amount: 50n, kind: "split_payout" });
+    await insertLedgerEntry(handle.db, { currency: "silver", userId: alvo.id, amount: 50n, kind: "split_payout" });
     const res = await get(`/api/admin/members/${alvo.id}/ledger`, admin.cookie);
     expect(res.status).toBe(200);
     expect((res.body as MemberLedgerResponse).entries).toHaveLength(1);
@@ -105,7 +105,7 @@ describe.skipIf(!baseUrl)("GET /api/admin/members/:userId/ledger (TASK-051)", ()
 
   it("membro comum pedindo extrato alheio é 403 — a regra dele é condicionada ao próprio id (AC#3)", async () => {
     const alvo = await user(["member"]);
-    await insertLedgerEntry(handle.db, { userId: alvo.id, amount: 9_999_999n, kind: "split_payout", memo: "prata do outro" });
+    await insertLedgerEntry(handle.db, { currency: "silver", userId: alvo.id, amount: 9_999_999n, kind: "split_payout", memo: "prata do outro" });
     const bisbilhoteiro = await user(["member"]);
 
     const res = await get(`/api/admin/members/${alvo.id}/ledger`, bisbilhoteiro.cookie);
@@ -115,7 +115,7 @@ describe.skipIf(!baseUrl)("GET /api/admin/members/:userId/ledger (TASK-051)", ()
 
   it("caller pedindo extrato alheio também é 403: `read Event` não abre carteira (regressão da TASK-027) (AC#3)", async () => {
     const alvo = await user(["member"]);
-    await insertLedgerEntry(handle.db, { userId: alvo.id, amount: 8_888_888n, kind: "split_payout" });
+    await insertLedgerEntry(handle.db, { currency: "silver", userId: alvo.id, amount: 8_888_888n, kind: "split_payout" });
     const caller = await user(["member", "caller"]);
 
     const res = await get(`/api/admin/members/${alvo.id}/ledger`, caller.cookie);
@@ -132,7 +132,7 @@ describe.skipIf(!baseUrl)("GET /api/admin/members/:userId/ledger (TASK-051)", ()
   it("reserva conta só saque pendente: aprovado já debitou no ledger e não é descontado duas vezes", async () => {
     const staff = await user(["member", "staff"]);
     const alvo = await user(["member"]);
-    await insertLedgerEntry(handle.db, { userId: alvo.id, amount: 1_000_000n, kind: "split_payout" });
+    await insertLedgerEntry(handle.db, { currency: "silver", userId: alvo.id, amount: 1_000_000n, kind: "split_payout" });
     const pedido = await requestWithdrawal(handle.db, { userId: alvo.id, amount: 300_000n });
     expect(pedido.ok).toBe(true);
 
@@ -144,6 +144,7 @@ describe.skipIf(!baseUrl)("GET /api/admin/members/:userId/ledger (TASK-051)", ()
     const staff = await user(["member", "staff"]);
     const alvo = await user(["member"]);
     await insertLedgerEntry(handle.db, {
+      currency: "silver",
       userId: alvo.id,
       amount: -25_000n,
       kind: "adjustment",
@@ -175,7 +176,7 @@ describe.skipIf(!baseUrl)("GET /api/admin/members/:userId/ledger (TASK-051)", ()
   it("pagina por cursor sem repetir nem pular lançamento (AC#2)", async () => {
     const staff = await user(["member", "staff"]);
     const alvo = await user(["member"]);
-    for (const amount of [1n, 2n, 3n, 4n, 5n]) await insertLedgerEntry(handle.db, { userId: alvo.id, amount, kind: "split_payout" });
+    for (const amount of [1n, 2n, 3n, 4n, 5n]) await insertLedgerEntry(handle.db, { currency: "silver", userId: alvo.id, amount, kind: "split_payout" });
 
     const first = await get(`/api/admin/members/${alvo.id}/ledger?limit=2`, staff.cookie);
     const page1 = first.body as MemberLedgerResponse;

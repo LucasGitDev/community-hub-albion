@@ -9,6 +9,7 @@ import {
   withdrawalRequestSchema,
   withdrawalSettleSchema,
   withdrawalTransitionError,
+  type LedgerBalancesDto,
   type WithdrawalBalanceDto,
   type WithdrawalDto,
   type WithdrawalQueueResponse,
@@ -17,6 +18,7 @@ import {
 import type { Response } from "express";
 import type { z } from "zod";
 import { Authorize, CurrentAuth, type AuthorizedRequest } from "../auth/authorize.js";
+import { LedgerService, toBalancesDto } from "./ledger.service.js";
 import { SameOriginGuard } from "../auth/same-origin.guard.js";
 import { toBalanceDto, WithdrawalService, type DecideSilverResult } from "./withdrawal.service.js";
 
@@ -48,7 +50,13 @@ function unwrap(result: DecideSilverResult, to: "approved" | "rejected" | "settl
 }
 
 export interface MyWithdrawalsResponse {
+  /** Saldo de **prata** com a reserva de saque descontada. Buffunfa não tem saque (F6-6), então não entra aqui. */
   balance: WithdrawalBalanceDto;
+  /**
+   * Os saldos das duas moedas, separados (F6-27). Vêm juntos do saque porque é esta chamada que o painel
+   * já repete no polling: o chip do header (F6-26) mostra as duas sem abrir uma segunda ida ao servidor.
+   */
+  balances: LedgerBalancesDto;
   withdrawals: WithdrawalDto[];
 }
 
@@ -63,15 +71,22 @@ export interface MyWithdrawalsResponse {
  */
 @Controller("me/withdrawals")
 export class MyWithdrawalsController {
-  constructor(@Inject(WithdrawalService) private readonly withdrawals: WithdrawalService) {}
+  constructor(
+    @Inject(WithdrawalService) private readonly withdrawals: WithdrawalService,
+    @Inject(LedgerService) private readonly ledger: LedgerService,
+  ) {}
 
-  /** Saldo + meus saques numa chamada só: é o que a tela do membro (TASK-031) desenha e o polling repete. */
+  /** Saldos + meus saques numa chamada só: é o que a tela do membro (TASK-031) desenha e o polling repete. */
   @Get()
   @Authorize("read", "Withdrawal")
   async mine(@CurrentAuth() auth: Auth, @Res({ passthrough: true }) res: Response): Promise<MyWithdrawalsResponse> {
     res.setHeader("Cache-Control", "no-store");
-    const [balance, withdrawals] = await Promise.all([this.withdrawals.balance(auth.user.id), this.withdrawals.list({ userId: auth.user.id })]);
-    return { balance: toBalanceDto(balance), withdrawals };
+    const [balance, balances, withdrawals] = await Promise.all([
+      this.withdrawals.balance(auth.user.id),
+      this.ledger.balances(auth.user.id),
+      this.withdrawals.list({ userId: auth.user.id }),
+    ]);
+    return { balance: toBalanceDto(balance), balances: toBalancesDto(balances), withdrawals };
   }
 
   /**
@@ -91,7 +106,8 @@ export class MyWithdrawalsController {
     }
     res.status(201);
     res.setHeader("Cache-Control", "no-store");
-    return { balance: toBalanceDto(result.balance), withdrawals: await this.withdrawals.list({ userId: auth.user.id }) };
+    const [balances, withdrawals] = await Promise.all([this.ledger.balances(auth.user.id), this.withdrawals.list({ userId: auth.user.id })]);
+    return { balance: toBalanceDto(result.balance), balances: toBalancesDto(balances), withdrawals };
   }
 }
 

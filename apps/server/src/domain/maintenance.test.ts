@@ -1,6 +1,6 @@
 import { createHash, timingSafeEqual } from "node:crypto";
 import { describe, expect, it } from "vitest";
-import { FixedWindowRateLimiter, maintenanceTokenMatches, parseSilverAdjustment } from "./maintenance.js";
+import { FixedWindowRateLimiter, maintenanceTokenMatches, parseAdjustment } from "./maintenance.js";
 
 const SECRET = "token-de-manutencao-com-32-chars-ok";
 
@@ -60,15 +60,22 @@ describe("FixedWindowRateLimiter (TASK-048, rate limit)", () => {
   });
 });
 
-describe("parseSilverAdjustment (TASK-048, AC#2)", () => {
+describe("parseAdjustment (TASK-048, AC#2; duas moedas na TASK-056)", () => {
+  it("vale igual para Buffunfa, com o exemplo da moeda certa na recusa (F6-6)", () => {
+    expect(parseAdjustment({ amount: "-340", reason: "taxa cobrada em dobro" }, "buffunfa")).toEqual({ ok: true, amount: -340n, reason: "taxa cobrada em dobro" });
+    const refusal = parseAdjustment({ amount: "meia dúzia", reason: "motivo" }, "buffunfa");
+    expect(refusal).toMatchObject({ ok: false });
+    if (!refusal.ok) expect(refusal.error).toContain("Buffunfa");
+  });
+
   it("aceita prata inteira em string, positiva ou negativa, com motivo", () => {
-    expect(parseSilverAdjustment({ amount: "1500000", reason: "acerto do split 12" })).toEqual({ ok: true, amount: 1_500_000n, reason: "acerto do split 12" });
-    expect(parseSilverAdjustment({ amount: " -42 ", reason: " estorno manual " })).toEqual({ ok: true, amount: -42n, reason: "estorno manual" });
+    expect(parseAdjustment({ amount: "1500000", reason: "acerto do split 12" }, "silver")).toEqual({ ok: true, amount: 1_500_000n, reason: "acerto do split 12" });
+    expect(parseAdjustment({ amount: " -42 ", reason: " estorno manual " }, "silver")).toEqual({ ok: true, amount: -42n, reason: "estorno manual" });
   });
 
   it("exige motivo não vazio", () => {
     for (const reason of [undefined, "", "   ", 7]) {
-      const parsed = parseSilverAdjustment({ amount: "10", reason });
+      const parsed = parseAdjustment({ amount: "10", reason }, "silver");
       expect(parsed).toMatchObject({ ok: false });
       expect(!parsed.ok && parsed.error).toContain("reason");
     }
@@ -76,11 +83,11 @@ describe("parseSilverAdjustment (TASK-048, AC#2)", () => {
 
   it("recusa zero, float, número cru e texto", () => {
     for (const amount of ["0", "-0", "1.5", 10, "1e6", "abc", "", undefined, "9".repeat(19)]) {
-      expect(parseSilverAdjustment({ amount, reason: "motivo" })).toMatchObject({ ok: false });
+      expect(parseAdjustment({ amount, reason: "motivo" }, "silver")).toMatchObject({ ok: false });
     }
   });
 
   it("recusa motivo gigante", () => {
-    expect(parseSilverAdjustment({ amount: "10", reason: "x".repeat(201) })).toMatchObject({ ok: false });
+    expect(parseAdjustment({ amount: "10", reason: "x".repeat(201) }, "silver")).toMatchObject({ ok: false });
   });
 });

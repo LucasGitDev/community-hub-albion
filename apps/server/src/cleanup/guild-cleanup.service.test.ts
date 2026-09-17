@@ -80,7 +80,7 @@ describe.skipIf(!baseUrl)("limpeza diária: passada completa (TASK-049, Postgres
     const ficou = await user();
     const saiu = await user(["member", "staff"]);
     const sessao = await createSession(handle.db, saiu.id, new Date(Date.now() + 3_600_000));
-    await insertLedgerEntry(handle.db, { userId: saiu.id, amount: 750_000n, kind: "adjustment", memo: "split", createdBy: admin.id });
+    await insertLedgerEntry(handle.db, { currency: "silver", userId: saiu.id, amount: 750_000n, kind: "adjustment", memo: "split", createdBy: admin.id });
 
     const members = { listMembers: vi.fn(async () => [snapshot(admin.discordId), snapshot(ficou.discordId)]) };
     const service = new GuildCleanupService(handle, members, () => NOW);
@@ -94,7 +94,7 @@ describe.skipIf(!baseUrl)("limpeza diária: passada completa (TASK-049, Postgres
     expect(await getLeftGuildAt(handle.db, ficou.id)).toBeNull();
 
     // Saldo intacto: sair do Discord não cancela a dívida da comunidade (G6, AC#4).
-    expect(await getLedgerBalance(handle.db, saiu.id)).toBe(750_000n);
+    expect(await getLedgerBalance(handle.db, saiu.id, "silver")).toBe(750_000n);
 
     // Autoria: o job não tem usuário logado, então a nota é `system`, sem autor, e diz o que ele fez.
     const notas = await listUserNotes(handle.db, saiu.id);

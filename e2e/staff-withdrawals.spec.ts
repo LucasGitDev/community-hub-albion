@@ -21,7 +21,7 @@ const rows = (page: Page) => page.getByRole("list", { name: "Pedidos de saque" }
  */
 async function memberWithPending(page: Page, index: string, base: string, silver: string, amount: string) {
   const nick = `${base}-${discordId(index).slice(-8)}`;
-  await login(page, index, nick, { silver: [{ amount: silver, kind: "split_payout", memo: "Loot split" }] });
+  await login(page, index, nick, { ledger: [{ amount: silver, kind: "split_payout", memo: "Loot split" }] });
   const res = await page.request.post("/api/me/withdrawals", { data: { amount }, headers: { Origin: ORIGIN } });
   expect(res.status()).toBe(201);
   const { withdrawals } = (await res.json()) as { withdrawals: { id: string }[] };
@@ -142,7 +142,7 @@ test("fila vazia explica o que aparece em cada aba, e a falha da API oferece ten
 
 test("membro comum não vê a fila nem age em saque alheio (AC#3)", async ({ page }) => {
   const membro = await memberWithPending(page, "108", "alvo", "800000", "800000");
-  await login(page, "109", "curioso", { silver: [{ amount: "10000", kind: "split_payout" }] });
+  await login(page, "109", "curioso", { ledger: [{ amount: "10000", kind: "split_payout" }] });
 
   // A UI não oferece o caminho: nem link no menu, nem a tela.
   await page.goto("/staff/saques");

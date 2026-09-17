@@ -1,8 +1,8 @@
 import { BadRequestException, Body, Controller, HttpCode, Inject, NotFoundException, Optional, Post, ServiceUnavailableException, UseGuards } from "@nestjs/common";
 import { addUserNote, getAdminMemberProfile, type DbHandle } from "@albion-hub/db";
 import { DB_HANDLE } from "../db/db.module.js";
-import { MAINTENANCE_LEDGER_REFERENCE } from "@albion-hub/shared";
-import { parseSilverAdjustment } from "../domain/maintenance.js";
+import { CURRENCY_LABELS, formatAmount, MAINTENANCE_LEDGER_REFERENCE, type Currency } from "@albion-hub/shared";
+import { parseAdjustment } from "../domain/maintenance.js";
 import { LedgerService } from "../economy/ledger.service.js";
 import { AlbionCheckService, type AlbionCheckDto } from "../members/albion-check.service.js";
 import { MaintenanceTokenGuard } from "./maintenance-token.guard.js";
@@ -17,7 +17,10 @@ const MAINTENANCE_REFERENCE = MAINTENANCE_LEDGER_REFERENCE;
 export interface MaintenanceAdjustmentResponse {
   entryId: string;
   userId: string;
+  /** Moeda ajustada: a resposta diz de que moeda são os números, para não haver dúvida no curl (F6-1). */
+  currency: Currency;
   amount: string;
+  /** Saldo **daquela moeda** depois do ajuste; nunca um total das duas (F6-27). */
   balance: string;
 }
 
@@ -52,16 +55,34 @@ export class MaintenanceController {
 
   /** Ajuste de prata: lançamento `adjustment` com motivo obrigatório, visível no extrato do jogador (AC#2). */
   @Post("silver")
-  async adjustSilver(@Body() body: unknown): Promise<MaintenanceAdjustmentResponse> {
+  adjustSilver(@Body() body: unknown): Promise<MaintenanceAdjustmentResponse> {
+    return this.adjust(body, "silver");
+  }
+
+  /**
+   * Ajuste de Buffunfa (F6-6): **irmã** da rota de prata, atrás do mesmo guard de header, do mesmo rate
+   * limit e do mesmo motivo obrigatório. Existe porque a Buffunfa não tem saque nem qualquer outra porta
+   * manual: sem ela, um erro de taxa ou de pagamento ficaria sem conserto, já que o ledger é append-only.
+   *
+   * É a **única** exceção registrada à trava de saldo não-negativo (F6-7): quem ganhou por engano e já
+   * gastou precisa poder ficar devendo, então o ajuste entra por `record` e não pelo `spend`.
+   */
+  @Post("buffunfa")
+  adjustBuffunfa(@Body() body: unknown): Promise<MaintenanceAdjustmentResponse> {
+    return this.adjust(body, "buffunfa");
+  }
+
+  private async adjust(body: unknown, currency: Currency): Promise<MaintenanceAdjustmentResponse> {
     const userId = parseUserId(body);
-    const parsed = parseSilverAdjustment(body);
+    const parsed = parseAdjustment(body, currency);
     if (!parsed.ok) throw new BadRequestException(parsed.error);
     await this.requireMember(userId);
 
     const memo = `Manutenção: ${parsed.reason}`;
-    const entry = await this.ledger.record({ userId, amount: parsed.amount, kind: "adjustment", reference: MAINTENANCE_REFERENCE, createdBy: null, memo });
-    await addUserNote(this.handle.db, { userId, authorId: null, kind: "system", body: `Ajuste de prata por manutenção: ${parsed.amount.toString()}. Motivo: ${parsed.reason}` });
-    return { entryId: entry.id, userId, amount: entry.amount.toString(), balance: (await this.ledger.balance(userId)).toString() };
+    const entry = await this.ledger.record({ userId, currency, amount: parsed.amount, kind: "adjustment", reference: MAINTENANCE_REFERENCE, createdBy: null, memo });
+    const note = `Ajuste de ${CURRENCY_LABELS[currency]} por manutenção: ${formatAmount(parsed.amount, currency)}. Motivo: ${parsed.reason}`;
+    await addUserNote(this.handle.db, { userId, authorId: null, kind: "system", body: note });
+    return { entryId: entry.id, userId, currency, amount: entry.amount.toString(), balance: (await this.ledger.balance(userId, currency)).toString() };
   }
 
   /** Revalida o nick do jogador na API do Albion e grava o resultado (AC#3). Mesma regra do painel. */

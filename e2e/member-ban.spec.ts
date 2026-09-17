@@ -83,7 +83,7 @@ test("admin bane com motivo, a linha fica marcada e o acesso do banido cai na ho
 
 test("banido perde o acesso ao painel, a evento e a saque, e o saldo continua lá (AC#5, AC#6, AC#8, AC#9, AC#10)", async ({ page }) => {
   await como(page, "10", u("ban2-chefe"), ["admin"]);
-  const alvoId = await login(page, "11", u("ban2-alvo"), { silver: [{ amount: "1000000", kind: "adjustment", memo: "saldo de teste" }] });
+  const alvoId = await login(page, "11", u("ban2-alvo"), { ledger: [{ amount: "1000000", kind: "adjustment", memo: "saldo de teste" }] });
 
   // Como o próprio alvo: pede um saque enquanto ainda pode.
   const pedido = await page.request.post("/api/me/withdrawals", { data: { amount: "400000" }, headers: { Origin: ORIGIN } });

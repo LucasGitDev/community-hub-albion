@@ -1,9 +1,10 @@
 import { BadRequestException, Controller, ForbiddenException, Get, Inject, NotFoundException, Param, Query, Res } from "@nestjs/common";
-import { getAdminMemberProfile, getWithdrawalBalance, listLedgerEntriesWithAuthor, type DbHandle, type LedgerEntryWithAuthor } from "@albion-hub/db";
-import { asSubject, encodeLedgerCursor, parseLedgerPageQuery, type MemberLedgerEntryDto, type WithdrawalBalanceDto } from "@albion-hub/shared";
+import { getAdminMemberProfile, getLedgerBalancesByCurrency, getWithdrawalBalance, listLedgerEntriesWithAuthor, type DbHandle, type LedgerEntryWithAuthor } from "@albion-hub/db";
+import { asSubject, encodeLedgerCursor, parseLedgerPageQuery, type LedgerBalancesDto, type LedgerCurrencyFilter, type MemberLedgerEntryDto, type WithdrawalBalanceDto } from "@albion-hub/shared";
 import type { Response } from "express";
 import { Authorize, CurrentAuth, type AuthorizedRequest } from "../auth/authorize.js";
 import { DB_HANDLE } from "../db/db.module.js";
+import { toBalancesDto } from "./ledger.service.js";
 
 type Auth = AuthorizedRequest["auth"];
 
@@ -13,6 +14,7 @@ const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const toDto = (entry: LedgerEntryWithAuthor): MemberLedgerEntryDto => ({
   id: entry.id,
   amount: entry.amount.toString(),
+  currency: entry.currency,
   kind: entry.kind,
   referenceType: entry.referenceType,
   referenceId: entry.referenceId,
@@ -25,6 +27,10 @@ const toDto = (entry: LedgerEntryWithAuthor): MemberLedgerEntryDto => ({
 export interface MemberLedgerResponse {
   member: { id: string; name: string };
   balance: WithdrawalBalanceDto;
+  /** Os dois saldos, separados e nunca somados (F6-27). */
+  balances: LedgerBalancesDto;
+  /** Moeda que este extrato está mostrando; `"all"` é o default. */
+  currency: LedgerCurrencyFilter;
   entries: MemberLedgerEntryDto[];
   /** Cursor da próxima página; null quando o extrato acabou. */
   nextCursor: string | null;
@@ -71,12 +77,16 @@ export class MemberLedgerController {
     // Reserva é só o que está `pending` (Q25): `approved` já lançou o débito no ledger, contar de novo
     // subtrairia a mesma prata duas vezes. A conta é a mesma do saque — não existe segunda versão dela.
     const balance = await getWithdrawalBalance(this.handle.db, userId);
-    const page = await listLedgerEntriesWithAuthor(this.handle.db, userId, { limit: parsed.limit, cursor: parsed.cursor ?? null });
+    // Os dois saldos, separados (F6-27): a staff responde "cadê minha Buffunfa" na mesma tela.
+    const balances = await getLedgerBalancesByCurrency(this.handle.db, userId);
+    const page = await listLedgerEntriesWithAuthor(this.handle.db, userId, parsed.currency, { limit: parsed.limit, cursor: parsed.cursor ?? null });
 
     res.setHeader("Cache-Control", "no-store");
     return {
       member: { id: member.id, name: member.name },
       balance: { balance: balance.balance.toString(), reserved: balance.reserved.toString(), available: balance.available.toString() },
+      balances: toBalancesDto(balances),
+      currency: parsed.currency,
       entries: page.entries.map(toDto),
       nextCursor: page.nextCursor ? encodeLedgerCursor({ createdAt: page.nextCursor.createdAt.toISOString(), id: page.nextCursor.id }) : null,
     };

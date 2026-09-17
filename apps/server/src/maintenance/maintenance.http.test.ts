@@ -197,8 +197,8 @@ describe.skipIf(!baseUrl)("/api/maintenance (TASK-048)", () => {
         const debit = await post(app, "/api/maintenance/silver", TOKEN, { userId: user.id, amount: "-500000", reason: "estorno de duplicidade" }).expect(201);
         expect(debit.body.balance).toBe("1000000");
 
-        expect(await getLedgerBalance(handle.db, user.id)).toBe(1_000_000n);
-        const page = await listLedgerEntries(handle.db, user.id, {});
+        expect(await getLedgerBalance(handle.db, user.id, "silver")).toBe(1_000_000n);
+        const page = await listLedgerEntries(handle.db, user.id, "silver", {});
         expect(page.entries).toHaveLength(2);
         for (const entry of page.entries) {
           expect(entry.kind).toBe("adjustment");
@@ -223,7 +223,7 @@ describe.skipIf(!baseUrl)("/api/maintenance (TASK-048)", () => {
         await post(app, "/api/maintenance/silver", TOKEN, { userId: "não-uuid", amount: "100", reason: "x" }).expect(400);
         await post(app, "/api/maintenance/silver", TOKEN, { userId: "11111111-1111-1111-1111-111111111111", amount: "100", reason: "x" }).expect(404);
         // Nenhuma recusa deixou lançamento para trás: o ledger não ganhou linha.
-        expect(await getLedgerBalance(handle.db, user.id)).toBe(0n);
+        expect(await getLedgerBalance(handle.db, user.id, "silver")).toBe(0n);
       });
     });
   });
