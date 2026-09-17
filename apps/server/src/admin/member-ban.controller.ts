@@ -1,4 +1,4 @@
-import { BadRequestException, Body, ConflictException, Controller, Delete, HttpCode, Inject, NotFoundException, Param, Post, UseGuards } from "@nestjs/common";
+import { BadRequestException, Body, ConflictException, Controller, Delete, ForbiddenException, HttpCode, Inject, NotFoundException, Param, Post, UseGuards } from "@nestjs/common";
 import { getBanStatus, type DbHandle } from "@albion-hub/db";
 import { validateBanReason, type BanView } from "@albion-hub/shared";
 import { Authorize, CurrentAuth } from "../auth/authorize.js";
@@ -42,6 +42,7 @@ export class MemberBanController {
       if (result.reason === "not_found") throw new NotFoundException("Usuário não encontrado.");
       if (result.reason === "self") throw new BadRequestException("Você não pode banir a si mesmo.");
       if (result.reason === "last_admin") throw new ConflictException("Não é possível banir o último admin.");
+      if (result.reason === "protected_target") throw new ForbiddenException("Só um admin pode banir alguém da staff ou outro admin.");
       throw new ConflictException("Esse membro já está banido.");
     }
 

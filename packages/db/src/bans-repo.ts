@@ -25,7 +25,7 @@ export interface BanUserInput {
 
 export type BanUserResult =
   | { ok: true; discordId: string; sessionsRevoked: number }
-  | { ok: false; reason: "not_found" | "already_banned" | "self" | "last_admin" };
+  | { ok: false; reason: "not_found" | "already_banned" | "self" | "last_admin" | "protected_target" };
 
 /**
  * Bane e corta o acesso na mesma transação: marca a conta e apaga **todas** as sessões dela, para
@@ -45,14 +45,36 @@ export async function banUser(db: Database, input: BanUserInput): Promise<BanUse
     if (!target) return { ok: false, reason: "not_found" };
     if (target.bannedAt) return { ok: false, reason: "already_banned" };
 
-    // Admin ativo (não banido) que sobraria depois deste banimento.
+    /**
+     * Admins ativos (não banidos) que existiriam depois deste banimento.
+     *
+     * O `for("update")` **sem** `of:` é deliberado: o predicado que precisa ser protegido é
+     * `users.banned_at`, então é a linha de `users` que tem de ser travada. Travar só `user_roles`
+     * não bastaria — um banimento concorrente nunca altera aquela linha, a trava sairia sem recheck
+     * e as duas transações veriam duas admins ativas onde já só há uma. Dois banimentos simultâneos
+     * de admins diferentes podem virar deadlock; o Postgres aborta um, que é a falha segura.
+     */
     const admins = await tx
       .select({ userId: userRoles.userId })
       .from(userRoles)
       .innerJoin(users, eq(users.id, userRoles.userId))
       .where(and(eq(userRoles.role, "admin"), isNull(users.bannedAt)))
-      .for("update", { of: userRoles });
+      .for("update");
     if (admins.some((a) => a.userId === userId) && admins.length <= 1) return { ok: false, reason: "last_admin" };
+
+    /**
+     * Hierarquia: staff bane membro e caller, mas não bane staff nem admin — só admin faz isso.
+     * Sem esta trava, uma conta de staff comprometida derrubaria toda a linha de comando da
+     * comunidade (cada banimento já corta o acesso e bloqueia o login de quem poderia reagir).
+     */
+    const [actorIsAdmin] = await tx
+      .select({ userId: userRoles.userId })
+      .from(userRoles)
+      .where(and(eq(userRoles.userId, actorId), eq(userRoles.role, "admin")));
+    if (!actorIsAdmin) {
+      const targetRoles = await tx.select({ role: userRoles.role }).from(userRoles).where(eq(userRoles.userId, userId));
+      if (targetRoles.some((r) => r.role === "staff" || r.role === "admin")) return { ok: false, reason: "protected_target" };
+    }
 
     await tx.update(users).set({ bannedAt: new Date(), bannedBy: actorId, banReason: reason, updatedAt: new Date() }).where(eq(users.id, userId));
     const revoked = await tx.delete(sessions).where(eq(sessions.userId, userId)).returning({ id: sessions.id });
