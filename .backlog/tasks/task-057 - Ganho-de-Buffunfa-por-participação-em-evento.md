@@ -4,13 +4,15 @@ title: Ganho de Buffunfa por participação em evento
 status: To Do
 assignee: []
 created_date: '2026-09-17 17:04'
+updated_date: '2026-09-17 17:09'
 labels: []
+milestone: m-6
 dependencies:
   - TASK-056
 documentation:
   - .backlog/docs/doc-005 - Decisões-v1.md
-priority: high
-ordinal: 55000
+priority: medium
+ordinal: 3000
 ---
 
 ## Description

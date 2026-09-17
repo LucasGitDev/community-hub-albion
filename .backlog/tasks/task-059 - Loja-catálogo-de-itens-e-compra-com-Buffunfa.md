@@ -4,13 +4,15 @@ title: 'Loja: catálogo de itens e compra com Buffunfa'
 status: To Do
 assignee: []
 created_date: '2026-09-17 17:04'
+updated_date: '2026-09-17 17:08'
 labels: []
+milestone: m-6
 dependencies:
   - TASK-056
 documentation:
   - .backlog/docs/doc-005 - Decisões-v1.md
 priority: medium
-ordinal: 57000
+ordinal: 5000
 ---
 
 ## Description

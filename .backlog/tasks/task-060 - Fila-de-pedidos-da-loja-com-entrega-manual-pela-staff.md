@@ -4,13 +4,15 @@ title: Fila de pedidos da loja com entrega manual pela staff
 status: To Do
 assignee: []
 created_date: '2026-09-17 17:05'
+updated_date: '2026-09-17 17:08'
 labels: []
+milestone: m-6
 dependencies:
   - TASK-059
 documentation:
   - .backlog/docs/doc-005 - Decisões-v1.md
 priority: medium
-ordinal: 58000
+ordinal: 6000
 ---
 
 ## Description

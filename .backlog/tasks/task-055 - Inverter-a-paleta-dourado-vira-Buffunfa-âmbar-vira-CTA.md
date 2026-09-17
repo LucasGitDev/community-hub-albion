@@ -4,12 +4,14 @@ title: 'Inverter a paleta: dourado vira Buffunfa, âmbar vira CTA'
 status: To Do
 assignee: []
 created_date: '2026-09-17 17:03'
+updated_date: '2026-09-17 17:08'
 labels: []
+milestone: m-6
 dependencies: []
 documentation:
   - .backlog/docs/doc-009 - Identidade-Toca-da-Turma-e-Buffunfa.md
 priority: high
-ordinal: 53000
+ordinal: 1000
 ---
 
 ## Description

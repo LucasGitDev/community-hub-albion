@@ -4,13 +4,15 @@ title: 'Buffunfa no ledger: segunda moeda, saldo e extrato por moeda'
 status: To Do
 assignee: []
 created_date: '2026-09-17 17:04'
+updated_date: '2026-09-17 17:08'
 labels: []
+milestone: m-6
 dependencies:
   - TASK-055
 documentation:
   - .backlog/docs/doc-005 - Decisões-v1.md
 priority: high
-ordinal: 54000
+ordinal: 2000
 ---
 
 ## Description

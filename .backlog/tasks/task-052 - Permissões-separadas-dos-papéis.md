@@ -4,12 +4,14 @@ title: Permissões separadas dos papéis
 status: To Do
 assignee: []
 created_date: '2026-09-17 02:20'
+updated_date: '2026-09-17 17:08'
 labels:
   - rbac
   - backend
+milestone: m-7
 dependencies: []
 priority: low
-ordinal: 52000
+ordinal: 8000
 ---
 
 ## Description
