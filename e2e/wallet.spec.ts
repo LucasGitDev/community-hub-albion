@@ -47,6 +47,10 @@ test("as duas moedas convivem: chip, saldos separados, moeda por linha e filtro 
   // ganhou o ícone e a prata continua neutra, sem depender de cor pra se distinguir (AC#1, AC#4).
   await expect(chip.locator('img[src*="buffunfa"]')).toHaveCount(1);
 
+  // A aba é a Toca da Turma, não o placeholder (AC#3).
+  await expect(page).toHaveTitle("Toca da Turma");
+  await expect(page.locator('link[rel="icon"]')).toHaveAttribute("href", "/favicon.png");
+
   // Cabeçalho do extrato: um saldo por moeda, lado a lado (F6-27).
   await expect(page.getByText("Disponível pra saque")).toBeVisible();
   await expect(page.getByText("Buffunfa", { exact: true }).first()).toBeVisible();
