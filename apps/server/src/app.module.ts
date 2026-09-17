@@ -6,6 +6,7 @@ import { DbModule } from "./db/db.module.js";
 import { EconomyModule } from "./economy/economy.module.js";
 import { EventsModule } from "./events/events.module.js";
 import { HealthController } from "./health/health.controller.js";
+import { MaintenanceModule } from "./maintenance/maintenance.module.js";
 import { MembersModule } from "./members/members.module.js";
 import type { MemberImporter } from "./members/member-importer.token.js";
 import { NickModule } from "./nick/nick.module.js";
@@ -27,10 +28,16 @@ export class AppModule {
   static register(env: Env, options: AppModuleOptions = { bot: true }): DynamicModule {
     return {
       module: AppModule,
-      imports: [DbModule.register(env.DATABASE_URL), EconomyModule.register(env), AuthModule.register(env, options.memberImporter), NickModule.register(env), MembersModule.register(env), TemplatesModule.register(env), EventsModule.register(env), ...(options.bot ? [BotModule.register(env)] : [])],
+      imports: [DbModule.register(env.DATABASE_URL), EconomyModule.register(env), AuthModule.register(env, options.memberImporter), NickModule.register(env), MembersModule.register(env), TemplatesModule.register(env), EventsModule.register(env), ...(options.bot ? [BotModule.register(env)] : []), ...maintenance(env)],
       controllers: [HealthController],
     };
   }
+}
+
+/** Namespace de manutenção só entra na aplicação com MAINTENANCE_TOKEN configurado (TASK-048, AC#5). */
+function maintenance(env: Env): DynamicModule[] {
+  const module = MaintenanceModule.register(env);
+  return module ? [module] : [];
 }
 
 export function configureApp(app: INestApplication, options: { webDistDir?: string } = {}): INestApplication {
