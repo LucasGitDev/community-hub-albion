@@ -3,6 +3,8 @@ import type { Env } from "../config/env.js";
 import { AdminMemberProfileController } from "../admin/admin-member-profile.controller.js";
 import { AdminMembersController } from "../admin/admin-members.controller.js";
 import { AdminUsersController } from "../admin/admin-users.controller.js";
+import { MemberBanController } from "../admin/member-ban.controller.js";
+import { MemberBanService } from "../members/member-ban.service.js";
 import { MEMBER_IMPORTER, type MemberImporter } from "../members/member-importer.token.js";
 import { AUTH_ENV, AuthController } from "./auth.controller.js";
 import { AuthorizeGuard } from "./authorize.js";
@@ -22,12 +24,13 @@ export class AuthModule {
     return {
       module: AuthModule,
       // Dev login só existe quando habilitado (env proíbe em produção).
-      controllers: [AuthController, RolesController, AdminUsersController, AdminMembersController, AdminMemberProfileController, ...(env.AUTH_DEV_LOGIN ? [DevLoginController] : [])],
+      controllers: [AuthController, RolesController, AdminUsersController, AdminMembersController, AdminMemberProfileController, MemberBanController, ...(env.AUTH_DEV_LOGIN ? [DevLoginController] : [])],
       providers: [
         { provide: AUTH_ENV, useValue: env },
         SessionService,
         AuthorizeGuard,
         SameOriginGuard,
+        MemberBanService,
         ...(memberImporter ? [{ provide: MEMBER_IMPORTER, useValue: memberImporter }] : []),
         { provide: DISCORD_OAUTH_CLIENT, useValue: new FetchDiscordOAuthClient({ clientId: env.DISCORD_CLIENT_ID, clientSecret: env.DISCORD_CLIENT_SECRET }) },
       ],

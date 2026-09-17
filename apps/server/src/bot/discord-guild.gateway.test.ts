@@ -10,10 +10,11 @@ const MEMBER = "400000000000000001";
 function setup() {
   const setNickname = vi.fn().mockResolvedValue(undefined);
   const add = vi.fn().mockResolvedValue(undefined);
-  const membersFetch = vi.fn().mockResolvedValue({ setNickname, roles: { add } });
+  const remove = vi.fn().mockResolvedValue(undefined);
+  const membersFetch = vi.fn().mockResolvedValue({ setNickname, roles: { add, remove } });
   const guildsFetch = vi.fn().mockResolvedValue({ ownerId: OWNER, members: { fetch: membersFetch } });
   const client: GuildClientLike = { guilds: { fetch: guildsFetch } };
-  return { gateway: new DiscordJsGuildGateway(client, GUILD), setNickname, add, membersFetch, guildsFetch };
+  return { gateway: new DiscordJsGuildGateway(client, GUILD), setNickname, add, remove, membersFetch, guildsFetch };
 }
 
 describe("DiscordJsGuildGateway (TASK-014, client falso)", () => {
@@ -29,6 +30,14 @@ describe("DiscordJsGuildGateway (TASK-014, client falso)", () => {
     const { gateway, add } = setup();
     await gateway.addRole(MEMBER, "323456789012345678", "motivo");
     expect(add).toHaveBeenCalledWith("323456789012345678", "motivo");
+  });
+
+  it("removeRole tira o cargo do membro sem expulsar ninguém da guild (TASK-050)", async () => {
+    const { gateway, remove, membersFetch, guildsFetch } = setup();
+    await gateway.removeRole(MEMBER, "323456789012345678", "Banido no painel: roubou o loot");
+    expect(guildsFetch).toHaveBeenCalledWith(GUILD);
+    expect(membersFetch).toHaveBeenCalledWith(MEMBER);
+    expect(remove).toHaveBeenCalledWith("323456789012345678", "Banido no painel: roubou o loot");
   });
 
   it("dono da guild: erro claro sem chamar o Discord", async () => {

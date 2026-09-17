@@ -17,6 +17,9 @@ import { type AuthContext, SessionService } from "./session.service.js";
 
 const POLICY = Symbol("POLICY");
 
+/** Texto único da recusa por banimento: o painel mostra isso em qualquer rota. */
+export const BANNED_MESSAGE = "Sua conta está banida da comunidade. Fale com a staff no Discord.";
+
 interface Policy {
   action: Action;
   subject: SubjectType;
@@ -36,6 +39,9 @@ export class AuthorizeGuard implements CanActivate {
     const req = context.switchToHttp().getRequest<AuthorizedRequest>();
     const auth = await this.sessions.fromRequest(req);
     if (!auth) throw new UnauthorizedException("Sessão inválida ou expirada. Entre de novo.");
+    // Banimento (TASK-050) corta o acesso na hora. As sessões já são apagadas ao banir; esta trava é a
+    // segunda porta: qualquer sessão que sobreviva (banimento feito fora do fluxo, corrida) para aqui.
+    if (auth.user.bannedAt) throw new ForbiddenException(BANNED_MESSAGE);
     const ability = defineAbilityFor({ id: auth.user.id, roles: auth.roles });
     req.auth = { ...auth, ability };
     const policy = this.reflector.get<Policy | undefined>(POLICY, context.getHandler());

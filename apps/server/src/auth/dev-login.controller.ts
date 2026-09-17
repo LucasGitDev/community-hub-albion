@@ -1,5 +1,5 @@
 import { BadRequestException, Body, Controller, ForbiddenException, HttpCode, Inject, Post, Req, Res } from "@nestjs/common";
-import { createSession, grantRole, insertLedgerEntry, setGameNick, upsertUserByDiscordId, type DbHandle } from "@albion-hub/db";
+import { createSession, getBanStatusByDiscordId, grantRole, insertLedgerEntry, setGameNick, upsertUserByDiscordId, type DbHandle } from "@albion-hub/db";
 import { ROLES, validateNick } from "@albion-hub/shared";
 import type { Request, Response } from "express";
 import { z } from "zod";
@@ -53,6 +53,10 @@ export class DevLoginController {
     if (!parsed.success) throw new BadRequestException("Dados de login de desenvolvimento inválidos.");
     const { discordId, username, roles, gameNick, silver } = parsed.data;
     const db = this.handle.db;
+    // Banido não entra por aqui também (TASK-050): esta porta cria sessão igual à do Discord, então a
+    // mesma recusa vale — senão o e2e provaria um acesso que a produção não permite.
+    const ban = await getBanStatusByDiscordId(db, discordId);
+    if (ban) throw new ForbiddenException(`Conta banida da comunidade. Motivo: ${ban.banReason}`);
     const user = await upsertUserByDiscordId(db, { discordId, discordUsername: username, displayName: username });
     if (gameNick) await setGameNick(db, user.id, gameNick);
     for (const role of new Set(["member" as const, ...roles])) await grantRole(db, user.id, role);

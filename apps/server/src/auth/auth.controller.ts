@@ -1,5 +1,5 @@
 import { Controller, Get, HttpCode, Inject, Logger, Post, Req, Res, ForbiddenException } from "@nestjs/common";
-import { createSession, grantRole, revokeSession, upsertUserByDiscordId, type DbHandle } from "@albion-hub/db";
+import { createSession, getBanStatusByDiscordId, grantRole, revokeSession, upsertUserByDiscordId, type DbHandle } from "@albion-hub/db";
 import type { Request, Response } from "express";
 import type { Env } from "../config/env.js";
 import { DB_HANDLE } from "../db/db.module.js";
@@ -82,6 +82,13 @@ export class AuthController {
     }
 
     const db = this.handle.db;
+    // Banido não entra (TASK-050). Antes do upsert e do grant: um banido não ganha papel nem sessão
+    // por tentar logar de novo, e o motivo aparece na tela de entrada.
+    const ban = await getBanStatusByDiscordId(db, profile.id);
+    if (ban) {
+      this.logger.warn(`login recusado: discord ${profile.id} está banido`);
+      return fail("banido");
+    }
     const user = await upsertUserByDiscordId(db, {
       discordId: profile.id,
       discordUsername: profile.username,

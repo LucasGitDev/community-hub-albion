@@ -19,7 +19,7 @@ describe.skipIf(!baseUrl)("DiscordMemberSync (TASK-014, Postgres real + gateway 
   let decisions: NickDecisionService;
   let sync: DiscordMemberSync;
   let close: () => Promise<void>;
-  const gateway = { setNickname: vi.fn<DiscordGuildGateway["setNickname"]>(), addRole: vi.fn<DiscordGuildGateway["addRole"]>() };
+  const gateway = { setNickname: vi.fn<DiscordGuildGateway["setNickname"]>(), addRole: vi.fn<DiscordGuildGateway["addRole"]>(), removeRole: vi.fn<DiscordGuildGateway["removeRole"]>() };
   let seq = 0;
 
   beforeAll(async () => {
