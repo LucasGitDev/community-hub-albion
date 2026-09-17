@@ -103,9 +103,10 @@ createRoot(document.getElementById("root")!).render(
             <Route
               path="/admin/membros"
               element={
-                /* `ban`/`Ban` e não `read`/`UserRole`: a staff entra aqui para banir (TASK-050), e o admin
-                   passa porque tem `manage all`. Member e caller continuam fora. */
-                <RequirePermission action="ban" subject="Ban">
+                /* `read`/`MemberProfile` (TASK-047): admin e staff gerem a ficha do membro aqui. Não é
+                   `read`/`UserRole` — esse subject é só de papéis, e `/admin/papeis` segue exclusivo do
+                   admin logo abaixo. Member e caller continuam fora. */
+                <RequirePermission action="read" subject="MemberProfile">
                   <AdminMembers />
                 </RequirePermission>
               }

@@ -163,3 +163,98 @@ test("membro sem permissão não usa edição, notas nem conferência (AC#4)", a
   expect((await page.request.post(`/api/admin/members/${alvo}/albion-check`, { headers: { Origin: ORIGIN } })).status()).toBe(403);
   expect((await page.request.patch(`/api/admin/members/${alvo}`, { data: { nick: "Invadido" }, headers: { Origin: ORIGIN } })).status()).toBe(403);
 });
+
+/**
+ * Staff na gestão de usuários (TASK-047, G3). O que se prova aqui é a fronteira: a staff alcança as quatro
+ * capacidades da ficha do membro, e nada além disso — nem importar do Discord (é `manage`/`all`), nem a tela
+ * de papéis, que é a porta que criaria outro admin. Permissão provisória até a TASK-052.
+ */
+test("staff usa as quatro capacidades da gestão de usuários (TASK-047 AC#1)", async ({ page }) => {
+  const erros: string[] = [];
+  page.on("console", (m) => m.type() === "error" && !m.text().includes("Failed to load resource") && erros.push(m.text()));
+  const staff = await login(page, "77000000000000301", "adm-staff", ["staff"]);
+  // Nick é único entre membros e os dois projetos compartilham o banco: um nick por projeto.
+  const nick = test.info().project.name === "mobile" ? "StaffEditouM" : "StaffEditouD";
+
+  await page.goto("/admin/membros");
+  await expect(page.getByRole("heading", { name: "Membros", exact: true })).toBeVisible();
+  // Importar é do admin: o botão nem aparece para a staff, em vez de aparecer e devolver 403 no clique.
+  await expect(page.getByRole("button", { name: "Importar membros do Discord" })).toHaveCount(0);
+  await snap(page, "staff-membros-lista");
+
+  await page.getByLabel("Buscar por nick ou usuário do Discord").fill(staff);
+  const row = page.getByRole("row").filter({ hasText: `@${staff}` });
+  await expect(row).toBeVisible();
+
+  // Capacidade 2: editar nick e tag de guilda.
+  await row.getByRole("button", { name: /^Gerenciar / }).click();
+  const dialog = page.getByRole("dialog");
+  await expect(dialog.getByRole("tab", { name: "Editar" })).toBeVisible();
+  await dialog.getByLabel("Nick no Albion").fill(nick);
+  await dialog.getByLabel("Tag da guilda").fill("GENEI");
+  await dialog.getByRole("button", { name: "Salvar" }).click();
+  await expect(dialog).toBeHidden();
+
+  const edited = page.getByRole("row").filter({ hasText: `@${staff}` });
+  await expect(edited.getByText(nick)).toBeVisible();
+  await snap(page, "staff-membros-editado");
+
+  // Capacidades 3 e 4: escrever nota interna e ler o histórico (incluindo a nota de sistema da edição).
+  await edited.getByRole("button", { name: /^Gerenciar / }).click();
+  await dialog.getByRole("tab", { name: /Notas/ }).click();
+  await expect(dialog.getByText(new RegExp(`Editou nick .+ → ${nick}`))).toBeVisible();
+  const nota = `staff anotou ${Date.now()}`;
+  const antes = await dialog.getByRole("listitem").count();
+  await dialog.getByLabel(/Nova nota/).fill(nota);
+  await dialog.getByRole("button", { name: "Adicionar nota" }).click();
+  await expect(dialog.getByRole("listitem")).toHaveCount(antes + 1);
+  await expect(dialog.getByRole("listitem").last()).toContainText(nota);
+  await snap(page, "staff-membros-notas");
+  await page.getByRole("button", { name: "Fechar" }).first().click();
+  await expect(dialog).toBeHidden();
+
+  // Capacidade 1: revalidar o nick no Albion (desligado no e2e, mas a rota autoriza e a tela explica).
+  await edited.getByRole("button", { name: /^Conferir / }).click();
+  await expect(page.getByText("Conferência no Albion desligada", { exact: false })).toBeVisible();
+  await snap(page, "staff-membros-conferir");
+
+  const overflow = await page.evaluate(() => document.documentElement.scrollWidth > window.innerWidth);
+  expect(overflow).toBe(false);
+  expect(erros).toEqual([]);
+});
+
+test("staff não alcança a tela de papéis nem a API de papéis (TASK-047 AC#2)", async ({ page }) => {
+  const staff = await login(page, "77000000000000302", "adm-staff-papel", ["staff"]);
+
+  // O menu de gestão mostra "Membros do painel" e não mostra "Papéis".
+  await page.goto("/admin/membros");
+  await expect(page.getByRole("link", { name: "Membros do painel" }).first()).toBeVisible();
+  await expect(page.getByRole("link", { name: "Papéis", exact: true })).toHaveCount(0);
+
+  // Digitar a URL na mão também não entra.
+  await page.goto("/admin/papeis");
+  await expect(page.getByRole("heading", { name: "Acesso negado" })).toBeVisible();
+  await snap(page, "staff-papeis-negado");
+
+  // E a API recusa ler, conceder e revogar — inclusive promover a si mesma a admin.
+  const me = await page.request.get("/api/auth/me");
+  const meuId = (await me.json()).user.id as string;
+  expect((await page.request.get("/api/admin/users")).status()).toBe(403);
+  expect((await page.request.put(`/api/admin/users/${meuId}/roles/admin`, { headers: { Origin: ORIGIN } })).status()).toBe(403);
+  expect((await page.request.delete(`/api/admin/users/${meuId}/roles/staff`, { headers: { Origin: ORIGIN } })).status()).toBe(403);
+  expect(staff).toBeTruthy();
+});
+
+test("caller não alcança a gestão de usuários (TASK-047 AC#3)", async ({ page }) => {
+  await login(page, "77000000000000303", "adm-caller", ["caller"]);
+  await page.goto("/admin/membros");
+  await expect(page.getByRole("heading", { name: "Acesso negado" })).toBeVisible();
+  await expect(page.getByRole("link", { name: "Membros do painel" })).toHaveCount(0);
+
+  const alvo = "00000000-0000-4000-8000-000000000000";
+  expect((await page.request.get("/api/admin/members")).status()).toBe(403);
+  expect((await page.request.get(`/api/admin/members/${alvo}/notes`)).status()).toBe(403);
+  expect((await page.request.post(`/api/admin/members/${alvo}/notes`, { data: { body: "oi" }, headers: { Origin: ORIGIN } })).status()).toBe(403);
+  expect((await page.request.post(`/api/admin/members/${alvo}/albion-check`, { headers: { Origin: ORIGIN } })).status()).toBe(403);
+  expect((await page.request.patch(`/api/admin/members/${alvo}`, { data: { nick: "Invadido" }, headers: { Origin: ORIGIN } })).status()).toBe(403);
+});

@@ -59,9 +59,12 @@ export function AdminMembers() {
   const [managing, setManaging] = useState<string | null>(null);
   const [banning, setBanning] = useState<string | null>(null);
   const { user, ability } = useCurrentUser();
-  // Staff entra aqui só para banir (TASK-050): o resto da tela é do admin e fica escondido em vez de dar 403.
-  const canManage = ability.can("read", "UserRole");
+  // Conferir o nick, editar nick/tag e as notas: admin e staff (TASK-047, G3).
+  const canManage = ability.can("update", "MemberProfile");
   const canBan = ability.can("ban", "Ban");
+  // Importar do Discord continua exigindo `manage`/`all` na API: o botão fica escondido para a staff em
+  // vez de aparecer e devolver 403 no clique.
+  const canImport = ability.can("manage", "all");
   // Staff bane quem está abaixo dela; banir staff ou admin é coisa de admin (a API recusa igual).
   const isAdmin = user.roles.includes("admin");
   /**
@@ -114,7 +117,7 @@ export function AdminMembers() {
         title="Membros"
         description="Quem já tem conta no painel, com o nick conferido na API do Albion. Importar traz de novo quem tem cargo Membro e apelido no Discord."
         action={
-          canManage ? (
+          canImport ? (
             <Button onClick={() => void runImport()} disabled={importing}>
               <Download />
               {importing ? "Importando…" : "Importar membros do Discord"}
@@ -208,7 +211,7 @@ export function AdminMembers() {
                   >
                     Limpar filtros
                   </Button>
-                ) : canManage ? (
+                ) : canImport ? (
                   <Button onClick={() => void runImport()} disabled={importing}>
                     <Download />
                     Importar membros do Discord

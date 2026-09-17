@@ -158,11 +158,13 @@ test("staff bane pela mesma tela, sem ganhar as ações de admin (AC#1, AC#2)", 
   await page.goto("/carteira");
   await page.getByRole("link", { name: "Membros do painel" }).first().click();
   await expect(page.getByRole("heading", { name: "Membros", exact: true })).toBeVisible();
-  // Staff não importa membro nem gerencia nick: essas ações continuam sendo de admin.
+  // Staff não importa membro do Discord: essa ação continua sendo de admin (`manage`/`all`).
   await expect(page.getByRole("button", { name: "Importar membros do Discord" })).toHaveCount(0);
   await page.getByLabel("Buscar por nick ou usuário do Discord").fill(u("ban-staff-alvo"));
   const row = page.getByRole("row").filter({ hasText: `@${u("ban-staff-alvo")}` });
-  await expect(row.getByRole("button", { name: /^Gerenciar / })).toHaveCount(0);
+  // Gerenciar a ficha do membro passou a ser da staff na TASK-047 (G3); o que continua fora é papel.
+  await expect(row.getByRole("button", { name: /^Gerenciar / })).toHaveCount(1);
+  await expect(page.getByRole("link", { name: "Papéis", exact: true })).toHaveCount(0);
   // E a staff não vê a ação em quem ela não pode banir: outro staff ou um admin.
   await page.getByLabel("Buscar por nick ou usuário do Discord").fill(u("ban-staffer"));
   await expect(page.getByRole("row").filter({ hasText: `@${u("ban-staffer")}` }).getByRole("button", { name: /^Banir / })).toHaveCount(0);
