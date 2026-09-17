@@ -47,6 +47,8 @@ test("staff cadastra, reprecifica e despublica item pela tela (AC#1)", async ({ 
   await expect(card).toBeVisible();
   // Buffunfa nunca abrevia (F6-5).
   await expect(card).toContainText("340 BUF");
+  // O preço carrega o ícone da moeda, como todo valor em Buffunfa do painel (TASK-071, AC#1).
+  await expect(card.locator('img[src*="buffunfa"]').first()).toBeVisible();
   await expect(card).toContainText("3 unidades");
   await snap(page, "loja-staff-cadastro");
 
