@@ -1,10 +1,10 @@
 ---
 id: TASK-064
 title: Decidir como role e build convivem por tipo de conteúdo
-status: To Do
+status: In Progress
 assignee: []
 created_date: '2026-09-17 17:06'
-updated_date: '2026-09-17 17:09'
+updated_date: '2026-09-17 17:32'
 labels:
   - eventos
   - templates
@@ -58,3 +58,17 @@ Entrega: decisão escrita, não código. As tasks de implementação nascem depo
 - [ ] #7 Notas e final summary com evidências; commits Conventional atômicos sem co-autor
 - [ ] #8 PR merged na main com quality gate verde; branch e worktree removidos
 <!-- DOD:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+Spike conduzido; decisão escrita no doc-010 "Role e build por tipo de conteúdo". **Pendente de aprovação do usuário**: nada foi escrito no doc-005, nenhuma task derivada criada, schema intocado.
+
+Achado principal: o formato YAML de template **já** trata a descrição como propriedade do par (template, role) — `packages/shared/src/event-template-yaml.ts:14-22,64-68` — mas o banco não tem onde guardá-la por par (`event_template_roles` só tem `slots` e `sort_order`, schema.ts:210-224), então o import escorre a descrição para o catálogo global (`event-templates-repo.ts:191`): importar um template de ZvZ pode sobrescrever a ideia de "Tank" para todos os conteúdos. Soma-se a isso que a F6-8 já obriga `event_template_roles` a ganhar faixa de Buffunfa por role na TASK-057 — duas features independentes pedindo a mesma linha.
+
+Recomendação: **role continua identidade global** (preserva o ranking da F10, que ainda não existe no código — `grep ranking` não retorna nada em apps/ nem packages/) e **descrição/build moram no par (template, role)**, com o catálogo como default via `coalesce`. Migration aditiva de uma coluna anulável, sem backfill; enquanto ninguém escrever no par a saída é idêntica à de hoje.
+
+Descartadas: catálogo por conteúdo (`content_type_id`) destrói o agrupamento por role antes de a F10 nascer; entidade `role_builds` com N builds e escolha na inscrição é a mesma base mais uma camada, e cobra um segundo passo no botão do Discord por algo que ainda não existe — fica registrada como evolução aditiva.
+
+Sete perguntas abertas para o usuário no §5 do doc-010 (P1 a P7), incluindo se a faixa de Buffunfa da F6-8 é por role ou por build, o que decidiria se a TASK-057 passa a depender desta decisão.
+<!-- SECTION:NOTES:END -->
