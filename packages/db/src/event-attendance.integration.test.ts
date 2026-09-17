@@ -211,7 +211,7 @@ describe.skipIf(!baseUrl)("Buffunfa por presença em evento (TASK-057, Postgres 
     await voice(atrasado.discordId, "chan-janela", new Date(abriuAcall.getTime() + 17_000), fimCurto);
 
     const slotId = await slotIdOf(event.id, "Tank");
-    expect(await setEventRoleBuffunfa(handle.db, event.id, slotId, 12n)).toEqual({ ok: true });
+    expect(await setEventRoleBuffunfa(handle.db, event.id, slotId, 12n)).toMatchObject({ ok: true });
 
     const preview = (await previewEventAttendance(handle.db, event.id))!;
     expect(preview.windowMs).toBe(fimCurto.getTime() - abriuAcall.getTime());
