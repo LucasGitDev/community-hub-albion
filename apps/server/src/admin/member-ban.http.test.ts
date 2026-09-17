@@ -198,12 +198,12 @@ describe.skipIf(!baseUrl)("banimento de jogador (TASK-050)", () => {
   it("saldo congelado: banido não pede saque e o pendente dele não é aprovado; o ledger não muda (AC#9, AC#10)", async () => {
     const boss = await session("700000000000000070", "chefe-saque", ["admin"]);
     const alvo = await session("700000000000000071", "alvo-saque");
-    await insertLedgerEntry(handle.db, { userId: alvo.id, amount: 1_000_000n, kind: "adjustment", memo: "saldo de teste", createdBy: boss.id });
+    await insertLedgerEntry(handle.db, { currency: "silver", userId: alvo.id, amount: 1_000_000n, kind: "adjustment", memo: "saldo de teste", createdBy: boss.id });
 
     const pedido = await http().post("/api/me/withdrawals").set("Cookie", alvo.cookie).set("Origin", PUBLIC_URL).send({ amount: "400000" });
     expect(pedido.status).toBe(201);
     const pendenteId = (pedido.body.withdrawals as { id: string }[])[0]!.id;
-    const antes = await getLedgerBalance(handle.db, alvo.id);
+    const antes = await getLedgerBalance(handle.db, alvo.id, "silver");
 
     expect((await ban(boss.cookie, alvo.id, { reason: "vendeu prata da tesouraria fora" })).status).toBe(200);
 
@@ -213,7 +213,7 @@ describe.skipIf(!baseUrl)("banimento de jogador (TASK-050)", () => {
     expect(aprovar.body.message).toContain("congelado");
 
     // Nada foi lançado: ledger intacto, sem estorno automático.
-    expect(await getLedgerBalance(handle.db, alvo.id)).toBe(antes);
+    expect(await getLedgerBalance(handle.db, alvo.id, "silver")).toBe(antes);
 
     // E ele não consegue nem pedir um saque novo: o guard já barra a sessão revogada.
     const novoPedido = await http().post("/api/me/withdrawals").set("Cookie", alvo.cookie).set("Origin", PUBLIC_URL).send({ amount: "1000" });
@@ -221,7 +221,7 @@ describe.skipIf(!baseUrl)("banimento de jogador (TASK-050)", () => {
 
     // Desbanido, a aprovação volta a ser possível e o saldo continua o mesmo de antes.
     expect((await unban(boss.cookie, alvo.id)).status).toBe(204);
-    expect(await getLedgerBalance(handle.db, alvo.id)).toBe(antes);
+    expect(await getLedgerBalance(handle.db, alvo.id, "silver")).toBe(antes);
     expect((await http().post(`/api/withdrawals/${pendenteId}/approve`).set("Cookie", boss.cookie).set("Origin", PUBLIC_URL).send({})).status).toBe(200);
   });
 

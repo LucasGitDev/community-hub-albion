@@ -15,15 +15,17 @@ const devLoginSchema = z.object({
   /** Nick já aprovado (e2e de troca de nick, TASK-012); aprovação real é da staff (TASK-013). */
   gameNick: z.string().refine((v) => validateNick(v).ok).optional(),
   /**
-   * Lançamentos de prata para o e2e do extrato (TASK-031). Só existe junto com o dev-login, isto é,
+   * Lançamentos do ledger para o e2e do extrato (TASK-031; duas moedas desde a TASK-056). Só existe junto com o dev-login, isto é,
    * com AUTH_DEV_LOGIN=true, que o env proíbe em produção — é a mesma porta, não uma porta nova.
    * Vai pelo `LedgerService`/repo, então continua valendo o append-only: aqui também só se insere.
    */
-  silver: z
+  ledger: z
     .array(
       z.object({
-        /** Prata inteira em string (Q20): positivo credita, negativo debita. */
+        /** Valor inteiro em string (Q20): positivo credita, negativo debita. */
         amount: z.string().regex(/^-?\d{1,18}$/).refine((v) => BigInt(v) !== 0n),
+        /** Moeda do lançamento (F6-1); prata por default, que é o que a maioria das specs semeia. */
+        currency: z.enum(["silver", "buffunfa"]).default("silver"),
         /** `reversal` fica de fora: estorno só nasce de `reverseLedgerEntry`. */
         kind: z.enum(["split_payout", "split_fee", "withdrawal", "adjustment"]).default("split_payout"),
         memo: z.string().trim().max(200).optional(),
@@ -33,7 +35,7 @@ const devLoginSchema = z.object({
     .optional(),
   /**
    * Marca a conta como fora do servidor do Discord, para o e2e da lista de membros (TASK-049) ver o
-   * selo sem um bot ligado. Mesma porta do `silver` e do `gameNick`: só existe com AUTH_DEV_LOGIN=true,
+   * selo sem um bot ligado. Mesma porta do `ledger` e do `gameNick`: só existe com AUTH_DEV_LOGIN=true,
    * que o env proíbe em produção. É só a marca — nenhuma sessão é derrubada e nenhum papel some, porque
    * quem faz isso é a limpeza, e semear não é limpar.
    */
@@ -58,7 +60,7 @@ export class DevLoginController {
     if (!isSameOriginRequest(headers, this.env.PUBLIC_URL)) throw new ForbiddenException("Requisição de outra origem recusada.");
     const parsed = devLoginSchema.safeParse(body);
     if (!parsed.success) throw new BadRequestException("Dados de login de desenvolvimento inválidos.");
-    const { discordId, username, roles, gameNick, silver, leftGuild } = parsed.data;
+    const { discordId, username, roles, gameNick, ledger, leftGuild } = parsed.data;
     const db = this.handle.db;
     // Banido não entra por aqui também (TASK-050): esta porta cria sessão igual à do Discord, então a
     // mesma recusa vale — senão o e2e provaria um acesso que a produção não permite.
@@ -67,7 +69,7 @@ export class DevLoginController {
     const user = await upsertUserByDiscordId(db, { discordId, discordUsername: username, displayName: username });
     if (gameNick) await setGameNick(db, user.id, gameNick);
     for (const role of new Set(["member" as const, ...roles])) await grantRole(db, user.id, role);
-    for (const entry of silver ?? []) await insertLedgerEntry(db, { userId: user.id, amount: BigInt(entry.amount), kind: entry.kind, memo: entry.memo ?? null });
+    for (const entry of ledger ?? []) await insertLedgerEntry(db, { userId: user.id, currency: entry.currency, amount: BigInt(entry.amount), kind: entry.kind, memo: entry.memo ?? null });
     if (leftGuild) await markLeftGuildForDev(db, user.id);
     const { token } = await createSession(db, user.id, sessionExpiresAt(new Date(), this.env.SESSION_TTL_DAYS));
     res.cookie(SESSION_COOKIE, token, sessionCookieOptions(this.env.NODE_ENV, this.env.SESSION_TTL_DAYS));

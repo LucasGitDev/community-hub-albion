@@ -1,12 +1,12 @@
 import { expect, test } from "@playwright/test";
-import { login as signIn, snap, type Silver } from "./session";
+import { login as signIn, snap, type LedgerSeed } from "./session";
 
 /**
  * Carteira do membro contra a API real (TASK-031, Q3/Q10/Q12/Q20/Q24/Q25): saldo, reserva, extrato do
  * ledger e pedido de saque. Nada de dados de demonstração aqui — a prata é semeada no ledger pelo
  * dev-login (só com AUTH_DEV_LOGIN). O login e o id por rodada vivem em `./session`.
  */
-const login = (page: Parameters<typeof signIn>[0], index: string, username: string, silver: Silver[] = []) => signIn(page, index, username, { silver });
+const login = (page: Parameters<typeof signIn>[0], index: string, username: string, ledger: LedgerSeed[] = []) => signIn(page, index, username, { ledger });
 
 test("membro vê saldo, reserva e extrato do ledger com a origem de cada lançamento (AC#1)", async ({ page }) => {
   await login(page, "001", "carteira", [

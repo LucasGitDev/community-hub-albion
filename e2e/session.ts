@@ -15,9 +15,11 @@ import { ORIGIN } from "./origin";
 /** Origem do e2e (TASK-046): ponto único, as specs importam daqui. */
 export { ORIGIN };
 
-export interface Silver {
-  /** Prata inteira em string (Q20): positivo credita, negativo debita. */
+export interface LedgerSeed {
+  /** Valor inteiro em string (Q20): positivo credita, negativo debita. */
   amount: string;
+  /** Moeda do lançamento (F6-1); prata quando omitida. */
+  currency?: "silver" | "buffunfa";
   kind?: "split_payout" | "split_fee" | "withdrawal" | "adjustment";
   memo?: string;
 }
@@ -30,7 +32,7 @@ export const discordId = (index: string): string => `7${RUN}${index}${test.info(
 export interface LoginOptions {
   /** Mesmos papéis de `ROLES` no shared; repetidos aqui porque o e2e compila fora dos workspaces. */
   roles?: ("member" | "caller" | "staff" | "admin")[];
-  silver?: Silver[];
+  ledger?: LedgerSeed[];
   /** Semeia o usuário já com nick aprovado, sem passar pela fila da staff. */
   gameNick?: string;
   /** Marca a conta como fora do servidor do Discord (TASK-049), para ver o selo sem bot ligado. */
@@ -40,9 +42,9 @@ export interface LoginOptions {
 /** Entra como um usuário novo e devolve o Discord ID usado, para quem precisar voltar a ele. */
 export async function login(page: Page, index: string, username: string, options: LoginOptions = {}): Promise<string> {
   const id = discordId(index);
-  const { roles = [], silver = [], gameNick, leftGuild } = options;
+  const { roles = [], ledger = [], gameNick, leftGuild } = options;
   const res = await page.request.post("/api/auth/dev-login", {
-    data: { discordId: id, username, roles, ...(silver.length ? { silver } : {}), ...(gameNick ? { gameNick } : {}), ...(leftGuild ? { leftGuild } : {}) },
+    data: { discordId: id, username, roles, ...(ledger.length ? { ledger } : {}), ...(gameNick ? { gameNick } : {}), ...(leftGuild ? { leftGuild } : {}) },
     headers: { Origin: ORIGIN },
   });
   expect(res.status()).toBe(204);

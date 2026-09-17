@@ -59,7 +59,7 @@ describe.skipIf(!baseUrl)("saque HTTP (TASK-030, Q11/Q12/Q24/Q25)", () => {
     const discordId = `9400000000000000${String(++seq).padStart(2, "0")}`;
     const user = await upsertUserByDiscordId(handle.db, { discordId, discordUsername: `w${seq}` });
     for (const role of roles) await grantRole(handle.db, user.id, role);
-    if (silver !== 0n) await insertLedgerEntry(handle.db, { userId: user.id, amount: silver, kind: "split_payout", memo: "saldo" });
+    if (silver !== 0n) await insertLedgerEntry(handle.db, { currency: "silver", userId: user.id, amount: silver, kind: "split_payout", memo: "saldo" });
     const { token } = await createSession(handle.db, user.id, new Date(Date.now() + 3_600_000));
     return { id: user.id, cookie: `ah_session=${token}` };
   }
@@ -93,7 +93,7 @@ describe.skipIf(!baseUrl)("saque HTTP (TASK-030, Q11/Q12/Q24/Q25)", () => {
       expect(res.body.balance).toEqual({ balance: "1000000", reserved: "400000", available: "600000" });
       expect(res.body.withdrawals).toHaveLength(1);
       expect(res.body.withdrawals[0]).toMatchObject({ amount: "400000", status: "pending", userId: member.id, ledgerEntryId: null });
-      expect(await getLedgerBalance(handle.db, member.id)).toBe(1_000_000n);
+      expect(await getLedgerBalance(handle.db, member.id, "silver")).toBe(1_000_000n);
     });
 
     it("aceita 1 de prata: não existe valor mínimo (Q12 revisado)", async () => {
@@ -113,7 +113,7 @@ describe.skipIf(!baseUrl)("saque HTTP (TASK-030, Q11/Q12/Q24/Q25)", () => {
 
     it("409 com saldo negativo (Q24)", async () => {
       const member = await actor(["member"], 1_000n);
-      await insertLedgerEntry(handle.db, { userId: member.id, amount: -2_000n, kind: "adjustment", memo: "estorno" });
+      await insertLedgerEntry(handle.db, { currency: "silver", userId: member.id, amount: -2_000n, kind: "adjustment", memo: "estorno" });
       const res = await post("/api/me/withdrawals", member.cookie, { amount: "1" });
       expect(res.status).toBe(409);
       expect(res.body.message).toContain("negativo");
@@ -174,7 +174,7 @@ describe.skipIf(!baseUrl)("saque HTTP (TASK-030, Q11/Q12/Q24/Q25)", () => {
         expect(res.status).toBe(403);
       }
       // Nada aconteceu: continua pendente e sem lançamento.
-      expect(await getLedgerBalance(handle.db, member.id)).toBe(300_000n);
+      expect(await getLedgerBalance(handle.db, member.id, "silver")).toBe(300_000n);
       const staff = await actor(["member", "staff"]);
       expect((await get(`/api/withdrawals/${id}`, staff.cookie)).body.status).toBe("pending");
     });
@@ -188,7 +188,7 @@ describe.skipIf(!baseUrl)("saque HTTP (TASK-030, Q11/Q12/Q24/Q25)", () => {
       expect(res.status).toBe(200);
       expect(res.body).toMatchObject({ status: "approved", decidedByUserId: staff.id });
       expect(res.body.ledgerEntryId).not.toBeNull();
-      expect(await getLedgerBalance(handle.db, member.id)).toBe(750_000n);
+      expect(await getLedgerBalance(handle.db, member.id, "silver")).toBe(750_000n);
       expect(await getWithdrawalBalance(handle.db, member.id)).toMatchObject({ reserved: 0n, available: 750_000n });
     });
 
@@ -200,7 +200,7 @@ describe.skipIf(!baseUrl)("saque HTTP (TASK-030, Q11/Q12/Q24/Q25)", () => {
       const res = await post(`/api/withdrawals/${id}/reject`, staff.cookie, { note: "valor errado" });
       expect(res.status).toBe(200);
       expect(res.body).toMatchObject({ status: "rejected", decisionNote: "valor errado", ledgerEntryId: null });
-      expect(await getLedgerBalance(handle.db, member.id)).toBe(1_000_000n);
+      expect(await getLedgerBalance(handle.db, member.id, "silver")).toBe(1_000_000n);
       expect(await getWithdrawalBalance(handle.db, member.id)).toMatchObject({ reserved: 0n, available: 1_000_000n });
     });
 

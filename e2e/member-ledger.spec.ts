@@ -31,7 +31,7 @@ test("staff abre o extrato de um jogador pela lista de membros e lê saldo, orig
   const nick = nickFor("510");
   await login(page, "510", "alvo-extrato", {
     gameNick: nick,
-    silver: [
+    ledger: [
       { amount: "2000000", kind: "split_payout", memo: "Raid do Dragão — Martlock" },
       { amount: "-100000", kind: "split_fee", memo: "Taxa do evento (5%)" },
       { amount: "750000", kind: "split_payout", memo: "DG de grupo — Roads" },
@@ -72,8 +72,8 @@ test("staff abre o extrato de um jogador pela lista de membros e lê saldo, orig
 test("paginação: carrega mais lançamentos sem repetir nem trocar os que já estão na tela (AC#2)", async ({ page }) => {
   const nick = nickFor("512");
   // 30 lançamentos com a página de 25: a primeira leva 25 e sobra o botão.
-  const silver = Array.from({ length: 30 }, (_, i) => ({ amount: "1000", kind: "split_payout" as const, memo: `Lançamento ${i + 1}` }));
-  await login(page, "512", "alvo-pagina", { gameNick: nick, silver });
+  const ledger = Array.from({ length: 30 }, (_, i) => ({ amount: "1000", kind: "split_payout" as const, memo: `Lançamento ${i + 1}` }));
+  await login(page, "512", "alvo-pagina", { gameNick: nick, ledger });
 
   await login(page, "513", "staff-pagina", { roles: ["member", "staff"], gameNick: nickFor("513") });
   await page.goto("/admin/membros");
@@ -107,7 +107,7 @@ test("extrato vazio é um estado explicado, não um erro nem uma tabela em branc
 
 test("membro comum não lê extrato alheio: sem a tela e 403 na API (AC#3)", async ({ page }) => {
   const nick = nickFor("516");
-  await login(page, "516", "alvo-privado", { gameNick: nick, silver: [{ amount: "9999999", kind: "split_payout", memo: "prata do outro" }] });
+  await login(page, "516", "alvo-privado", { gameNick: nick, ledger: [{ amount: "9999999", kind: "split_payout", memo: "prata do outro" }] });
 
   // A staff só entra para descobrir o id do alvo; quem tenta o acesso é o membro, logo abaixo.
   await login(page, "517", "staff-privado", { roles: ["member", "staff"], gameNick: nickFor("517") });

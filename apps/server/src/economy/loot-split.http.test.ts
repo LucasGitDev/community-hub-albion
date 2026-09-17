@@ -428,14 +428,14 @@ describe.skipIf(!baseUrl)("loot split HTTP (TASK-027)", () => {
       it("estorno sem motivo é 400; com motivo zera os saldos e mantém o histórico", async () => {
         const { event, split } = await drafted("1000000", { type: "percent", value: "1000" });
         // Delta, e não saldo absoluto: o mesmo membro já recebeu de outros splits neste arquivo.
-        const antes = await getLedgerBalance(handle.db, membroId);
+        const antes = await getLedgerBalance(handle.db, membroId, "silver");
         expect((await confirm(caller, event.id, split.id)).status).toBe(200);
-        expect(await getLedgerBalance(handle.db, membroId)).toBe(antes + 900_000n);
+        expect(await getLedgerBalance(handle.db, membroId, "silver")).toBe(antes + 900_000n);
         expect((await reverse(staff, event.id, split.id, { reason: " " })).status).toBe(400);
         const res = await reverse(staff, event.id, split.id);
         expect(res.status).toBe(200);
         expect(res.body.reversed).toBe(2);
-        expect(await getLedgerBalance(handle.db, membroId)).toBe(antes);
+        expect(await getLedgerBalance(handle.db, membroId, "silver")).toBe(antes);
         expect(await listLedgerEntriesByReference(handle.db, "loot_split", split.id)).toHaveLength(4);
         const denovo = await reverse(staff, event.id, split.id);
         expect([denovo.status, denovo.body.message]).toEqual([409, "Os lançamentos deste loot split já foram estornados."]);

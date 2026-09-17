@@ -64,7 +64,7 @@ describe.skipIf(!baseUrl)("GET /api/me/ledger (TASK-031)", () => {
     const discordId = `9500000000000000${String(++seq).padStart(2, "0")}`;
     const user = await upsertUserByDiscordId(handle.db, { discordId, discordUsername: `l${seq}` });
     await grantRole(handle.db, user.id, "member");
-    for (const amount of entries) await insertLedgerEntry(handle.db, { userId: user.id, amount, kind: amount > 0n ? "split_payout" : "withdrawal", memo: "teste" });
+    for (const amount of entries) await insertLedgerEntry(handle.db, { currency: "silver", userId: user.id, amount, kind: amount > 0n ? "split_payout" : "withdrawal", memo: "teste" });
     const { token } = await createSession(handle.db, user.id, new Date(Date.now() + 3_600_000));
     return { id: user.id, cookie: `ah_session=${token}` };
   }

@@ -1,4 +1,5 @@
 import { createHash, timingSafeEqual } from "node:crypto";
+import type { Currency } from "@albion-hub/shared";
 
 /**
  * Regras puras do namespace de manutenção (TASK-048, G5). Ficam aqui, longe do Nest, porque são as
@@ -55,15 +56,25 @@ export class FixedWindowRateLimiter {
   }
 }
 
-/** Prata inteira em string (Q20): nada de `number` atravessando a API. Zero é recusado pelo banco e aqui. */
+/** Valor inteiro em string (Q20): nada de `number` atravessando a API. Zero é recusado pelo banco e aqui. */
 export type ParsedAdjustment = { ok: true; amount: bigint; reason: string } | { ok: false; error: string };
 
 const AMOUNT = /^-?\d{1,18}$/;
 
-export function parseSilverAdjustment(body: unknown): ParsedAdjustment {
+/** Como o erro chama a moeda e qual exemplo ele dá: a rota de Buffunfa é irmã da de prata (F6-6). */
+const AMOUNT_HINT: Record<Currency, string> = {
+  silver: 'amount deve ser prata inteira em string (ex: "-1500000").',
+  buffunfa: 'amount deve ser Buffunfa inteira em string (ex: "-340").',
+};
+
+/**
+ * Corpo do ajuste de manutenção, igual para as duas moedas (F6-6). O motivo é obrigatório nas duas: o
+ * ledger é append-only, e um ajuste sem motivo é uma linha que ninguém consegue explicar depois.
+ */
+export function parseAdjustment(body: unknown, currency: Currency): ParsedAdjustment {
   const input = (body ?? {}) as { amount?: unknown; reason?: unknown };
   const raw = typeof input.amount === "string" ? input.amount.trim() : "";
-  if (!AMOUNT.test(raw)) return { ok: false, error: "amount deve ser prata inteira em string (ex: \"-1500000\")." };
+  if (!AMOUNT.test(raw)) return { ok: false, error: AMOUNT_HINT[currency] };
   const amount = BigInt(raw);
   if (amount === 0n) return { ok: false, error: "amount não pode ser zero." };
   const reason = typeof input.reason === "string" ? input.reason.trim() : "";
