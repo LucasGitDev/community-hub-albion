@@ -3,7 +3,7 @@ id: doc-008
 title: Roadmap pós-v1
 type: other
 created_date: '2026-09-17 14:25'
-updated_date: '2026-09-17 19:09'
+updated_date: '2026-09-17 22:17'
 ---
 
 Status: **rascunho para debate** (2026-09-17). Sucede o doc "Roadmap", cuja v1 (F0–F5) está
@@ -96,9 +96,21 @@ Duas features pequenas que fecham o ciclo da moeda, e que juntas dão uma leva s
 **Giveaway:** bilhete comprado com moeda temática (mais um sink). Staff cria; prêmio variável
 (moeda, cosmético/cargo, prata). Valor fixo por bilhete; jackpot está fora do radar.
 
-**Indicação:** link único por indicador, chave é o ID da conta. Bônus fixo quando o indicado ativa
-a conta pelo site. Teto de 10 recompensadas por mês; o excedente registra sem pagar. Fraude ou erro
-se corrige por estorno da staff — o ledger é append-only e continua sendo.
+**Indicação — desenho revisto pelo usuário em 2026-09-17, sem link:** o indicado **declara** quem o
+indicou, por dois caminhos que gravam a mesma coisa: um campo opcional no **comando de registro** de
+nick, e um **comando próprio** para quem já se registrou e esqueceu. Uma vez só, e não se troca.
+
+O link único saiu de cena de propósito: ele obriga o jogador novo a chegar por um caminho
+específico, e quem entrou pelo convite normal do servidor perde a atribuição para sempre. Declarar
+é o gesto que a pessoa já está fazendo — ela está registrando o nick de qualquer jeito — e não cria
+tela nenhuma no site, que é atrito para o jogador comum.
+
+O que muda em relação ao desenho antigo, e que precisa valer: a chave passa a ser **digitada**, não
+clicada. Isso troca o problema de cobertura pelo de digitação — nick errado, nick de quem saiu,
+autoindicação. O pagamento continua **fixo**, e continua acontecendo só quando o indicado **existe
+de verdade**: nick aprovado pela staff, que é o portão que já existe. Teto de 10 recompensadas por
+mês; o excedente registra sem pagar. Fraude ou erro se corrige por estorno da staff — o ledger é
+append-only e continua sendo.
 
 **Pronto quando:** um membro compra bilhete, a staff sorteia e paga; e um indicado que ativa conta
 gera bônus ao indicador dentro do teto.
