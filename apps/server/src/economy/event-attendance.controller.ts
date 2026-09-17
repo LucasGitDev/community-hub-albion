@@ -16,7 +16,8 @@ function parseId(id: string, label: string): string {
 }
 
 /**
- * Buffunfa por participação em evento (TASK-057): prévia, ajuste do valor por role e fechamento.
+ * Buffunfa por participação em evento (TASK-057): prévia, ajuste do valor — em lote ou por role
+ * (TASK-072) — e fechamento.
  *
  * **Autorização** idêntica à do loot split, e pelo mesmo motivo: isto mostra quem esteve na call e
  * quanto cada um recebe, então a porta é `distribute` sobre o **evento** (condição de dono, Q13/Q21),
@@ -63,9 +64,25 @@ export class EventAttendanceController {
   }
 
   /**
-   * Sobe ou desce o valor de uma role dentro da faixa do template (AC#2). Sem política de tipo aqui
-   * de propósito: quem ajusta é quem responde pela distribuição daquele evento, e é o `assertCan`
-   * abaixo que confere isso.
+   * **Todas** as roles do evento passam a valer o mesmo (AC#1). É o gesto que o caller repete: no
+   * geral todas ganham X desde o início, e depois isso muda. Sem `slotId` na rota justamente porque
+   * o alvo não é uma vaga — é o evento inteiro.
+   *
+   * O ajuste individual abaixo continua existindo e continua valendo depois deste (AC#2): quem
+   * aplica o lote e depois sobe o tank fica com o tank em cima do valor geral.
+   */
+  @Patch("roles")
+  @UseGuards(SameOriginGuard)
+  @Authorize()
+  async setAllValues(@Param("eventId") eventId: string, @Body() body: unknown, @CurrentAuth() auth: Auth): Promise<EventAttendanceDto> {
+    return this.applyValue(eventId, null, body, auth);
+  }
+
+  /**
+   * Sobe ou desce o valor de **uma** role (AC#2, AC#3). Aceita qualquer inteiro até o teto do
+   * sistema: a faixa do template é valor de partida, não teto do evento (revisão da F6-8 na
+   * TASK-072). Sem política de tipo aqui de propósito — quem ajusta é quem responde pela
+   * distribuição daquele evento, e é o `assertCan` abaixo que confere isso.
    */
   @Patch("roles/:slotId")
   @UseGuards(SameOriginGuard)
@@ -76,11 +93,16 @@ export class EventAttendanceController {
     @Body() body: unknown,
     @CurrentAuth() auth: Auth,
   ): Promise<EventAttendanceDto> {
+    return this.applyValue(eventId, parseId(slotId, "da role"), body, auth);
+  }
+
+  /** O caminho comum do lote e do individual: mesma porta, mesma validação, mesmas recusas. */
+  private async applyValue(eventId: string, slotId: string | null, body: unknown, auth: Auth): Promise<EventAttendanceDto> {
     const event = await this.load(eventId);
     this.assertCan(auth, "distribute", event);
     const parsed = eventRoleBuffunfaSchema.safeParse(body);
     if (!parsed.success) throw new BadRequestException(firstIssue(parsed.error));
-    const result = await this.attendance.setRoleValue(event, parseId(slotId, "da role"), parsed.data.value);
+    const result = await this.attendance.setRoleValue(event, slotId, parsed.data.value);
     if (!result.ok) {
       if (result.reason === "not_found") throw new NotFoundException("Role do evento não encontrada.");
       throw new ConflictException(attendanceValueError(result));

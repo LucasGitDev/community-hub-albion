@@ -8,7 +8,7 @@ import {
   type PayEventAttendanceResult,
   type SetEventRoleBuffunfaResult,
 } from "@albion-hub/db";
-import { attendanceLineToDto, type EventAttendanceDto, type EventDto } from "@albion-hub/shared";
+import { attendanceLineToDto, BUFFUNFA_ROLE_MAX, type EventAttendanceDto, type EventDto } from "@albion-hub/shared";
 import { DB_HANDLE } from "../db/db.module.js";
 import { assertEventEditable } from "../events/archived.guard.js";
 
@@ -31,8 +31,12 @@ export class EventAttendanceService {
     return previewEventAttendance(this.handle.db, eventId);
   }
 
-  /** Ajuste do valor de uma role, dentro da faixa e até o fechamento (AC#2). */
-  async setRoleValue(event: EventDto, slotId: string, value: bigint): Promise<SetEventRoleBuffunfaResult> {
+/**
+   * Ajuste do valor de Buffunfa até o fechamento (AC#1, AC#2). `slotId` nulo é o lote: **todas** as
+   * roles do evento passam a valer o mesmo. Uma porta só para os dois gestos de propósito — quem
+   * decide quem pode ajustar, e quando, não pode depender de qual botão foi clicado.
+   */
+  async setRoleValue(event: EventDto, slotId: string | null, value: bigint): Promise<SetEventRoleBuffunfaResult> {
     assertEventEditable(event);
     return setEventRoleBuffunfa(this.handle.db, event.id, slotId, value);
   }
@@ -56,10 +60,8 @@ export const attendanceToDto = (preview: EventAttendancePreview): EventAttendanc
 /** Frase do 409 de cada recusa do ajuste de valor. Cada uma diz qual é o próximo passo. */
 export function attendanceValueError(result: Exclude<SetEventRoleBuffunfaResult, { ok: true }>): string {
   switch (result.reason) {
-    case "out_of_range":
-      return result.range
-        ? `O valor de Buffunfa desta role tem que ficar entre ${result.range.min} e ${result.range.max}. A faixa vem do template.`
-        : "O valor de Buffunfa está fora da faixa do template.";
+    case "above_max":
+      return `O valor de Buffunfa vai de 0 a ${BUFFUNFA_ROLE_MAX} por role. A faixa do template é sugestão de partida; este teto é do sistema.`;
     case "already_paid":
       return "A Buffunfa deste evento já foi paga: os lançamentos são imutáveis e o valor por role não muda mais.";
     case "not_found":
