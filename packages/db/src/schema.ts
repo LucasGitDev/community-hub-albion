@@ -1,4 +1,4 @@
-import { CURRENCIES, EVENT_FEE_TYPES, EVENT_SIGNUP_STATUSES, EVENT_STATUSES, LEDGER_ENTRY_KINDS, LEDGER_REFERENCE_TYPES, LOOT_SPLIT_STATUSES, NICK_REQUEST_STATUSES, ROLES, USER_NOTE_KINDS, WITHDRAWAL_STATUSES } from "@albion-hub/shared";
+import { CURRENCIES, EVENT_FEE_TYPES, EVENT_SIGNUP_STATUSES, EVENT_STATUSES, LEDGER_ENTRY_KINDS, LEDGER_REFERENCE_TYPES, LOOT_SPLIT_STATUSES, NICK_REQUEST_STATUSES, ROLES, SHOP_ORDER_STATUSES, USER_NOTE_KINDS, WITHDRAWAL_STATUSES } from "@albion-hub/shared";
 import { sql } from "drizzle-orm";
 import { bigint, boolean, check, index, integer, pgEnum, pgTable, primaryKey, text, timestamp, uniqueIndex, uuid, type AnyPgColumn } from "drizzle-orm/pg-core";
 
@@ -637,5 +637,96 @@ export const lootSplitLines = pgTable(
     check("loot_split_lines_amount_not_negative", sql`${t.amountSilver} >= 0`),
     // Q7: não inscrito entra na lista para ser visto, mas sem participação.
     check("loot_split_lines_not_signed_up_has_no_share", sql`${t.signedUp} or (${t.shareBp} = 0 and ${t.amountSilver} = 0)`),
+  ],
+);
+
+export const shopOrderStatusEnum = pgEnum("shop_order_status", SHOP_ORDER_STATUSES);
+
+/**
+ * Item da loja (TASK-059, F6-17): **texto livre**. Nome, descrição, preço em Buffunfa e estoque
+ * opcional — sem categoria, sem tipo, sem efeito automático. Categorias tipadas na F6 seriam
+ * adivinhação; três meses de uso dizem quais existem de verdade.
+ *
+ * Não existe coluna de moeda: a loja cobra em Buffunfa e só (`SHOP_CURRENCY`). Uma loja que aceitasse
+ * prata competiria com o saque.
+ *
+ * `stock` null = ilimitado. Zero **não** apaga o item do catálogo: ele aparece esgotado (F6-18), porque
+ * sumir esconde o que existe e faz o item voltar como novidade.
+ *
+ * O item não é apagado: `published = false` o tira da loja e preserva os pedidos que já apontam pra ele.
+ */
+export const shopItems = pgTable(
+  "shop_items",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    name: text("name").notNull(),
+    description: text("description"),
+    /** Preço em Buffunfa inteira (Q20), sempre positivo. */
+    price: bigint("price", { mode: "bigint" }).notNull(),
+    /** Unidades restantes; null = sem controle de estoque. A compra decrementa dentro da transação. */
+    stock: integer("stock"),
+    published: boolean("published").notNull().default(true),
+    /** Staff que cadastrou. `set null`: o item sobrevive à saída de quem o criou. */
+    createdBy: uuid("created_by").references(() => users.id, { onDelete: "set null" }),
+    createdAt: createdAt(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    // A consulta quente é "o catálogo publicado, em ordem"; a da staff varre tudo e é rara.
+    index("shop_items_published_idx").on(t.published, t.createdAt),
+    check("shop_items_name_not_blank", sql`length(btrim(${t.name})) > 0`),
+    check("shop_items_price_positive", sql`${t.price} > 0`),
+    check("shop_items_stock_not_negative", sql`${t.stock} is null or ${t.stock} >= 0`),
+  ],
+);
+
+/**
+ * Pedido da loja (TASK-059, AC#5). Mesmo desenho do saque (TASK-030): enquanto está `reserved` ele só
+ * **reserva** Buffunfa e estoque, e nada aparece no extrato do membro. A entrega (TASK-060) é que cria o
+ * lançamento de débito, e `ledger_entry_id` guarda qual foi — o vínculo que prova que não houve débito
+ * duplicado nem entrega sem lançamento.
+ *
+ * `item_name` e `price` são **congelados** na compra: renomear ou reprecificar o item depois não reescreve
+ * o que o membro comprou nem por quanto.
+ */
+export const shopOrders = pgTable(
+  "shop_orders",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    /** Dono do pedido. `restrict` como no ledger: o histórico de compra não some junto com a conta. */
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "restrict" }),
+    /** `restrict`: item com pedido não é apagado — despublicar é o caminho. */
+    itemId: uuid("item_id")
+      .notNull()
+      .references(() => shopItems.id, { onDelete: "restrict" }),
+    itemName: text("item_name").notNull(),
+    /** Preço congelado em Buffunfa inteira (Q20), sempre positivo. */
+    price: bigint("price", { mode: "bigint" }).notNull(),
+    status: shopOrderStatusEnum("status").notNull().default("reserved"),
+    /** Débito lançado na entrega (TASK-060). `restrict`: o lançamento é append-only. */
+    ledgerEntryId: uuid("ledger_entry_id").references(() => ledgerEntries.id, { onDelete: "restrict" }),
+    /** Staff que entregou ou cancelou (TASK-060). */
+    handledBy: uuid("handled_by").references(() => users.id, { onDelete: "restrict" }),
+    handledAt: timestamp("handled_at", { withTimezone: true }),
+    /** Como foi entregue, ou por que foi cancelado. */
+    note: text("note"),
+    createdAt: createdAt(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    // As duas consultas quentes: a fila da staff e a reserva por membro.
+    index("shop_orders_status_idx").on(t.status, t.createdAt),
+    index("shop_orders_user_idx").on(t.userId, t.createdAt),
+    uniqueIndex("shop_orders_ledger_entry_unique").on(t.ledgerEntryId).where(sql`${t.ledgerEntryId} is not null`),
+    check("shop_orders_price_positive", sql`${t.price} > 0`),
+    // Débito no ledger existe exatamente no estado em que a Buffunfa já saiu (AC#5).
+    check("shop_orders_ledger_entry_consistent", sql`(${t.ledgerEntryId} is not null) = (${t.status} = 'delivered')`),
+    // Decisão completa: quem e quando, e só depois de sair de `reserved`.
+    check("shop_orders_handled_consistent", sql`(${t.handledBy} is null) = (${t.handledAt} is null)`),
+    check("shop_orders_handled_when_not_reserved", sql`(${t.status} = 'reserved') = (${t.handledAt} is null)`),
+    // Cancelamento exige motivo: é a única explicação que o membro recebe.
+    check("shop_orders_cancel_note_required", sql`${t.status} <> 'cancelled' or (${t.note} is not null and length(btrim(${t.note})) > 0)`),
   ],
 );
