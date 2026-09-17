@@ -191,6 +191,19 @@ export function eventCancelledText(reason: string | null | undefined): string {
   return `Evento cancelado: ${/[.!?…]$/.test(reason) ? reason : `${reason}.`}`;
 }
 
+/**
+ * Estados em que a taxa de entrada ainda pode mudar: enquanto ninguém pôde se inscrever (`draft`) e
+ * enquanto a inscrição está aberta (`open`). A partir de `closed` a lista está formada e cobrada — um
+ * preço novo valeria para quem já pagou o antigo, e o ledger não reescreve o que já aconteceu.
+ */
+export const ENTRY_FEE_EDITABLE_STATUSES: readonly EventStatus[] = ["draft", "open"];
+
+export const entryFeeEditable = (status: EventStatus): boolean => ENTRY_FEE_EDITABLE_STATUSES.includes(status);
+
+/** 409 de quem tenta mudar a taxa depois que a inscrição fechou. Um texto só, painel e API. */
+export const entryFeeFrozenError = (status: EventStatus): string =>
+  `O evento está ${STATUS_LABELS[status]}: a taxa de entrada só muda enquanto as inscrições estão abertas.`;
+
 export const eventTransferOwnerSchema = z.object({ ownerUserId: uuid("Novo owner") });
 export type EventTransferOwnerInput = z.output<typeof eventTransferOwnerSchema>;
 
@@ -242,6 +255,12 @@ export interface EventDto {
   presenceChannelId: string | null;
   /** Taxa do evento (TASK-027): herdada do template na criação, editável até o arquivamento (Q26). */
   fee: EventFeeDto;
+  /**
+   * Taxa de entrada em Buffunfa (TASK-058, F6-12), em string (Q20). Copiada do template na criação e
+   * definida pelo caller **até as inscrições fecharem** (`entryFeeEditable`): depois disso, mexer nela
+   * mudaria o preço de uma lista que já foi cobrada. `"0"` = entrada gratuita.
+   */
+  entryFee: string;
   /** Mensagem do embed de inscrição no Discord (TASK-022); null enquanto o evento não foi publicado. */
   discordMessageId: string | null;
   startsAt: string | null;

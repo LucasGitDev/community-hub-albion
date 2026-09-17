@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { entryFeeSchema, NO_ENTRY_FEE } from "./entry-fee.js";
 
 /**
  * Catálogo global de roles e templates de evento (TASK-020, Q8). Mesmos schemas na API e nos formulários do painel.
@@ -60,6 +61,12 @@ const templateFields = {
   /** null = sem teto (ex: PvP Roaming 2-∞). */
   maxPartySize: count("Máximo de pessoas").nullable(),
   active: z.boolean().default(true),
+  /**
+   * Taxa de entrada default herdada pelo evento criado deste template (TASK-058, F6-12). **Nasce
+   * zerada**: o template não decide quanto custa entrar, quem decide é o caller, evento a evento, até
+   * fechar a inscrição. Omitir o campo é o mesmo que zero, para o template antigo continuar válido.
+   */
+  defaultEntryFee: z.optional(entryFeeSchema("A taxa de entrada do template")).transform((v) => v ?? NO_ENTRY_FEE),
   roles: z.array(eventTemplateRoleInputSchema).min(1, "Adicione pelo menos uma role com vagas.").max(30, "Use no máximo 30 roles."),
 };
 
@@ -129,6 +136,8 @@ export interface EventTemplateDto {
   minPartySize: number;
   maxPartySize: number | null;
   active: boolean;
+  /** Taxa de entrada default em Buffunfa, em string (Q20). `"0"` é o normal: template nasce zerado. */
+  defaultEntryFee: string;
   roles: EventTemplateRoleDto[];
   totalSlots: number;
   updatedAt: string;
