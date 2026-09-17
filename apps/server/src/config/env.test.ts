@@ -134,6 +134,28 @@ describe("parseEnv", () => {
     });
   });
 
+  describe("namespace de manutenção (TASK-048, G5)", () => {
+    it("ausente ou vazio deixa o namespace desligado, sem default nem fallback", () => {
+      for (const source of [valid, { ...valid, MAINTENANCE_TOKEN: "" }, { ...valid, MAINTENANCE_TOKEN: "   " }]) {
+        const result = parseEnv(source);
+        expect(result.ok).toBe(true);
+        expect(result.ok && result.env.MAINTENANCE_TOKEN).toBeUndefined();
+      }
+    });
+
+    it("token curto é recusado sem aparecer na mensagem", () => {
+      const curto = "curto-demais";
+      const result = parseEnv({ ...valid, MAINTENANCE_TOKEN: curto });
+      expect(!result.ok && result.message).toContain("MAINTENANCE_TOKEN: deve ter pelo menos 32 caracteres");
+      expect(!result.ok && result.message).not.toContain(curto);
+    });
+
+    it("token longo passa e chega limpo", () => {
+      const token = "segredo-de-manutencao-com-mais-de-32-chars";
+      expect(parseEnv({ ...valid, MAINTENANCE_TOKEN: ` ${token} ` })).toMatchObject({ ok: true, env: { MAINTENANCE_TOKEN: token } });
+    });
+  });
+
   describe("cargo Membro (TASK-014)", () => {
     it("obrigatório com o bot ligado", () => {
       const rest: Record<string, string | undefined> = { ...valid, DISCORD_MEMBER_ROLE_ID: undefined };
