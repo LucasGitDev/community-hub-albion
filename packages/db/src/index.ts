@@ -189,3 +189,14 @@ export {
   type UpdateLootSplitInput,
   type UpdateLootSplitResult,
 } from "./loot-split-repo.js";
+export {
+  createShopItem,
+  getShopBalance,
+  getShopItem,
+  listShopItems,
+  listShopOrders,
+  purchaseShopItem,
+  updateShopItem,
+  type PurchaseShopItemResult,
+  type ShopBalance,
+} from "./shop-repo.js";
