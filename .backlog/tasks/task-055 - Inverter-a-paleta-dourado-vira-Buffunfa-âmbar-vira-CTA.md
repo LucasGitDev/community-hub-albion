@@ -1,11 +1,11 @@
 ---
 id: TASK-055
 title: 'Inverter a paleta: dourado vira Buffunfa, âmbar vira CTA'
-status: In Progress
+status: Done
 assignee:
   - '@claude'
 created_date: '2026-09-17 17:03'
-updated_date: '2026-09-17 17:18'
+updated_date: '2026-09-17 17:25'
 labels: []
 milestone: m-6
 dependencies: []
@@ -50,3 +50,17 @@ Hoje o token --brand é o dourado e serve de CTA primário e número-chave (TASK
 3. Revisar os 16 usos de brand e os 26 de warning, reclassificando cada um pelo papel novo (moeda x ação x estado).
 4. Gate + screenshots antes/depois em 1280 e 400 nas telas que usam as três cores.
 <!-- SECTION:PLAN:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+Entregue e mergeada (PR #90, 8bb7b46).
+
+O problema era maior que a inversão pedida pela doc-009: no tema escuro brand e warning eram a mesma tinta (0.15 80 nos dois), então inverter os papéis só trocaria o empate de lugar. A saída foi separar três papéis em três matizes e três volumes, com a regra de que cor de alta frequência (saldo, em toda tela) fica quieta e cor de baixa frequência (CTA, uma por tela) fica alta.
+
+brand ficou sem uso nos componentes de propósito — é da Buffunfa, que nasce na TASK-056. Prata não ganhou token: virou foreground, porque uma quarta tinta competiria sem dizer nada que o rótulo já não diga.
+
+Gate completo verde: 116 e2e, cobertura 89.26%, imagem Docker ok. Screenshots antes/depois em 1280 e 400 (Carteira, Perfil, Meus saques, Fila de saques) revisados — a fila de saques é o caso mais visível: antes o valor, o selo e o botão tinham a mesma cor.
+
+Fora de escopo, registrado: prefers-contrast: more não é tratado pelo tema.
+<!-- SECTION:NOTES:END -->

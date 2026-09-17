@@ -4,16 +4,15 @@ title: Decidir como role e build convivem por tipo de conteúdo
 status: In Progress
 assignee: []
 created_date: '2026-09-17 17:06'
-updated_date: '2026-09-17 17:32'
+updated_date: '2026-09-17 17:36'
 labels:
+  - congelada
   - eventos
-  - templates
-  - arquitetura
 milestone: m-12
 dependencies: []
 documentation:
   - .backlog/docs/doc-005 - Decisões-v1.md
-priority: high
+priority: low
 type: spike
 ordinal: 7100
 ---
@@ -62,6 +61,14 @@ Entrega: decisão escrita, não código. As tasks de implementação nascem depo
 ## Implementation Notes
 
 <!-- SECTION:NOTES:BEGIN -->
+**Congelada por decisão do usuário em 2026-09-17.** O spike foi concluído e a recomendação está no doc-010 (role global, descrição e build no par template+role, migration aditiva sem backfill), mas nada disso vira código enquanto as sete perguntas do §5 do doc não forem respondidas.
+
+Descongelar exige, na ordem: responder P1–P7, registrar as respostas no doc-005 e só então criar as tasks derivadas. A pergunta que mais pesa é a P6 — se a faixa de Buffunfa da F6-8 pertence ao par (template, role) ou à build, porque no segundo caso a TASK-057 passa a depender desta decisão e a ordem de merge da F6 muda.
+
+Enquanto isso, o vazamento do import de YAML que o spike encontrou virou task própria e não espera esta decisão.
+
+---
+
 Spike conduzido; decisão escrita no doc-010 "Role e build por tipo de conteúdo". **Pendente de aprovação do usuário**: nada foi escrito no doc-005, nenhuma task derivada criada, schema intocado.
 
 Achado principal: o formato YAML de template **já** trata a descrição como propriedade do par (template, role) — `packages/shared/src/event-template-yaml.ts:14-22,64-68` — mas o banco não tem onde guardá-la por par (`event_template_roles` só tem `slots` e `sort_order`, schema.ts:210-224), então o import escorre a descrição para o catálogo global (`event-templates-repo.ts:191`): importar um template de ZvZ pode sobrescrever a ideia de "Tank" para todos os conteúdos. Soma-se a isso que a F6-8 já obriga `event_template_roles` a ganhar faixa de Buffunfa por role na TASK-057 — duas features independentes pedindo a mesma linha.
