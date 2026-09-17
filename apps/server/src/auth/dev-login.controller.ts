@@ -1,5 +1,5 @@
 import { BadRequestException, Body, Controller, ForbiddenException, HttpCode, Inject, Post, Req, Res } from "@nestjs/common";
-import { createSession, getBanStatusByDiscordId, grantRole, insertLedgerEntry, setGameNick, upsertUserByDiscordId, type DbHandle } from "@albion-hub/db";
+import { createSession, getBanStatusByDiscordId, grantRole, insertLedgerEntry, markLeftGuildForDev, setGameNick, upsertUserByDiscordId, type DbHandle } from "@albion-hub/db";
 import { ROLES, validateNick } from "@albion-hub/shared";
 import type { Request, Response } from "express";
 import { z } from "zod";
@@ -31,6 +31,13 @@ const devLoginSchema = z.object({
     )
     .max(50)
     .optional(),
+  /**
+   * Marca a conta como fora do servidor do Discord, para o e2e da lista de membros (TASK-049) ver o
+   * selo sem um bot ligado. Mesma porta do `silver` e do `gameNick`: só existe com AUTH_DEV_LOGIN=true,
+   * que o env proíbe em produção. É só a marca — nenhuma sessão é derrubada e nenhum papel some, porque
+   * quem faz isso é a limpeza, e semear não é limpar.
+   */
+  leftGuild: z.boolean().optional(),
 });
 
 /**
@@ -51,7 +58,7 @@ export class DevLoginController {
     if (!isSameOriginRequest(headers, this.env.PUBLIC_URL)) throw new ForbiddenException("Requisição de outra origem recusada.");
     const parsed = devLoginSchema.safeParse(body);
     if (!parsed.success) throw new BadRequestException("Dados de login de desenvolvimento inválidos.");
-    const { discordId, username, roles, gameNick, silver } = parsed.data;
+    const { discordId, username, roles, gameNick, silver, leftGuild } = parsed.data;
     const db = this.handle.db;
     // Banido não entra por aqui também (TASK-050): esta porta cria sessão igual à do Discord, então a
     // mesma recusa vale — senão o e2e provaria um acesso que a produção não permite.
@@ -61,6 +68,7 @@ export class DevLoginController {
     if (gameNick) await setGameNick(db, user.id, gameNick);
     for (const role of new Set(["member" as const, ...roles])) await grantRole(db, user.id, role);
     for (const entry of silver ?? []) await insertLedgerEntry(db, { userId: user.id, amount: BigInt(entry.amount), kind: entry.kind, memo: entry.memo ?? null });
+    if (leftGuild) await markLeftGuildForDev(db, user.id);
     const { token } = await createSession(db, user.id, sessionExpiresAt(new Date(), this.env.SESSION_TTL_DAYS));
     res.cookie(SESSION_COOKIE, token, sessionCookieOptions(this.env.NODE_ENV, this.env.SESSION_TTL_DAYS));
   }

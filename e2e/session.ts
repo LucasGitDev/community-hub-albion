@@ -33,14 +33,16 @@ export interface LoginOptions {
   silver?: Silver[];
   /** Semeia o usuário já com nick aprovado, sem passar pela fila da staff. */
   gameNick?: string;
+  /** Marca a conta como fora do servidor do Discord (TASK-049), para ver o selo sem bot ligado. */
+  leftGuild?: boolean;
 }
 
 /** Entra como um usuário novo e devolve o Discord ID usado, para quem precisar voltar a ele. */
 export async function login(page: Page, index: string, username: string, options: LoginOptions = {}): Promise<string> {
   const id = discordId(index);
-  const { roles = [], silver = [], gameNick } = options;
+  const { roles = [], silver = [], gameNick, leftGuild } = options;
   const res = await page.request.post("/api/auth/dev-login", {
-    data: { discordId: id, username, roles, ...(silver.length ? { silver } : {}), ...(gameNick ? { gameNick } : {}) },
+    data: { discordId: id, username, roles, ...(silver.length ? { silver } : {}), ...(gameNick ? { gameNick } : {}), ...(leftGuild ? { leftGuild } : {}) },
     headers: { Origin: ORIGIN },
   });
   expect(res.status()).toBe(204);
