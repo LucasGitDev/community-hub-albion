@@ -35,6 +35,7 @@ Doc "Quality Gate e DoD" no backlog. Resumo:
 - Testes de banco precisam de Postgres: `POSTGRES_PORT=55432 docker compose -p <task> -f docker-compose.dev.yml up -d --wait` e `export TEST_DATABASE_URL=postgres://albion:albion@localhost:55432/albion_hub` (sem isso são pulados e a cobertura cai). Docker é OrbStack: sempre `timeout` nos comandos docker.
 - CI (`.github/workflows/quality-gate.yml`) roda o mesmo script e comenta o resumo no PR.
 - E2E em paralelo entre worktrees: `export E2E_PORT=41XX` (default 4173) antes do gate — a porta vale para as specs, o `webServer` e o `PUBLIC_URL` que o `SameOriginGuard` valida. O Playwright **não** reusa servidor existente (evita pegar o build de outra branch); só o loop rápido dentro do próprio worktree liga `E2E_REUSE_SERVER=true`.
+- Mudança **só de visibilidade** (nenhum componente ou texto novo, só quem enxerga o que já existe) não exige as skills de design, mas **exige revisão visual por screenshot no papel afetado** (decisão N7).
 - Antes de marcar AC/DoD ou abrir PR final: invocar skill `task-done-check` (gate + visual Playwright 1280/400 + produto vs doc-005 + skills do doc-003).
 
 ## Rotas de manutenção (TASK-048)
