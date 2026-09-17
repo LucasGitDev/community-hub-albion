@@ -40,6 +40,9 @@ export default defineConfig({
       DISCORD_BOT_ENABLED: "false",
       RUN_MIGRATIONS: "true",
       AUTH_DEV_LOGIN: "true",
+      // TASK-051: o extrato da staff precisa mostrar um ajuste de verdade feito pela manutenção
+      // (origem `manual/maintenance`), e o único jeito de criar um é o namespace da TASK-048.
+      MAINTENANCE_TOKEN: "e2e-maintenance-token-com-32-caracteres",
       DATABASE_URL: E2E_DATABASE_URL,
       NODE_ENV: "test",
       DISCORD_CLIENT_ID: "223456789012345678",
