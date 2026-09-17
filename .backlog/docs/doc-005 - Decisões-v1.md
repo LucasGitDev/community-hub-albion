@@ -3,7 +3,7 @@ id: doc-005
 title: Decisões v1
 type: specification
 created_date: '2026-09-15 03:22'
-updated_date: '2026-09-17 19:09'
+updated_date: '2026-09-17 20:13'
 ---
 Resultado do grill (R1–R3, 2026-09-15). Referência pra specs e tasks.
 
@@ -226,3 +226,8 @@ apareceu no primeiro dia — "Ganhos no mês" passou a somar Buffunfa com prata 
 saldo e extrato passaram a exigir moeda explícita na assinatura, sem sobrecarga que aceite a
 omissão. O mesmo padrão se repetiu na mesclagem do PATCH de template, onde taxa e faixa somem por
 serem esquecidas na base: os dois casos são o mesmo erro, e os dois agora têm teste.
+
+### Correção da F6-10 (TASK-073, 2026-09-17)
+| # | Decisão |
+|---|---|
+| F6-58 | O denominador do corte de 90% é a **call**, não o evento: a janela abre na **primeira entrada registrada no canal**, nunca antes do início do evento. A F6-10 dizia "90% do tempo de vida da call" e o código media do `started_at` do evento — mas entre um e outro o bot ainda cria o canal e arrasta gente da sala de espera, e nesse intervalo ninguém pode estar na call. Em call longa o desvio some no arredondamento; em call curta ele decide o pagamento. Relato que expôs: call de menos de 1 minuto, participante presente do começo ao fim marcando **72,66%** e não recebendo nada, com o loot split da mesma tela mostrando 100%. O corte binário de 90% e a medição da prata não mudaram. |
