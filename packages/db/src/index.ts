@@ -50,6 +50,15 @@ export {
   type BanUserResult,
   type UnbanUserResult,
 } from "./bans-repo.js";
+export {
+  countInactiveMembers,
+  getLeftGuildAt,
+  markLeftGuildForDev,
+  runGuildCleanup,
+  type DeactivatedMember,
+  type GuildCleanupInput,
+  type GuildCleanupResult,
+} from "./guild-cleanup-repo.js";
 export { addUserNote, listUserNotes, type AddUserNoteInput, type UserNote } from "./user-notes-repo.js";
 export {
   decideNickRequest,
