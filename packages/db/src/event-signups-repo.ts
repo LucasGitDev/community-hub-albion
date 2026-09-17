@@ -87,10 +87,50 @@ async function confirmedCount(tx: Tx, slotId: string): Promise<number> {
   return row?.total ?? 0;
 }
 
-/** Próxima posição da espera daquela role. Nunca reaproveita número: quem entrou antes fica na frente. */
+/**
+ * Próxima posição da espera daquela role: fim da fila de **quem está esperando agora** (TASK-066).
+ * Olhar todas as linhas da vaga contava cancelados e confirmados (que têm `position 0`) e transformava
+ * a posição num contador que nunca reaproveitava número — a fila ficava com buraco permanente.
+ */
 async function nextWaitlistPosition(tx: Tx, slotId: string): Promise<number> {
-  const [row] = await tx.select({ top: max(eventSignups.position) }).from(eventSignups).where(eq(eventSignups.slotId, slotId));
+  const [row] = await tx
+    .select({ top: max(eventSignups.position) })
+    .from(eventSignups)
+    .where(and(eq(eventSignups.slotId, slotId), eq(eventSignups.status, "waitlist")));
   return (row?.top ?? 0) + 1;
+}
+
+/**
+ * Renumera a espera daquela role para 1..N (TASK-066). É o que fecha o buraco que sobra quando alguém
+ * sai ou é promovido: a posição guardada é a posição real da fila, então a API, o embed e o painel
+ * mostram o mesmo número sem camada de exibição por cima.
+ *
+ * A nova ordem é a ordem antiga (`position`, desempate por `created_at`), então renumerar **nunca**
+ * embaralha quem já estava esperando: só tira os buracos. Só escreve nas linhas que mudaram de número,
+ * para não carimbar `updated_at` em quem ficou no mesmo lugar.
+ */
+async function resequenceWaitlist(tx: Tx, slotId: string, at: Date): Promise<void> {
+  await tx.execute(sql`
+    update ${eventSignups} as s
+    set position = r.rn, updated_at = ${at.toISOString()}::timestamptz
+    from (
+      select id, row_number() over (order by position, created_at, id) as rn
+      from ${eventSignups}
+      where slot_id = ${slotId} and status = 'waitlist'
+    ) as r
+    where s.id = r.id and s.position <> r.rn
+  `);
+}
+
+/** Renumera as vagas mexidas pela operação (a de origem e a de destino são a mesma com frequência). */
+async function resequenceSlots(tx: Tx, slotIds: readonly string[], at: Date): Promise<void> {
+  for (const slotId of new Set(slotIds)) await resequenceWaitlist(tx, slotId, at);
+}
+
+/** Relê a inscrição depois da renumeração: o DTO devolvido tem que sair com a posição final. */
+async function reload(tx: Tx, id: string): Promise<EventSignupDto> {
+  const [row] = await tx.select().from(eventSignups).where(eq(eventSignups.id, id));
+  return toDto(row!);
 }
 
 /**
@@ -266,7 +306,8 @@ export async function joinEventRole(db: Database, input: { eventId: string; user
     if (current) await cancel(tx, current.id, null, at);
     const signup = await insertSignup(tx, { eventId: input.eventId, userId: input.userId, slot, decidedBy: null, feeEntryId, at });
     const promoted = current?.status === "confirmed" ? await promoteFirstWaiting(tx, current.slotId, at, signup.id) : null;
-    return { ok: true as const, signup, promoted, charged };
+    await resequenceSlots(tx, [slot.id, ...(current ? [current.slotId] : [])], at);
+    return { ok: true as const, signup: await reload(tx, signup.id), promoted, charged };
   });
 }
 
@@ -286,6 +327,7 @@ export async function leaveEvent(db: Database, input: { eventId: string; userId:
     const refunded = await refundEntryFee(tx, current.feeEntryId, ENTRY_FEE_REFUND_REASONS.left);
     const [cancelled] = await tx.select().from(eventSignups).where(eq(eventSignups.id, current.id));
     const promoted = current.status === "confirmed" ? await promoteFirstWaiting(tx, current.slotId, at) : null;
+    await resequenceWaitlist(tx, current.slotId, at);
     return { ok: true as const, signup: toDto(cancelled!), promoted, refunded };
   });
 }
@@ -326,6 +368,7 @@ export async function moveEventSignup(
     });
     // Exclui quem acabou de ser mandado para a espera: senão ele voltaria sozinho para a vaga que liberou.
     const promoted = current.status === "confirmed" ? await promoteFirstWaiting(tx, current.slotId, at, signup.id) : null;
-    return { ok: true as const, signup, promoted };
+    await resequenceSlots(tx, [slot.id, current.slotId], at);
+    return { ok: true as const, signup: await reload(tx, signup.id), promoted };
   });
 }

@@ -954,6 +954,70 @@ describe.skipIf(!url)("@albion-hub/db (Postgres real)", () => {
       expect((await listEventSignups(handle.db, event.id)).filter((s) => s.status === "cancelled")).toHaveLength(1);
     });
 
+    it("a espera renumera sem buraco quando alguém sai, e a ordem de quem já esperava não muda (TASK-066)", async () => {
+      const { event, tank } = await openEvent("Espera sem buraco");
+      const [dono, b, c, d] = [await user(), await user(), await user(), await user()];
+      await joinEventRole(handle.db, { eventId: event.id, userId: dono, slotId: tank.id });
+      await joinEventRole(handle.db, { eventId: event.id, userId: b, slotId: tank.id });
+      await joinEventRole(handle.db, { eventId: event.id, userId: c, slotId: tank.id });
+      await joinEventRole(handle.db, { eventId: event.id, userId: d, slotId: tank.id });
+
+      const waiting = async () =>
+        (await listEventSignups(handle.db, event.id)).filter((s) => s.status === "waitlist").map((s) => [s.userId, s.position]);
+      expect(await waiting()).toEqual([
+        [b, 1],
+        [c, 2],
+        [d, 3],
+      ]);
+
+      // O confirmado sai: o primeiro da espera sobe e os que ficaram viram 1º e 2º, na mesma ordem.
+      const left = await leaveEvent(handle.db, { eventId: event.id, userId: dono });
+      expect(left).toMatchObject({ ok: true, promoted: { userId: b, status: "confirmed", position: 0 } });
+      expect(await waiting()).toEqual([
+        [c, 1],
+        [d, 2],
+      ]);
+
+      // Agora quem sai é o primeiro da própria espera: ninguém é promovido e quem sobra vira o 1º.
+      const outOfQueue = await leaveEvent(handle.db, { eventId: event.id, userId: c });
+      expect(outOfQueue).toMatchObject({ ok: true, promoted: null });
+      expect(await waiting()).toEqual([[d, 1]]);
+
+      // Quem entra depois entra no fim da fila de verdade, sem herdar o contador antigo.
+      const e = await user();
+      const late = await joinEventRole(handle.db, { eventId: event.id, userId: e, slotId: tank.id });
+      expect(late).toMatchObject({ ok: true, signup: { status: "waitlist", position: 2 } });
+      expect(await waiting()).toEqual([
+        [d, 1],
+        [e, 2],
+      ]);
+
+      // O que o embed do Discord e o card do membro leem é o mesmo número da listagem do painel.
+      const members = await listEventSignupMembers(handle.db, event.id);
+      expect(members.filter((m) => m.status === "waitlist").map((m) => [m.userId, m.position])).toEqual([
+        [d, 1],
+        [e, 2],
+      ]);
+      expect((await listUserEventSignups(handle.db, d, [event.id])).map((s) => s.position)).toEqual([1]);
+    });
+
+    it("caller mandar um confirmado para a espera renumera a fila, e ele entra no fim dela (TASK-066)", async () => {
+      const { event, tank } = await openEvent("Caller manda para a espera");
+      const [confirmado, b, c] = [await user(), await user(), await user()];
+      await joinEventRole(handle.db, { eventId: event.id, userId: confirmado, slotId: tank.id });
+      await joinEventRole(handle.db, { eventId: event.id, userId: b, slotId: tank.id });
+      await joinEventRole(handle.db, { eventId: event.id, userId: c, slotId: tank.id });
+
+      const benched = await moveEventSignup(handle.db, { eventId: event.id, userId: confirmado, target: { kind: "waitlist" }, actorUserId: owner });
+      // A vaga que ele liberou promove o primeiro da espera (b) — mas nunca ele mesmo, que acabou de descer.
+      // Quem desce entra no fim da fila renumerada, e não num número inventado pelo contador antigo.
+      expect(benched).toMatchObject({ ok: true, promoted: { userId: b, status: "confirmed" }, signup: { status: "waitlist", position: 2 } });
+      expect((await listEventSignups(handle.db, event.id)).filter((s) => s.status === "waitlist").map((s) => [s.userId, s.position])).toEqual([
+        [c, 1],
+        [confirmado, 2],
+      ]);
+    });
+
     it("evento fora de open recusa entrar e sair (AC#5)", async () => {
       const { event, tank } = await openEvent("Fechado para inscrição");
       const dentro = await user();
