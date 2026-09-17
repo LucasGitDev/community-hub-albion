@@ -4,8 +4,10 @@ import {
   checkPartySize,
   eventTemplateInputSchema,
   firstIssue,
+  formatBuffunfaRange,
   formatPartySize,
   parseEventTemplateYaml,
+  roleBuffunfaRange,
   totalSlots,
   type EventRoleDto,
   type EventTemplateDto,
@@ -31,6 +33,9 @@ const errorText = (e: unknown, fallback: string) => (e instanceof Error ? e.mess
 interface DraftRole {
   roleId: string;
   slots: string;
+  /** Faixa de Buffunfa por presença (TASK-057, F6-8): obrigatória, os dois extremos. */
+  buffunfaMin: string;
+  buffunfaMax: string;
 }
 
 interface TemplateDraft {
@@ -53,7 +58,7 @@ const draftFrom = (t: EventTemplateDto): TemplateDraft => ({
   maxPartySize: t.maxPartySize === null ? "" : String(t.maxPartySize),
   defaultEntryFee: t.defaultEntryFee,
   active: t.active,
-  roles: t.roles.map((r) => ({ roleId: r.roleId, slots: String(r.slots) })),
+  roles: t.roles.map((r) => ({ roleId: r.roleId, slots: String(r.slots), buffunfaMin: r.buffunfaMin, buffunfaMax: r.buffunfaMax })),
 });
 
 const toInput = (draft: TemplateDraft) => ({
@@ -64,7 +69,7 @@ const toInput = (draft: TemplateDraft) => ({
   // Vazio é zero: quem deixa o campo em branco quer evento gratuito, não um erro de validação.
   defaultEntryFee: draft.defaultEntryFee.trim() === "" ? "0" : draft.defaultEntryFee.trim(),
   active: draft.active,
-  roles: draft.roles.map((r) => ({ roleId: r.roleId, slots: Number(r.slots) })),
+  roles: draft.roles.map((r) => ({ roleId: r.roleId, slots: Number(r.slots), buffunfaMin: r.buffunfaMin.trim() || "0", buffunfaMax: r.buffunfaMax.trim() || "0" })),
 });
 
 /**
@@ -303,6 +308,7 @@ function TemplateRow({ template, onEdit, onRemove }: { template: EventTemplateDt
                   >
                     <span className="num font-semibold">{r.slots}</span>
                     {r.name}
+                    {r.buffunfaMax !== "0" && <span className="num text-brand">{formatBuffunfaRange(roleBuffunfaRange(r))}</span>}
                   </span>
                 </TooltipTrigger>
                 <TooltipContent hidden={!r.description} className="max-w-64">
@@ -441,20 +447,47 @@ function TemplateDialog({
           </div>
 
           <fieldset>
-            <legend className="text-sm font-medium">Roles e vagas</legend>
+            <legend className="text-sm font-medium">Roles, vagas e Buffunfa por presença</legend>
+            <p className="mt-1 text-xs text-muted-foreground">
+              A faixa de Buffunfa é o que a role pode pagar a quem comparecer. O caller escolhe um valor dentro dela até fechar o evento; faixa em 0 a 0 é role que não
+              paga Buffunfa.
+            </p>
             <ul className="mt-2 space-y-2">
               {draft.roles.map((row, i) => {
                 const role = roles.find((r) => r.id === row.roleId);
                 return (
-                  <li key={row.roleId} className="flex items-center gap-2">
+                  <li key={row.roleId} className="flex flex-wrap items-center gap-2">
                     <span className="min-w-0 flex-1 truncate text-sm">{role?.name ?? "Role removida"}</span>
                     <Input
                       aria-label={`Vagas de ${role?.name ?? "role"}`}
                       inputMode="numeric"
                       value={row.slots}
                       onChange={(e) => patch({ roles: draft.roles.map((r, j) => (j === i ? { ...r, slots: e.target.value } : r)) })}
-                      className="num w-20"
+                      className="num w-16"
                     />
+                    {/*
+                      Faixa de Buffunfa da role (F6-8). Dois campos e não um: o caller escolhe **dentro**
+                      dela no fechamento do evento, e é esta faixa que impede o caller generoso demais de
+                      furar o sink — Buffunfa é criada do nada e o ledger não volta atrás.
+                    */}
+                    <span className="flex items-center gap-1 text-xs text-muted-foreground">
+                      <Input
+                        aria-label={`Buffunfa mínima de ${role?.name ?? "role"}`}
+                        inputMode="numeric"
+                        value={row.buffunfaMin}
+                        onChange={(e) => patch({ roles: draft.roles.map((r, j) => (j === i ? { ...r, buffunfaMin: e.target.value } : r)) })}
+                        className="num w-16 text-right"
+                      />
+                      a
+                      <Input
+                        aria-label={`Buffunfa máxima de ${role?.name ?? "role"}`}
+                        inputMode="numeric"
+                        value={row.buffunfaMax}
+                        onChange={(e) => patch({ roles: draft.roles.map((r, j) => (j === i ? { ...r, buffunfaMax: e.target.value } : r)) })}
+                        className="num w-16 text-right"
+                      />
+                      <span className="text-brand">BUF</span>
+                    </span>
                     <Button type="button" variant="ghost" size="icon-sm" aria-label={`Tirar ${role?.name ?? "role"} do template`} onClick={() => patch({ roles: draft.roles.filter((_, j) => j !== i) })}>
                       <X />
                     </Button>
@@ -465,7 +498,7 @@ function TemplateDialog({
             {available.length > 0 && (
               <div className="mt-2 flex flex-wrap gap-1.5">
                 {available.map((role) => (
-                  <Button key={role.id} type="button" variant="outline" size="xs" onClick={() => patch({ roles: [...draft.roles, { roleId: role.id, slots: "1" }] })}>
+                  <Button key={role.id} type="button" variant="outline" size="xs" onClick={() => patch({ roles: [...draft.roles, { roleId: role.id, slots: "1", buffunfaMin: "0", buffunfaMax: "0" }] })}>
                     <Plus />
                     {role.name}
                   </Button>

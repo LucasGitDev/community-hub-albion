@@ -40,10 +40,11 @@ const event = (id: string, status: EventStatus, ownerUserId = CALLER): EventDto 
   finishedAt: null,
   cancelledAt: null,
   archivedAt: null,
+  buffunfaPaidAt: null,
   cancelReason: null,
   roles: [
-    { id: "tank", roleId: null, name: "Tank", description: "Segura a frente e chama o engage.", slots: 1 },
-    { id: "healer", roleId: null, name: "Healer", description: null, slots: 2 },
+    { id: "tank", roleId: null, name: "Tank", description: "Segura a frente e chama o engage.", slots: 1, buffunfaMin: "10", buffunfaMax: "40", buffunfaValue: "10" },
+    { id: "healer", roleId: null, name: "Healer", description: null, slots: 2, buffunfaMin: "0", buffunfaMax: "0", buffunfaValue: "0" },
   ],
   totalSlots: 3,
   createdAt: "2026-09-15T12:00:00.000Z",

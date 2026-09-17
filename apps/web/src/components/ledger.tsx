@@ -1,5 +1,5 @@
 import type { ReactNode } from "react";
-import { ArrowDownLeft, ArrowUpRight, RotateCcw, Scissors, ShoppingBag, SlidersHorizontal, Ticket, Wrench } from "lucide-react";
+import { ArrowDownLeft, ArrowUpRight, RotateCcw, Scissors, ShoppingBag, SlidersHorizontal, Ticket, Trophy, Wrench } from "lucide-react";
 import { CURRENCY_LABELS, describeLedgerAuthor, isMaintenanceLedgerEntry, LEDGER_ENTRY_KIND_LABELS, LEDGER_CURRENCY_FILTERS, type Currency, type LedgerCurrencyFilter, type LedgerEntryKind, type MemberLedgerEntryDto } from "@albion-hub/shared";
 import { Pill, Amount, type Tone } from "@/components/display";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
@@ -17,6 +17,8 @@ const LEDGER_KIND_META: Record<LedgerEntryKind, { icon: ReactNode; tone: Tone }>
   purchase: { icon: <ShoppingBag />, tone: "neutral" },
   // Taxa de entrada (TASK-058): tom da Buffunfa, porque é sempre nela que ela é cobrada (F6-12).
   entry_fee: { icon: <Ticket />, tone: "brand" },
+  // Presença em evento (TASK-057): a primeira fonte de Buffunfa, e a única que cria moeda do nada.
+  event_attendance: { icon: <Trophy />, tone: "neutral" },
 };
 
 /** O mínimo que a tabela precisa saber de um lançamento. Valor é bigint: nunca `number` (Q20). */
