@@ -106,7 +106,7 @@ export function LedgerTable({ entries, showAuthor = false }: { entries: LedgerRo
 }
 
 /** Rótulo da moeda da linha. Buffunfa leva o ouro do `--brand` (doc-009); prata fica neutra. */
-export function CurrencyTag({ currency }: { currency: Currency }) {
+function CurrencyTag({ currency }: { currency: Currency }) {
   return (
     <span
       className={cn(

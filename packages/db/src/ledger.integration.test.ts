@@ -7,6 +7,7 @@ import {
   insertLedgerEntry,
   listLedgerEntries,
   listLedgerEntriesByReference,
+  listLedgerEntriesWithAuthor,
   reverseLedgerEntry,
   runMigrations,
   schema,
@@ -208,6 +209,26 @@ describe.skipIf(!baseUrl)("ledger append-only de prata (TASK-026, Postgres real)
       expect(await getLedgerBalancesByCurrency(handle.db, userId)).toEqual({ silver: 1_000_000n, buffunfa: 340n });
       expect((await listLedgerEntries(handle.db, userId, "all")).entries).toHaveLength(2);
       expect((await listLedgerEntries(handle.db, userId, "buffunfa")).entries.map((e) => e.amount)).toEqual([340n]);
+    });
+
+    it("o extrato com autor também exige a moeda e pagina pelo mesmo keyset (TASK-051)", async () => {
+      const userId = await nextUser();
+      const staffId = await nextUser();
+      await insertLedgerEntry(handle.db, { currency: "silver", userId, amount: 500n, kind: "adjustment", createdBy: staffId, memo: "prata" });
+      await insertLedgerEntry(handle.db, { currency: "buffunfa", userId, amount: 10n, kind: "adjustment", memo: "buffunfa sem autor" });
+      await insertLedgerEntry(handle.db, { currency: "buffunfa", userId, amount: 20n, kind: "adjustment", createdBy: staffId, memo: "buffunfa da staff" });
+
+      const todas = await listLedgerEntriesWithAuthor(handle.db, userId, "all");
+      expect(todas.entries).toHaveLength(3);
+      expect(todas.entries.map((e) => e.author?.id ?? null)).toEqual([staffId, null, staffId]);
+
+      const so = await listLedgerEntriesWithAuthor(handle.db, userId, "buffunfa", { limit: 1 });
+      expect(so.entries.map((e) => e.memo)).toEqual(["buffunfa da staff"]);
+      expect(so.nextCursor).not.toBeNull();
+      const segunda = await listLedgerEntriesWithAuthor(handle.db, userId, "buffunfa", { limit: 1, cursor: so.nextCursor });
+      expect(segunda.entries.map((e) => e.memo)).toEqual(["buffunfa sem autor"]);
+      expect(segunda.entries[0]!.author).toBeNull();
+      expect(segunda.nextCursor).toBeNull();
     });
 
     it("estorno herda a moeda do original", async () => {

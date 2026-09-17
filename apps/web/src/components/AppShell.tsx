@@ -108,7 +108,9 @@ export function AppShell() {
               <span className="h-4 w-px bg-border" aria-hidden />
               <Coins className="size-4 text-muted-foreground" aria-hidden />
               {balance ? (
-                <Amount currency="silver" value={balance.available} className="text-muted-foreground" />
+                // Prata abreviada no chip: em 400px as duas moedas cheias não cabem, e o número exato
+                // está a um clique na Carteira. Buffunfa continua cheia, que é a regra (F6-5).
+                <Amount currency="silver" value={balance.available} short className="text-muted-foreground" />
               ) : (
                 <span className="h-3 w-12 animate-pulse rounded bg-muted" aria-hidden />
               )}

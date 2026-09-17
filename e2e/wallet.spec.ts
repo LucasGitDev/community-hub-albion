@@ -26,7 +26,41 @@ test("membro vê saldo, reserva e extrato do ledger com a origem de cada lançam
   await snap(page, "carteira-membro");
 
   // Saldo do header lê o mesmo número da carteira (AC#1).
-  await expect(page.getByRole("link", { name: "Saldo disponível" })).toContainText("3.218.750");
+  await expect(page.getByRole("link", { name: "Meus saldos" })).toContainText("3,21M");
+});
+
+test("as duas moedas convivem: chip, saldos separados, moeda por linha e filtro do extrato (TASK-056, F6-26/F6-27)", async ({ page }) => {
+  await login(page, "007", "buffunfa", [
+    { amount: "2000000", kind: "split_payout", memo: "Raid do Dragão — Martlock" },
+    { amount: "340", currency: "buffunfa", kind: "split_payout", memo: "Presença na call do evento" },
+    { amount: "-20", currency: "buffunfa", kind: "adjustment", memo: "Taxa de entrada do evento" },
+  ]);
+  await page.goto("/carteira");
+
+  // Chip do header mostra as duas, Buffunfa em destaque e nunca somadas (F6-26).
+  const chip = page.getByRole("link", { name: "Meus saldos" });
+  await expect(chip).toContainText("320 BUF");
+  await expect(chip).toContainText("2M");
+
+  // Cabeçalho do extrato: um saldo por moeda, lado a lado (F6-27).
+  await expect(page.getByText("Disponível pra saque")).toBeVisible();
+  await expect(page.getByText("Buffunfa", { exact: true }).first()).toBeVisible();
+  // Buffunfa nunca abrevia (F6-5): 320 BUF, não 0,3K.
+  await expect(page.getByText("320 BUF").first()).toBeVisible();
+
+  // Um extrato só, com as duas moedas na ordem cronológica e cada linha marcando a sua.
+  await expect(page.getByRole("heading", { name: "Extrato" })).toBeVisible();
+  await expect(page.getByText("Presença na call do evento")).toBeVisible();
+  await expect(page.getByText("Raid do Dragão — Martlock")).toBeVisible();
+  await snap(page, "carteira-duas-moedas");
+
+  // Filtro recorta o mesmo extrato, sem virar outra tela.
+  await page.getByRole("button", { name: "Buffunfa", exact: true }).click();
+  await expect(page.getByText("Raid do Dragão — Martlock")).toHaveCount(0);
+  await expect(page.getByText("Presença na call do evento")).toBeVisible();
+  await page.getByRole("button", { name: "Prata", exact: true }).click();
+  await expect(page.getByText("Presença na call do evento")).toHaveCount(0);
+  await expect(page.getByText("Raid do Dragão — Martlock")).toBeVisible();
 });
 
 test("pedido de saque sem mínimo: recusa acima do disponível e reserva o valor pedido (AC#3, Q12/Q25)", async ({ page }) => {
@@ -51,7 +85,7 @@ test("pedido de saque sem mínimo: recusa acima do disponível e reserva o valor
   await expect(page.getByText("1 saque em análise")).toBeVisible();
 
   // `pending` reserva sem lançar no ledger (Q25): o extrato continua com um lançamento só.
-  await expect(page.getByText("1 lançamentos")).toBeVisible();
+  await expect(page.getByRole("row").filter({ hasText: "Loot split" })).toHaveCount(1);
 
   await page.getByRole("link", { name: "Meus saques" }).first().click();
   await expect(page.getByRole("heading", { name: "Meus saques" })).toBeVisible();
