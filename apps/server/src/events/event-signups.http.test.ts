@@ -135,8 +135,10 @@ describe.skipIf(!baseUrl)("inscrição em evento HTTP (TASK-022, Q27)", () => {
       expect((await send("patch", `/api/events/${id}/entry-fee`, caller, { entryFee: "-5" })).status).toBe(400);
       expect((await send("patch", `/api/events/${id}/entry-fee`, caller, { entryFee: "1,5" })).status).toBe(400);
       expect((await send("patch", `/api/events/${id}/entry-fee`, caller, { entryFee: 20 })).status).toBe(400);
-      // Sem teto (decisão do usuário): um valor absurdo passa, e volta inteiro.
+      // Sem teto de política (decisão do usuário): um valor absurdo passa e volta inteiro...
       expect((await send("patch", `/api/events/${id}/entry-fee`, caller, { entryFee: "999999999999" })).body.entryFee).toBe("999999999999");
+      // ...mas acima do que o int8 guarda é 400 legível, não 500 do banco.
+      expect((await send("patch", `/api/events/${id}/entry-fee`, caller, { entryFee: "99999999999999999999" })).status).toBe(400);
       // Membro comum não mexe na taxa de evento que não é dele.
       expect((await send("patch", `/api/events/${id}/entry-fee`, membro, { entryFee: "1" })).status).toBe(403);
       expect((await send("patch", `/api/events/${id}/entry-fee`, null, { entryFee: "1" })).status).toBe(401);

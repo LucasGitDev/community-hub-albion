@@ -15,6 +15,13 @@ import { formatAmount } from "./currency.js";
 export const NO_ENTRY_FEE = 0n;
 
 /**
+ * Teto físico, não teto de política: `bigint` do Postgres vai até 2^63-1, e um valor acima disso
+ * chegaria no banco como erro de range — 500 em vez do 400 que o caller precisa ler. A decisão "sem
+ * teto" é sobre a taxa que faz sentido cobrar; isto é só a borda do tipo.
+ */
+export const ENTRY_FEE_MAX = 9_223_372_036_854_775_807n;
+
+/**
  * Trafega como string, como todo bigint do projeto (Q20): JSON não tem inteiro grande o bastante, e
  * converter para `number` no caminho é como se perde valor.
  */
@@ -23,6 +30,8 @@ export const entryFeeSchema = (label = "A taxa de entrada") =>
     .string({ error: `Digite ${label.toLowerCase()} em Buffunfa.` })
     .trim()
     .regex(/^\d+$/, `${label} é um número inteiro de Buffunfa, sem sinal e sem casas decimais.`)
+    // O `refine` roda mesmo com o regex acima já reprovado, então ele confere o formato antes de converter.
+    .refine((v) => !/^\d+$/.test(v) || BigInt(v) <= ENTRY_FEE_MAX, `${label} passou do maior número que o banco guarda.`)
     .transform((v) => BigInt(v));
 
 export const eventEntryFeeSchema = z.object({ entryFee: entryFeeSchema() });
