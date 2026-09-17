@@ -1,6 +1,8 @@
-import { ACTIVE_EVENT_SIGNUP_STATUSES, type EventMemberDto, type EventOccupancyDto, type EventSignupDto, type EventSignupStatus, type EventStatus } from "@albion-hub/shared";
+import { ACTIVE_EVENT_SIGNUP_STATUSES, ENTRY_FEE_REFUND_REASONS, NO_ENTRY_FEE, type EventMemberDto, type EventOccupancyDto, type EventSignupDto, type EventSignupStatus, type EventStatus } from "@albion-hub/shared";
 import { and, asc, count, eq, inArray, max, ne, sql } from "drizzle-orm";
 import type { Database } from "./client.js";
+import { refundEntryFee } from "./entry-fee-repo.js";
+import { spendCurrencyTx } from "./ledger-repo.js";
 import { memberNick } from "./member-nick.js";
 import { eventRoleSlots, eventSignups, events, users } from "./schema.js";
 
@@ -35,12 +37,15 @@ export interface EventSignupChange {
 }
 
 export type JoinEventRoleResult =
-  | ({ ok: true } & EventSignupChange)
+  /** `charged` é a taxa debitada agora; null quando o evento é gratuito ou quando foi só troca de role. */
+  | ({ ok: true; charged: bigint | null } & EventSignupChange)
   | { ok: false; reason: "not_found" | "unknown_role" | "already_in_role" }
-  | { ok: false; reason: "not_open"; status: EventStatus };
+  | { ok: false; reason: "not_open"; status: EventStatus }
+  /** Taxa de entrada maior que o saldo em Buffunfa (AC#2). Leva os dois números para a mensagem dizer o que falta. */
+  | { ok: false; reason: "insufficient_funds"; fee: bigint; balance: bigint };
 
 export type LeaveEventResult =
-  | ({ ok: true } & EventSignupChange)
+  | ({ ok: true; refunded: bigint | null } & EventSignupChange)
   | { ok: false; reason: "not_found" | "not_signed_up" }
   | { ok: false; reason: "not_open"; status: EventStatus };
 
@@ -52,9 +57,10 @@ export type MoveEventSignupResult =
 /** Estados em que a lista ainda pode mudar pelo caller/owner (AC#4): antes do evento rodar. */
 const EDITABLE_BY_STAFF: readonly EventStatus[] = ["open", "closed"];
 
-async function lockEvent(tx: Tx, eventId: string): Promise<EventStatus | null> {
-  const [row] = await tx.select({ status: events.status }).from(events).where(eq(events.id, eventId)).for("update");
-  return row?.status ?? null;
+/** Trava a linha do evento e devolve o que a inscrição precisa decidir: estado, nome e taxa de entrada. */
+async function lockEvent(tx: Tx, eventId: string): Promise<{ status: EventStatus; name: string; entryFee: bigint } | null> {
+  const [row] = await tx.select({ status: events.status, name: events.name, entryFee: events.entryFee }).from(events).where(eq(events.id, eventId)).for("update");
+  return row ?? null;
 }
 
 async function findSlot(tx: Tx, eventId: string, slotId: string) {
@@ -117,10 +123,12 @@ interface InsertInput {
   decidedBy: string | null;
   /** `waitlist` força a espera mesmo com vaga livre (caller mandando alguém para a espera, AC#4). */
   force?: EventSignupStatus;
+  /** Lançamento da taxa já paga. Trocar de role ou ser movido **carrega** a cobrança para a linha nova: a taxa é do evento, não da vaga. */
+  feeEntryId?: string | null;
   at: Date;
 }
 
-async function insertSignup(tx: Tx, { eventId, userId, slot, decidedBy, force, at }: InsertInput): Promise<EventSignupDto> {
+async function insertSignup(tx: Tx, { eventId, userId, slot, decidedBy, force, feeEntryId, at }: InsertInput): Promise<EventSignupDto> {
   const confirmed = force ? force === "confirmed" : (await confirmedCount(tx, slot.id)) < slot.slots;
   const position = confirmed ? 0 : await nextWaitlistPosition(tx, slot.id);
   const [row] = await tx
@@ -133,6 +141,7 @@ async function insertSignup(tx: Tx, { eventId, userId, slot, decidedBy, force, a
       status: confirmed ? "confirmed" : "waitlist",
       position,
       decidedBy,
+      feeEntryId: feeEntryId ?? null,
       createdAt: at,
       updatedAt: at,
     })
@@ -229,17 +238,35 @@ export async function listEventSignupMembers(db: Database, eventId: string): Pro
 export async function joinEventRole(db: Database, input: { eventId: string; userId: string; slotId: string; at?: Date }): Promise<JoinEventRoleResult> {
   const at = input.at ?? new Date();
   return db.transaction(async (tx) => {
-    const status = await lockEvent(tx, input.eventId);
-    if (!status) return { ok: false as const, reason: "not_found" as const };
-    if (status !== "open") return { ok: false as const, reason: "not_open" as const, status };
+    const event = await lockEvent(tx, input.eventId);
+    if (!event) return { ok: false as const, reason: "not_found" as const };
+    if (event.status !== "open") return { ok: false as const, reason: "not_open" as const, status: event.status };
     const slot = await findSlot(tx, input.eventId, input.slotId);
     if (!slot) return { ok: false as const, reason: "unknown_role" as const };
     const current = await findActiveSignup(tx, input.eventId, input.userId);
     if (current?.slotId === slot.id) return { ok: false as const, reason: "already_in_role" as const };
+    // Taxa de entrada (TASK-058, F6-13): cobrada aqui, **dentro da mesma transação que dá a vaga**, e
+    // só em inscrição nova — trocar de role carrega a cobrança que já foi paga. Saldo insuficiente
+    // recusa a inscrição inteira em vez de dar a vaga fiado (F6-7).
+    let feeEntryId = current?.feeEntryId ?? null;
+    let charged: bigint | null = null;
+    if (!current && event.entryFee > NO_ENTRY_FEE) {
+      const paid = await spendCurrencyTx(tx, {
+        userId: input.userId,
+        currency: "buffunfa",
+        amount: event.entryFee,
+        kind: "entry_fee",
+        reference: { type: "event", id: input.eventId },
+        memo: `Taxa de entrada: ${event.name}`,
+      });
+      if (!paid.ok) return { ok: false as const, reason: "insufficient_funds" as const, fee: event.entryFee, balance: paid.reason === "insufficient_funds" ? paid.balance : 0n };
+      feeEntryId = paid.entry.id;
+      charged = event.entryFee;
+    }
     if (current) await cancel(tx, current.id, null, at);
-    const signup = await insertSignup(tx, { eventId: input.eventId, userId: input.userId, slot, decidedBy: null, at });
+    const signup = await insertSignup(tx, { eventId: input.eventId, userId: input.userId, slot, decidedBy: null, feeEntryId, at });
     const promoted = current?.status === "confirmed" ? await promoteFirstWaiting(tx, current.slotId, at, signup.id) : null;
-    return { ok: true as const, signup, promoted };
+    return { ok: true as const, signup, promoted, charged };
   });
 }
 
@@ -247,15 +274,19 @@ export async function joinEventRole(db: Database, input: { eventId: string; user
 export async function leaveEvent(db: Database, input: { eventId: string; userId: string; at?: Date }): Promise<LeaveEventResult> {
   const at = input.at ?? new Date();
   return db.transaction(async (tx) => {
-    const status = await lockEvent(tx, input.eventId);
-    if (!status) return { ok: false as const, reason: "not_found" as const };
-    if (status !== "open") return { ok: false as const, reason: "not_open" as const, status };
+    const event = await lockEvent(tx, input.eventId);
+    if (!event) return { ok: false as const, reason: "not_found" as const };
+    if (event.status !== "open") return { ok: false as const, reason: "not_open" as const, status: event.status };
     const current = await findActiveSignup(tx, input.eventId, input.userId);
     if (!current) return { ok: false as const, reason: "not_signed_up" as const };
     await cancel(tx, current.id, null, at);
+    // Desistir **antes do início** devolve (F6-13). Sair só é possível com o evento `open`, então
+    // chegar aqui já é "antes do início": depois disso a inscrição não sai mais, e a taxa fica.
+    // A devolução é **estorno**, nunca um UPDATE no lançamento original.
+    const refunded = await refundEntryFee(tx, current.feeEntryId, ENTRY_FEE_REFUND_REASONS.left);
     const [cancelled] = await tx.select().from(eventSignups).where(eq(eventSignups.id, current.id));
     const promoted = current.status === "confirmed" ? await promoteFirstWaiting(tx, current.slotId, at) : null;
-    return { ok: true as const, signup: toDto(cancelled!), promoted };
+    return { ok: true as const, signup: toDto(cancelled!), promoted, refunded };
   });
 }
 
@@ -269,9 +300,9 @@ export async function moveEventSignup(
 ): Promise<MoveEventSignupResult> {
   const at = input.at ?? new Date();
   return db.transaction(async (tx) => {
-    const status = await lockEvent(tx, input.eventId);
-    if (!status) return { ok: false as const, reason: "not_found" as const };
-    if (!EDITABLE_BY_STAFF.includes(status)) return { ok: false as const, reason: "closed_event" as const, status };
+    const event = await lockEvent(tx, input.eventId);
+    if (!event) return { ok: false as const, reason: "not_found" as const };
+    if (!EDITABLE_BY_STAFF.includes(event.status)) return { ok: false as const, reason: "closed_event" as const, status: event.status };
     const current = await findActiveSignup(tx, input.eventId, input.userId);
     if (!current) return { ok: false as const, reason: "not_signed_up" as const };
     const slot = await findSlot(tx, input.eventId, input.target.kind === "role" ? input.target.slotId : current.slotId);
@@ -289,6 +320,8 @@ export async function moveEventSignup(
       slot,
       decidedBy: input.actorUserId,
       force: input.target.kind === "waitlist" ? "waitlist" : "confirmed",
+      // O caller mover alguém não recobra nem devolve: a pessoa continua inscrita no mesmo evento.
+      feeEntryId: current.feeEntryId,
       at,
     });
     // Exclui quem acabou de ser mandado para a espera: senão ele voltaria sozinho para a vaga que liberou.

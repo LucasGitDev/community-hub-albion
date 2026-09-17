@@ -116,6 +116,7 @@ async function loadTemplates(db: Database, ids?: string[]): Promise<EventTemplat
       minPartySize: t.minPartySize,
       maxPartySize: t.maxPartySize,
       active: t.active,
+      defaultEntryFee: t.defaultEntryFee.toString(),
       roles: own,
       totalSlots: own.reduce((sum, r) => sum + r.slots, 0),
       updatedAt: t.updatedAt.toISOString(),
@@ -136,8 +137,14 @@ export async function getEventTemplate(db: Database, id: string): Promise<EventT
  * Cria ou substitui (id) o template e suas roles numa transação. Entrada já validada por `eventTemplateInputSchema`.
  * Role inexistente → `unknown_role` (FK); nome repetido → `duplicate`.
  */
-export async function saveEventTemplate(db: Database, input: EventTemplateInput, id?: string): Promise<EventTemplateWriteResult> {
-  const { roles, ...fields } = input;
+export async function saveEventTemplate(
+  db: Database,
+  /** `defaultEntryFee` é opcional aqui: omitir é o mesmo que zero, porque **template nasce zerado** (TASK-058). */
+  input: Omit<EventTemplateInput, "defaultEntryFee"> & { defaultEntryFee?: bigint },
+  id?: string,
+): Promise<EventTemplateWriteResult> {
+  const { roles, defaultEntryFee = 0n, ...rest } = input;
+  const fields = { ...rest, defaultEntryFee };
   try {
     const savedId = await db.transaction(async (tx) => {
       const [row] = id
