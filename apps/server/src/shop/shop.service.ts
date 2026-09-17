@@ -1,17 +1,26 @@
 import { Inject, Injectable } from "@nestjs/common";
 import {
+  cancelShopOrder,
+  claimShopOrder,
   createShopItem,
+  deliverShopOrder,
   getShopBalance,
   getShopItem,
+  getShopOrder,
   listShopItems,
   listShopOrders,
   purchaseShopItem,
+  refundShopOrder,
+  rejectShopOrder,
+  releaseShopOrder,
   updateShopItem,
   type DbHandle,
   type PurchaseShopItemResult,
   type ShopBalance,
+  type ShopOrderActionOptions,
+  type ShopOrderActionResult,
 } from "@albion-hub/db";
-import type { ShopBalanceDto, ShopItemCreateInput, ShopItemDto, ShopItemUpdateInput, ShopOrderDto } from "@albion-hub/shared";
+import type { ShopBalanceDto, ShopItemCreateInput, ShopItemDto, ShopItemUpdateInput, ShopOrderDto, ShopOrderListQuery } from "@albion-hub/shared";
 import { DB_HANDLE } from "../db/db.module.js";
 
 /**
@@ -60,8 +69,49 @@ export class ShopService {
   }
 
   /** Pedidos. `filters.userId` é sempre preenchido pelo controller na visão do membro. */
-  orders(filters: { userId?: string } = {}): Promise<ShopOrderDto[]> {
+  orders(filters: ShopOrderListQuery = {}): Promise<ShopOrderDto[]> {
     return listShopOrders(this.handle.db, filters);
+  }
+
+  order(id: string): Promise<ShopOrderDto | null> {
+    return getShopOrder(this.handle.db, id);
+  }
+
+  /**
+   * A fila da staff (TASK-060). Cada método é uma transição, e **toda** a regra (trava, releitura do
+   * estado, débito no ledger, devolução de moeda e estoque) vive na transação do repo: este serviço é o
+   * ponto único que o painel, o comando do Discord e o botão de embed chamam, e nenhum deles reimplementa
+   * um pedaço da regra por conta própria.
+   *
+   * `actorUserId` e `isStaff` vêm do controller, da sessão e do CASL — nunca do corpo da requisição.
+   */
+  claim(id: string, options: ShopOrderActionOptions): Promise<ShopOrderActionResult> {
+    return claimShopOrder(this.handle.db, id, options);
+  }
+
+  /** Devolve o pedido à fila (F6-22): quem pegou desistiu. */
+  release(id: string, options: ShopOrderActionOptions): Promise<ShopOrderActionResult> {
+    return releaseShopOrder(this.handle.db, id, options);
+  }
+
+  /** Entrega: lança o débito de Buffunfa e amarra o lançamento ao pedido, na mesma transação (AC#5). */
+  deliver(id: string, options: ShopOrderActionOptions): Promise<ShopOrderActionResult> {
+    return deliverShopOrder(this.handle.db, id, options);
+  }
+
+  /** Cancelamento. O comprador só antes de `claimed`; depois disso, só a staff (AC#6, F6-24). */
+  cancel(id: string, options: ShopOrderActionOptions): Promise<ShopOrderActionResult> {
+    return cancelShopOrder(this.handle.db, id, options);
+  }
+
+  /** Recusa da staff: devolve Buffunfa e estoque na mesma transação (AC#7). */
+  reject(id: string, options: ShopOrderActionOptions): Promise<ShopOrderActionResult> {
+    return rejectShopOrder(this.handle.db, id, options);
+  }
+
+  /** Estorno de pedido entregue: estorno no ledger + estoque de volta, juntos (AC#7, F6-19). */
+  refund(id: string, options: ShopOrderActionOptions): Promise<ShopOrderActionResult> {
+    return refundShopOrder(this.handle.db, id, options);
   }
 }
 
