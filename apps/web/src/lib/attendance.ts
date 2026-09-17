@@ -1,7 +1,8 @@
 import {
   ATTENDANCE_SKIP_LABELS,
-  formatBuffunfaRange,
-  inBuffunfaRange,
+  BUFFUNFA_ROLE_MAX,
+  buffunfaSuggestionText,
+  isBuffunfaValue,
   parseAmount,
   roleBuffunfaRange,
   type EventAttendanceDto,
@@ -50,19 +51,23 @@ export function attendancePayoutText(dto: EventAttendanceDto): string {
 /** Motivo de cada linha que fica de fora, em PT-BR. `null` para quem recebe. */
 export const attendanceSkipText = (line: EventAttendanceLineDto): string | null => (line.skip ? ATTENDANCE_SKIP_LABELS[line.skip] : null);
 
-/** `10 a 40 BUF` / `sem Buffunfa`: a faixa que o template impôs e da qual o caller não sai (F6-8). */
-export const roleRangeText = (role: Pick<EventRoleSlotDto, "buffunfaMin" | "buffunfaMax">): string => formatBuffunfaRange(roleBuffunfaRange(role));
+/**
+ * `template sugere 10 a 40 BUF`: o que a staff escreveu no template, dito como o que virou — ponto
+ * de partida, não teto (revisão da F6-8 na TASK-072). Fica visível porque é informação útil para
+ * quem está decidindo; o que ela não faz mais é recusar nada.
+ */
+export const roleRangeText = (role: Pick<EventRoleSlotDto, "buffunfaMin" | "buffunfaMax">): string => buffunfaSuggestionText(roleBuffunfaRange(role));
 
 export type RoleValueCheck = { ok: true; value: bigint } | { ok: false; error: string };
 
 /**
- * Valida o campo antes de mandar: Buffunfa é inteira, nunca abreviada (F6-5) e nunca fora da faixa.
- * A recusa do servidor continua existindo — isto só evita gastar uma request para ouvir o óbvio.
+ * Valida o campo antes de mandar: Buffunfa é inteira, nunca abreviada (F6-5) e nunca acima do teto
+ * do sistema. A recusa do servidor continua existindo — isto só evita gastar uma request para ouvir
+ * o óbvio. A faixa do template **não** entra aqui: ela não recusa mais nada.
  */
-export function checkRoleValue(text: string, role: Pick<EventRoleSlotDto, "buffunfaMin" | "buffunfaMax">): RoleValueCheck {
-  const range = roleBuffunfaRange(role);
+export function checkRoleValue(text: string): RoleValueCheck {
   const value = parseAmount(text.trim(), "buffunfa");
   if (value === null) return { ok: false, error: "Use um número inteiro de Buffunfa (ex: 25)." };
-  if (!inBuffunfaRange(value, range)) return { ok: false, error: `O template deste evento permite de ${range.min} a ${range.max} de Buffunfa nesta role.` };
+  if (!isBuffunfaValue(value)) return { ok: false, error: `O valor de Buffunfa vai de 0 a ${BUFFUNFA_ROLE_MAX} por role.` };
   return { ok: true, value };
 }

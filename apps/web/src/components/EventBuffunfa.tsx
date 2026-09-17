@@ -1,5 +1,5 @@
 import { formatPresence, formatShare, type EventAttendanceDto, type EventDto, type EventRoleSlotDto } from "@albion-hub/shared";
-import { AlertTriangle, Check, Coins, Lock, Sparkles, Users } from "lucide-react";
+import { AlertTriangle, Check, Coins, Layers, Lock, Sparkles, Users } from "lucide-react";
 import { useCallback, useEffect, useId, useState } from "react";
 import { toast } from "sonner";
 import * as attendanceApi from "@/api/attendance";
@@ -158,20 +158,97 @@ function NotMeasuredNote() {
 }
 
 /**
- * Valor por role, dentro da faixa do template (AC#1, AC#2). Um campo por role, com a faixa escrita do
- * lado: o caller sobe o tank porque faltou tank, e o que ele não pode é sair da faixa que a staff
- * escreveu — então a faixa fica visível, não escondida num 409.
+ * Quanto cada role paga (AC#1, AC#2, AC#3). A tela começa pelo gesto que o caller repete — **todas
+ * as roles recebem X** — porque é assim que o evento nasce ("no geral todas ganham X desde o
+ * início"); a grade por role fica logo abaixo, para a exceção que vem depois, e vale por cima do
+ * lote, na ordem em que foi aplicada.
+ *
+ * A faixa do template continua escrita ao lado de cada role, mas como **sugestão**: ela orienta e
+ * não recusa mais nada (revisão da F6-8 na TASK-072). O que ainda recusa é o teto do sistema.
  */
 function RoleValues({ event, open, onChanged }: { event: EventDto; open: boolean; onChanged: (dto: EventAttendanceDto) => void }) {
   return (
-    <div className="grid gap-2 sm:grid-cols-2">
-      {event.roles.map((role) => (
-        <RoleValueField key={role.id} eventId={event.id} role={role} open={open} onChanged={onChanged} />
-      ))}
+    <div className="space-y-2">
+      {open && event.roles.length > 1 && <AllRolesField eventId={event.id} roles={event.roles} onChanged={onChanged} />}
+      {/* A `key` leva o valor: depois do lote o evento é relido e cada campo volta a mostrar o que o servidor tem. */}
+      <div className="grid gap-2 sm:grid-cols-2">
+        {event.roles.map((role) => (
+          <RoleValueField key={`${role.id}:${role.buffunfaValue}`} eventId={event.id} role={role} open={open} onChanged={onChanged} />
+        ))}
+      </div>
     </div>
   );
 }
 
+/**
+ * Ajuste em lote. Nasce vazio, e não com o valor de alguma role, de propósito: preencher sozinho
+ * daria a impressão de que já está aplicado a todas, quando o que está na tela é o valor de uma.
+ */
+function AllRolesField({ eventId, roles, onChanged }: { eventId: string; roles: readonly EventRoleSlotDto[]; onChanged: (dto: EventAttendanceDto) => void }) {
+  const fieldId = useId();
+  const [text, setText] = useState("");
+  const [busy, setBusy] = useState(false);
+  const check = text.trim() === "" ? null : checkRoleValue(text);
+
+  async function save() {
+    if (!check?.ok) return;
+    setBusy(true);
+    try {
+      onChanged(await attendanceApi.setAllRolesBuffunfa(eventId, check.value));
+      setText("");
+      toast.success(`${roles.length} roles a ${check.value} de Buffunfa`, { description: "Dá para ajustar uma role específica por cima disso, logo abaixo." });
+    } catch (e) {
+      toast.error(errorText(e, "Não foi possível aplicar o valor a todas as roles."));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <form
+      className="flex flex-wrap items-end justify-between gap-3 rounded-xl border border-brand/40 bg-brand/5 px-3 py-2.5"
+      onSubmit={(e) => {
+        e.preventDefault();
+        void save();
+      }}
+    >
+      <div className="min-w-0">
+        <Label htmlFor={fieldId} className="flex items-center gap-1.5">
+          <Layers className="size-3.5 text-brand" aria-hidden />
+          Todas as roles
+        </Label>
+        <p className="mt-0.5 text-xs text-muted-foreground">Mesmo valor para as {roles.length} roles do evento, de uma vez.</p>
+      </div>
+      <div className="flex items-end gap-2">
+        <Input
+          id={fieldId}
+          inputMode="numeric"
+          placeholder="25"
+          aria-label="Buffunfa por presença em todas as roles"
+          aria-invalid={check ? !check.ok : undefined}
+          value={text}
+          onChange={(e) => setText(e.target.value)}
+          className="num w-20 text-right"
+        />
+        <Button type="submit" size="sm" disabled={busy || !check?.ok}>
+          <Check />
+          Aplicar a todas
+        </Button>
+      </div>
+      {check && !check.ok && (
+        <p role="alert" className="w-full text-xs text-destructive">
+          {check.error}
+        </p>
+      )}
+    </form>
+  );
+}
+
+/**
+ * Valor de **uma** role, por cima do lote (AC#2). O campo aceita qualquer inteiro até o teto do
+ * sistema, inclusive em evento cujo template veio com faixa 0 a 0 (F6-51) — é o caso que antes
+ * travava o campo e deixava o evento sem pagar nada (AC#6).
+ */
 function RoleValueField({
   eventId,
   role,
@@ -188,9 +265,8 @@ function RoleValueField({
   /** Último valor que o servidor aceitou. Evita o botão "Aplicar" continuar aceso depois de aplicar. */
   const [applied, setApplied] = useState(role.buffunfaValue);
   const [busy, setBusy] = useState(false);
-  const check = checkRoleValue(text, role);
+  const check = checkRoleValue(text);
   const dirty = !check.ok || check.value !== BigInt(applied);
-  const fixed = role.buffunfaMin === role.buffunfaMax;
 
   async function save() {
     if (!check.ok) return;
@@ -214,7 +290,7 @@ function RoleValueField({
         </Label>
         <p className="num mt-0.5 text-xs text-muted-foreground">{roleRangeText(role)}</p>
       </div>
-      {open && !fixed ? (
+      {open ? (
         <form
           className="flex items-end gap-2"
           onSubmit={(e) => {
