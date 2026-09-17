@@ -11,8 +11,11 @@ import { CURRENCIES, type Currency } from "./currency.js";
  *
  * `entry_fee` é o contrário: nasce na TASK-058 **com** consumidor, porque a taxa de entrada é débito
  * imediato — cobrada na inscrição (F6-13) e devolvida por estorno quando é devolvida (F6-14).
+ *
+ * `event_attendance` é o ganho de Buffunfa por comparecimento (TASK-057, F6-10): a primeira fonte da
+ * moeda, com origem `event` — o evento é que paga, não o split.
  */
-export const LEDGER_ENTRY_KINDS = ["split_payout", "split_fee", "withdrawal", "reversal", "adjustment", "purchase", "entry_fee"] as const;
+export const LEDGER_ENTRY_KINDS = ["split_payout", "split_fee", "withdrawal", "reversal", "adjustment", "purchase", "entry_fee", "event_attendance"] as const;
 
 export type LedgerEntryKind = (typeof LEDGER_ENTRY_KINDS)[number];
 
@@ -33,6 +36,7 @@ export const LEDGER_ENTRY_KIND_LABELS: Record<LedgerEntryKind, string> = {
   adjustment: "Ajuste",
   purchase: "Compra na loja",
   entry_fee: "Taxa de entrada",
+  event_attendance: "Presença em evento",
 };
 
 /**

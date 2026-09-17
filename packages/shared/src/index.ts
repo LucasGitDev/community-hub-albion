@@ -16,5 +16,6 @@ export * from "./ledger.js";
 export * from "./withdrawals.js";
 export * from "./shop.js";
 export * from "./loot-split.js";
+export * from "./event-attendance.js";
 export * from "./ban.js";
 export * from "./guild-cleanup.js";
