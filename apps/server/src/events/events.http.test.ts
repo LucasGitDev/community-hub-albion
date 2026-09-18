@@ -8,6 +8,7 @@ import request from "supertest";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { AppModule, configureApp } from "../app.module.js";
 import { parseEnv } from "../config/env.js";
+import { FakeTimelinePublisher } from "../timeline/fake-timeline.publisher.js";
 import { EVENTS_CLOCK, EventSignupsCloseService } from "./events-signups-close.service.js";
 import { EventsService, type EventTransitionEvent } from "./events.service.js";
 
@@ -15,6 +16,7 @@ const baseUrl = process.env.TEST_DATABASE_URL ?? process.env.DATABASE_URL;
 if (!baseUrl && process.env.CI) throw new Error("CI sem TEST_DATABASE_URL: testes HTTP de eventos não podem ser pulados");
 
 const PUBLIC_URL = "http://localhost:3000";
+const timeline = new FakeTimelinePublisher();
 const MISSING = "00000000-0000-4000-8000-000000000000";
 
 describe.skipIf(!baseUrl)("eventos e máquina de estados HTTP (TASK-021, Q9/Q21/Q26)", () => {
@@ -54,7 +56,7 @@ describe.skipIf(!baseUrl)("eventos e máquina de estados HTTP (TASK-021, Q9/Q21/
       PUBLIC_URL,
     });
     if (!parsed.ok) throw new Error(parsed.message);
-    const moduleRef = await Test.createTestingModule({ imports: [AppModule.register(parsed.env, { bot: false })] })
+    const moduleRef = await Test.createTestingModule({ imports: [AppModule.register(parsed.env, { bot: false, timeline })] })
       .overrideProvider(EVENTS_CLOCK)
       .useValue(() => now)
       .compile();
@@ -354,6 +356,78 @@ describe.skipIf(!baseUrl)("eventos e máquina de estados HTTP (TASK-021, Q9/Q21/
     } finally {
       unsubscribe();
     }
+  });
+
+  describe("timeline (TASK-077)", () => {
+    const callerActor = () => ({ kind: "user", userId: callerId, name: "u002", discordId: "720000000000000002" });
+
+    it("criação e cada transição do ciclo publicam uma linha, com ator e ID do evento", async () => {
+      timeline.clear();
+      const event = await createdBy(caller, { name: "Linha do tempo", startsAt: "2026-10-01T23:00:00.000Z" });
+      expect(timeline.only("event.created")).toEqual({
+        action: "event.created",
+        summary: "Evento criado: Linha do tempo",
+        actor: callerActor(),
+        recordId: event.id,
+        details: [
+          { name: "Template", value: "Roads" },
+          { name: "Início", value: "2026-10-01T23:00:00.000Z" },
+        ],
+      });
+      for (const step of ["open", "close", "start", "finish", "archive"] as const) expect((await go(caller, event.id, step)).status, step).toBe(200);
+      expect(timeline.actions()).toEqual(["event.created", "event.opened", "event.signups_closed", "event.started", "event.finished", "event.archived"]);
+      expect(timeline.only("event.started")).toEqual({
+        action: "event.started",
+        summary: "Evento iniciado: Linha do tempo",
+        actor: callerActor(),
+        recordId: event.id,
+        details: [{ name: "Estado", value: "closed → running" }],
+      });
+      expect(timeline.only("event.archived")).toMatchObject({ summary: "Evento arquivado: Linha do tempo", details: [{ name: "Estado", value: "finished → archived" }] });
+    });
+
+    it("cancelamento publica o motivo; staff aparece como ator", async () => {
+      const event = await createdBy(caller, { name: "Vai cair" });
+      timeline.clear();
+      expect((await go(staff, event.id, "cancel", { reason: "chuva de gank" })).status).toBe(200);
+      expect(timeline.only("event.cancelled")).toMatchObject({
+        summary: "Evento cancelado: Vai cair",
+        actor: { kind: "user", name: "u001", discordId: "720000000000000001" },
+        recordId: event.id,
+        details: [
+          { name: "Estado", value: "draft → cancelled" },
+          { name: "Motivo", value: "chuva de gank" },
+        ],
+      });
+    });
+
+    it("transição recusada, criação recusada e sem permissão não publicam nada", async () => {
+      const event = await createdBy(caller, { name: "Recusas" });
+      timeline.clear();
+      expect((await go(caller, event.id, "finish")).status).toBe(409);
+      expect((await go(member, event.id, "open")).status).toBe(403);
+      expect((await create(caller, { templateId: MISSING, name: "Sem template" })).status).not.toBe(201);
+      expect(timeline.entries).toEqual([]);
+    });
+
+    it("fechamento automático publica com o job como ator e a lista (vazia) de inscritos", async () => {
+      const auto = await createdBy(caller, { name: "Fecha no horário", signupsCloseAt: "2026-10-01T21:00:00.000Z" });
+      expect((await go(caller, auto.id, "open")).status).toBe(200);
+      timeline.clear();
+      await app.get(EventSignupsCloseService).sweep();
+      expect(timeline.only("event.signups_closed")).toEqual({
+        action: "event.signups_closed",
+        summary: "Inscrições fechadas: Fecha no horário",
+        actor: { kind: "system", name: "Fechamento automático" },
+        recordId: auto.id,
+        details: [
+          { name: "Estado", value: "open → closed" },
+          { name: "Confirmados", value: "0" },
+          { name: "Na espera", value: "0" },
+        ],
+        list: { title: "Inscritos", items: [] },
+      });
+    });
   });
 
   describe("arquivamento (TASK-044, Q26 revisada)", () => {
