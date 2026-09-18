@@ -1,47 +1,41 @@
 ---
 id: TASK-074
 title: 'Indicação declarada pelo indicado, no registro ou por comando'
-status: To Do
-assignee: []
+status: In Progress
+assignee:
+  - '@claude'
 created_date: '2026-09-17 22:17'
-updated_date: '2026-09-17 22:22'
+updated_date: '2026-09-17 23:01'
 labels: []
 milestone: m-11
 dependencies: []
-priority: high
+priority: medium
 type: feature
-ordinal: 7015
+ordinal: 8100
 ---
 
 ## Description
 
 <!-- SECTION:DESCRIPTION:BEGIN -->
-Parte da F11, com o desenho definido pelo usuário em 2026-09-17: **sem link de convite**.
+Parte da F11, com o desenho revisto pelo usuário em 2026-09-17: **sem link de convite**. O indicado declara quem o indicou, por dois caminhos que gravam a mesma coisa — campo opcional no comando de registro de nick, e um comando próprio para quem já se registrou e esqueceu.
 
-Cada usuário tem um campo dizendo quem o indicou. Preenchido uma vez, nunca troca. Dois caminhos gravam esse mesmo campo: uma opção no comando de registro de nick, e um comando próprio para quem já se registrou. Como o campo é do usuário e não da sessão de entrada, **indicação retroativa é o caso normal, não exceção** — não existe prazo para declarar.
+O link único saiu porque obriga o jogador novo a chegar por um caminho específico; quem entra pelo convite normal do servidor perde a atribuição. Declarar é o gesto que a pessoa já está fazendo de qualquer jeito, e não cria tela no site — atrito para o jogador comum.
 
-O link único saiu porque obriga o jogador novo a chegar por um caminho específico. Quem entra pelo convite normal do servidor — a maioria — nunca passa pelo link, e a indicação deixa de existir mesmo tendo acontecido. Declarar registra o que de fato ocorreu, e não cria tela nenhuma no site: atrito para o jogador comum.
+A troca tem um custo a tratar: a chave passa a ser digitada, não clicada. Nick que não existe, nick de quem saiu da guilda, e autoindicação viram casos de verdade em vez de impossíveis por construção.
 
-O custo da troca, que os critérios cobrem: a chave passa a ser **digitada**, não clicada. Nick que não existe, autoindicação e indicador que já saiu viram casos reais em vez de impossíveis por construção.
-
-**Por que dá para fazer agora:** a única dependência era a moeda existir, e a Buffunfa entrou na F6. O giveaway continua sendo a outra metade da F11, em task própria.
+Escopo: só a indicação. O giveaway é a outra metade da F11 e vai em task própria.
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 O usuário tem um campo de quem o indicou, gravado uma vez e imutável depois
-- [ ] #2 O comando de registro aceita, opcionalmente, quem indicou; registrar sem isso continua funcionando igual
-- [ ] #3 Existe comando próprio para declarar quem indicou depois do registro, sem prazo para usar
-- [ ] #4 Segunda tentativa de declarar é recusada, dizendo quem já está gravado
-- [ ] #5 Autoindicação é recusada
-- [ ] #6 Indicar quem não tem conta no painel é recusado com mensagem que diz o que fazer
-- [ ] #7 O bônus é creditado quando a declaração e o nick aprovado do indicado existirem: o que acontecer por último dispara o pagamento
-- [ ] #8 Declaração retroativa de quem já tem nick aprovado paga na hora
-- [ ] #9 A partir da décima primeira indicação recompensada no mês, a indicação é registrada sem pagar
-- [ ] #10 Indicador banido ou que saiu do servidor não recebe; a indicação fica registrada
-- [ ] #11 A staff enxerga as indicações de um membro e consegue estornar uma paga por engano
-- [ ] #12 O indicador recebe 10 BUF e o indicado recebe 2 BUF, no mesmo evento de pagamento
-- [ ] #13 O teto mensal vale para o indicador; o indicado recebe os 2 BUF dele mesmo quando o indicador já estourou o teto
+- [ ] #1 O comando de registro aceita, opcionalmente, quem indicou; registrar sem isso continua funcionando igual
+- [ ] #2 Existe comando próprio para declarar quem indicou depois do registro
+- [ ] #3 Cada pessoa declara indicador uma vez só: a segunda tentativa é recusada com o que já está gravado
+- [ ] #4 Autoindicação é recusada
+- [ ] #5 Indicar quem não tem conta no painel é recusado com mensagem que diz o que fazer
+- [ ] #6 O bônus é creditado ao indicador quando o nick do indicado é aprovado, não no instante da declaração
+- [ ] #7 A partir da décima primeira indicação recompensada no mês, a indicação é registrada sem pagar
+- [ ] #8 A staff enxerga as indicações de um membro e consegue estornar uma paga por engano
 <!-- AC:END -->
 
 ## Definition of Done
@@ -55,3 +49,15 @@ O custo da troca, que os critérios cobrem: a chave passa a ser **digitada**, n�
 - [ ] #7 Notas e final summary com evidências; commits Conventional atômicos sem co-autor
 - [ ] #8 PR merged na main com quality gate verde; branch e worktree removidos
 <!-- DOD:END -->
+
+## Implementation Plan
+
+<!-- SECTION:PLAN:BEGIN -->
+Retomada (o que FALTA; db/shared/serviço/bot já escritos no resgate 3695d74):
+1. Conferir compilação do que existe: build do shared, typecheck do db e do server; nick controller do painel (POST /api/me/nick) continua chamando register() e não muda.
+2. Painel (AC#8): apps/web/src/api/referrals.ts + MemberReferralsDialog (quem indicou este membro, quem ele indicou, teto do mês, estorno com motivo) e botão na linha de /admin/membros gated por ability.can('read','Referral'); estorno só com can('reverse','Referral'). O MemberLedgerDialog fica como está — ele é declaradamente só leitura.
+3. Testes de banco (referral-repo.test.ts): duas declarações simultâneas (uma grava), declaração no instante da aprovação (um pagamento só), 11ª do mês (indicado recebe, indicador não), indicador banido/fora, e UPDATE direto trocando referred_by falhando NO BANCO pela trigger.
+4. Testes de serviço/bot: recusas (autoindicação, já declarou, indicador sem conta), /registrar sem indicação continua igual, /registrar com indicação declara, /indicacao declara depois.
+5. Testes do controller de estorno (403/motivo obrigatório/estorno dobrado) e e2e do painel com E2E_PORT=4175 + screenshots 1280 e 400.
+6. Commits atômicos (db, shared, server/bot, web, testes), skills task-done-check + emil-design-eng + security-review, pnpm quality completo, PR citando TASK-074.
+<!-- SECTION:PLAN:END -->
