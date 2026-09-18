@@ -1,9 +1,10 @@
 ---
 id: TASK-070
 title: Deploy no Actions leva horas por emular arm64
-status: To Do
+status: Done
 assignee: []
 created_date: '2026-09-17 19:16'
+updated_date: '2026-09-18 13:55'
 labels: []
 milestone: m-12
 dependencies: []
@@ -45,3 +46,9 @@ Enquanto isso não for decidido, o deploy vem sendo feito pelo pipeline local.
 - [ ] #7 Notas e final summary com evidências; commits Conventional atômicos sem co-autor
 - [ ] #8 PR merged na main com quality gate verde; branch e worktree removidos
 <!-- DOD:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+Resolvido com build nativo por arquitetura (ubuntu-latest para amd64, ubuntu-24.04-arm para arm64), cada um publicando por digest, e um job final montando o manifest multi-arch. Primeira run na main (#90): sucesso em 2min22s, contra horas de emulação QEMU e a falha por SIGILL (exit 132) da run #89.
+<!-- SECTION:NOTES:END -->

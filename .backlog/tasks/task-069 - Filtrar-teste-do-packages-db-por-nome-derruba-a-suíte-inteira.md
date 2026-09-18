@@ -1,11 +1,11 @@
 ---
 id: TASK-069
 title: Filtrar teste do packages/db por nome derruba a suíte inteira
-status: In Progress
+status: Done
 assignee:
   - '@claude'
 created_date: '2026-09-17 17:53'
-updated_date: '2026-09-18 13:50'
+updated_date: '2026-09-18 13:55'
 labels: []
 milestone: m-12
 dependencies: []
