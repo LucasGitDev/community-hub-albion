@@ -1,10 +1,11 @@
 ---
 id: TASK-069
 title: Filtrar teste do packages/db por nome derruba a suíte inteira
-status: To Do
-assignee: []
+status: In Progress
+assignee:
+  - '@claude'
 created_date: '2026-09-17 17:53'
-updated_date: '2026-09-17 23:05'
+updated_date: '2026-09-18 13:46'
 labels: []
 milestone: m-12
 dependencies: []
@@ -42,6 +43,16 @@ Relacionado, do mesmo achado: os testes de integração não isolam nomes por ex
 - [ ] #7 Notas e final summary com evidências; commits Conventional atômicos sem co-autor
 - [ ] #8 PR merged na main com quality gate verde; branch e worktree removidos
 <!-- DOD:END -->
+
+## Implementation Plan
+
+<!-- SECTION:PLAN:BEGIN -->
+1. Diagnóstico: só packages/db/src/db.integration.test.ts aplica migrations dentro do 1º it(); os outros 11 arquivos do db e todos os testes de banco do apps/server já migram no beforeAll (conferido).
+2. RED: vitest -t com testes do meio do db.integration (dois describes diferentes) falha com relation does not exist.
+3. Mover runMigrations para o beforeAll após recriar o schema; o 1º teste passa a provar só a idempotência (continua do zero, pois o beforeAll parte de schema vazio).
+4. GREEN com os mesmos comandos; comparar tempo da suíte do db antes/depois.
+5. task-done-check, pnpm quality, PR com a prova.
+<!-- SECTION:PLAN:END -->
 
 ## Implementation Notes
 
