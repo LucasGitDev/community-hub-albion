@@ -9,11 +9,13 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { AppModule, configureApp } from "../app.module.js";
 import { EventSignupsService } from "./event-signups.service.js";
 import { parseEnv } from "../config/env.js";
+import { FakeTimelinePublisher } from "../timeline/fake-timeline.publisher.js";
 
 const baseUrl = process.env.TEST_DATABASE_URL ?? process.env.DATABASE_URL;
 if (!baseUrl && process.env.CI) throw new Error("CI sem TEST_DATABASE_URL: testes HTTP de inscrição não podem ser pulados");
 
 const PUBLIC_URL = "http://localhost:3000";
+const timeline = new FakeTimelinePublisher();
 const MISSING = "00000000-0000-4000-8000-000000000000";
 
 describe.skipIf(!baseUrl)("inscrição em evento HTTP (TASK-022, Q27)", () => {
@@ -54,7 +56,7 @@ describe.skipIf(!baseUrl)("inscrição em evento HTTP (TASK-022, Q27)", () => {
       PUBLIC_URL,
     });
     if (!parsed.ok) throw new Error(parsed.message);
-    const moduleRef = await Test.createTestingModule({ imports: [AppModule.register(parsed.env, { bot: false })] }).compile();
+    const moduleRef = await Test.createTestingModule({ imports: [AppModule.register(parsed.env, { bot: false, timeline })] }).compile();
     app = configureApp(moduleRef.createNestApplication({ logger: false }));
     await app.listen(0, "127.0.0.1");
     [caller, staff, membro, outro, terceiro] = await Promise.all([
@@ -230,6 +232,38 @@ describe.skipIf(!baseUrl)("inscrição em evento HTTP (TASK-022, Q27)", () => {
     const active = (await list(membro, event.id)).filter((s) => s.status !== "cancelled");
     expect(active).toHaveLength(1);
     expect(active[0]).toMatchObject({ userId: membroId, roleName: "Healer" });
+  });
+
+  it("timeline: entrar, trocar, sair e mover não publicam; fechar publica a lista com role e posição (TASK-077, T8)", async () => {
+    const { event, tank, healer } = await openEvent("Lista na timeline");
+    timeline.clear();
+    expect((await join(membro, event.id, tank.id)).status).toBe(200);
+    expect((await join(outro, event.id, tank.id)).body).toMatchObject({ status: "waitlist", position: 1 });
+    expect((await join(terceiro, event.id, tank.id)).body).toMatchObject({ status: "waitlist", position: 2 });
+    expect((await join(terceiro, event.id, healer.id)).status).toBe(200);
+    expect((await leave(terceiro, event.id)).status).toBe(200);
+    expect((await join(terceiro, event.id, healer.id)).status).toBe(200);
+    expect((await send("patch", `/api/events/${event.id}/signups/${terceiroId}`, caller, { target: "waitlist" })).status).toBe(200);
+    expect((await send("patch", `/api/events/${event.id}/signups/${terceiroId}`, caller, { target: "role", slotId: healer.id })).status).toBe(200);
+    // Nenhuma inscrição individual aparece (T8).
+    expect(timeline.entries).toEqual([]);
+
+    expect((await send("post", `/api/events/${event.id}/transitions/close`, caller)).status).toBe(200);
+    expect(timeline.only("event.signups_closed")).toEqual({
+      action: "event.signups_closed",
+      summary: "Inscrições fechadas: Lista na timeline",
+      actor: { kind: "user", userId: expect.any(String), name: "u001", discordId: "740000000000000001" },
+      recordId: event.id,
+      details: [
+        { name: "Estado", value: "open → closed" },
+        { name: "Confirmados", value: "2" },
+        { name: "Na espera", value: "1" },
+      ],
+      list: { title: "Inscritos", items: expect.arrayContaining(["u003 · Tank · confirmado", "u005 · Healer · confirmado", "u004 · Tank · espera 1"]) },
+    });
+    expect(timeline.only("event.signups_closed").list!.items).toHaveLength(3);
+    // Confirmados antes da espera.
+    expect(timeline.only("event.signups_closed").list!.items.at(-1)).toBe("u004 · Tank · espera 1");
   });
 
   it("inscrição recusada com 409 quando o evento não está open (AC#5)", async () => {
