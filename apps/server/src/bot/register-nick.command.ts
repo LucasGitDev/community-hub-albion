@@ -1,7 +1,9 @@
 import { Inject, Injectable, Logger } from "@nestjs/common";
 import { MessageFlags } from "discord.js";
 import { Context, Options, SlashCommand, StringOption } from "necord";
+import { buildReferralReply, NICK_MAX_LENGTH, NICK_MIN_LENGTH, REFERRAL_COMMAND } from "@albion-hub/shared";
 import { buildRegisterReply, isConfiguredGuild, REGISTER_COMMAND, REGISTER_REPLIES } from "../domain/register-nick.js";
+import { ReferralService } from "../members/referral.service.js";
 import { NickRegistrationService, toRegisterOutcome } from "../members/nick-registration.service.js";
 import { DISCORD_GUILD_ID } from "./discord-guild.gateway.js";
 
@@ -14,6 +16,19 @@ export class RegisterNickOptions {
     max_length: REGISTER_COMMAND.option.maxLength,
   })
   nick!: string;
+
+  /**
+   * Quem indicou (TASK-074, AC#1): **opcional**. Registrar sem isso continua exatamente igual — quem não
+   * preencher declara depois com `/indicacao`, sem prazo, porque o campo do usuário nunca fecha.
+   */
+  @StringOption({
+    name: REFERRAL_COMMAND.option.name,
+    description: REFERRAL_COMMAND.option.description,
+    required: false,
+    min_length: NICK_MIN_LENGTH,
+    max_length: NICK_MAX_LENGTH,
+  })
+  indicado_por?: string;
 }
 
 /** Subconjunto de ChatInputCommandInteraction usado aqui (testes simulam). */
@@ -35,11 +50,12 @@ export class RegisterNickCommand {
 
   constructor(
     private readonly registration: NickRegistrationService,
+    private readonly referrals: ReferralService,
     @Inject(DISCORD_GUILD_ID) private readonly guildId: string,
   ) {}
 
   @SlashCommand({ name: REGISTER_COMMAND.name, description: REGISTER_COMMAND.description })
-  async onRegister(@Context() [interaction]: [SlashInteractionLike], @Options() { nick }: RegisterNickOptions): Promise<void> {
+  async onRegister(@Context() [interaction]: [SlashInteractionLike], @Options() { nick, indicado_por: referrerNick }: RegisterNickOptions): Promise<void> {
     if (!isConfiguredGuild(interaction.guildId, this.guildId)) {
       await this.respond(interaction, REGISTER_REPLIES.wrongGuild, false);
       return;
@@ -50,11 +66,15 @@ export class RegisterNickCommand {
       await interaction.deferReply({ flags: MessageFlags.Ephemeral });
       deferred = true;
       const { user } = interaction;
-      const result = await this.registration.registerFromDiscord(
+      const { result, userId } = await this.registration.registerFromDiscord(
         { discordId: user.id, discordUsername: user.username, displayName: user.globalName, avatar: user.avatar },
         nick,
       );
-      await interaction.editReply({ content: buildRegisterReply(toRegisterOutcome(result)) });
+      let content = buildRegisterReply(toRegisterOutcome(result));
+      // A indicação é um segundo gesto na mesma interação, e opcional: quem não preenche registra igual
+      // (AC#1). Ela vem depois de propósito — o registro já está gravado, e uma recusa aqui não o desfaz.
+      if (referrerNick !== undefined && userId) content += `\n\n${buildReferralReply(await this.referrals.declare(userId, referrerNick))}`;
+      await interaction.editReply({ content });
     } catch (error) {
       this.logger.error(`/registrar de ${interaction.user.id} falhou: ${String(error)}`);
       await this.respond(interaction, REGISTER_REPLIES.failed, deferred);

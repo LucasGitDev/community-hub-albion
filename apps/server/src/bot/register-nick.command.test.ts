@@ -13,6 +13,7 @@ import { parseEnv } from "../config/env.js";
 import { ALBION_PLAYER_LOOKUP } from "../members/albion-lookup.token.js";
 import { NickRegistrationService } from "../members/nick-registration.service.js";
 import { NickRequestService, type NickRequestedEvent } from "../members/nick-request.service.js";
+import { ReferralService } from "../members/referral.service.js";
 import { RegisterNickCommand, type SlashInteractionLike } from "./register-nick.command.js";
 
 const baseUrl = process.env.TEST_DATABASE_URL ?? process.env.DATABASE_URL;
@@ -42,6 +43,9 @@ describe("/registrar metadados Necord (TASK-035)", () => {
     expect(JSON.parse(JSON.stringify(new Reflector().get(SlashCommand, handler)))).toMatchObject({ name: "registrar", description: expect.stringContaining("nick") });
     expect(Reflect.getMetadata("necord:options_meta", handler)).toEqual({
       nick: expect.objectContaining({ name: "nick", required: true, min_length: 3, max_length: 16, resolver: "getString" }),
+      // Quem indicou entra aqui como **opcional** (TASK-074, AC#2): o `required: false` é o que
+      // garante que registrar sem informar indicação continua sendo o mesmo comando de antes.
+      indicado_por: expect.objectContaining({ name: "indicado_por", required: false, resolver: "getString" }),
     });
   });
 });
@@ -86,7 +90,7 @@ describe.skipIf(!baseUrl)("/registrar nick pelo Discord (TASK-035, Postgres real
     await app.listen(0, "127.0.0.1");
     // Hook do embed da staff (TASK-015) assina o mesmo serviço: aqui um listener registra o disparo.
     app.get(NickRequestService).onRequested((e) => void events.push(e));
-    command = new RegisterNickCommand(app.get(NickRegistrationService), GUILD);
+    command = new RegisterNickCommand(app.get(NickRegistrationService), app.get(ReferralService), GUILD);
   }, 60_000);
 
   afterAll(async () => {
@@ -168,7 +172,7 @@ describe.skipIf(!baseUrl)("/registrar nick pelo Discord (TASK-035, Postgres real
   });
 
   it("erro inesperado: loga e responde efêmero sem vazar detalhe; falha ao responder não lança", async () => {
-    const broken = new RegisterNickCommand({ registerFromDiscord: () => Promise.reject(new Error("db down")) } as never, GUILD);
+    const broken = new RegisterNickCommand({ registerFromDiscord: () => Promise.reject(new Error("db down")) } as never, {} as never, GUILD);
     const log = vi.spyOn((broken as unknown as { logger: { error: (m: string) => void } }).logger, "error").mockImplementation(() => {});
     const fake = fakeInteraction("700000000000000006");
     await broken.onRegister([fake.interaction], { nick: "Qualquer" });
