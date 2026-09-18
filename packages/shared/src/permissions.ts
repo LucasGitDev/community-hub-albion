@@ -25,7 +25,9 @@ export type Action =
   /** Banir e desbanir jogador (TASK-050): corta o acesso na hora, sem apagar a conta. */
   | "ban"
   /** Entregar o pedido da loja (`shop:fulfill`, F6-25). A entrega em si é a TASK-060. */
-  | "fulfill";
+  | "fulfill"
+  /** Estornar os lançamentos de uma indicação paga por engano (TASK-074). Estorno, nunca edição. */
+  | "reverse";
 
 /** Campos de dono por tipo de recurso (condições das regras). */
 interface SubjectFields {
@@ -48,6 +50,11 @@ interface SubjectFields {
   ShopItem: Record<never, never>;
   /** Pedido da loja. O dono é quem comprou: o membro lê o próprio, a staff lê e entrega qualquer um. */
   ShopOrder: { userId: string };
+  /**
+   * Indicação declarada (TASK-074). Subject próprio porque ler quem indicou quem, e estornar um bônus
+   * pago por engano, não é "editar ficha de membro" nem "mexer em papel" — é dinheiro.
+   */
+  Referral: Record<never, never>;
 }
 
 export type SubjectType = keyof SubjectFields | "all";
@@ -114,6 +121,8 @@ export function defineAbilityFor(user: AbilityUser): AppAbility {
     // `fulfill` é pegar, entregar, recusar e estornar; `cancel` é encerrar o pedido pelo membro depois de
     // `claimed`, quando ele já não pode mais (F6-24).
     can(["read", "fulfill", "cancel"], "ShopOrder");
+    // Indicações (TASK-074, AC#8): a staff enxerga as de um membro e estorna uma paga por engano.
+    can(["read", "reverse"], "Referral");
   }
 
   if (roles.has("admin")) {
