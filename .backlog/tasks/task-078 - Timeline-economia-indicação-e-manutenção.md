@@ -1,9 +1,11 @@
 ---
 id: TASK-078
 title: 'Timeline: economia, indicação e manutenção'
-status: To Do
-assignee: []
+status: In Progress
+assignee:
+  - '@claude'
 created_date: '2026-09-18 03:22'
+updated_date: '2026-09-18 03:37'
 labels: []
 milestone: m-12
 dependencies:
@@ -43,3 +45,16 @@ As rotas de manutenção aparecem **sempre**, com o ator "manutenção" (T9): el
 - [ ] #8 Notas e final summary com evidências; commits Conventional atômicos sem co-autor
 - [ ] #9 PR merged na main com quality gate verde; branch e worktree removidos
 <!-- DOD:END -->
+
+## Implementation Plan
+
+<!-- SECTION:PLAN:BEGIN -->
+1. Repo: listTimelinePeople (nick + discordId por id) para ator/alvo sem SQL no serviço.
+2. Helper server publishAfterCommit: monta o registro depois do commit, engole e loga erro de lookup (falha nunca derruba a operação).
+3. Economia: WithdrawalService (pedido, aprovado, recusado, entregue), LootSplitService (confirmado + estornado, consolidado em list), EventAttendanceService (Buffunfa por presença, consolidado em list).
+4. Taxa de entrada: EventSignupsService (cobrada no join, devolvida no leave); devolução em lote no cancelamento/início por listener de transição no módulo de economia, lendo os estornos do evento (sem tocar events.service da TASK-077).
+5. Indicação: ReferralService (declarada, paga com os dois lados, estornada).
+6. Manutenção: controller publica ajuste de prata/Buffunfa, revalidação e limpeza com ator manutenção e motivo em details; nada do token.
+7. Testes com FakeTimelinePublisher nos http tests (AppModule.register timeline: fake), incluindo recusa sem publicação.
+8. security-review, task-done-check, pnpm quality, PR.
+<!-- SECTION:PLAN:END -->
