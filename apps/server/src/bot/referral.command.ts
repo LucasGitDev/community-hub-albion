@@ -1,26 +1,31 @@
 import { Inject, Injectable, Logger } from "@nestjs/common";
 import { MessageFlags } from "discord.js";
-import { Context, Options, SlashCommand, StringOption } from "necord";
-import { buildReferralReply, NICK_MAX_LENGTH, NICK_MIN_LENGTH, REFERRAL_COMMAND } from "@albion-hub/shared";
+import { Context, Options, SlashCommand, UserOption } from "necord";
+import { buildReferralReply, REFERRAL_COMMAND } from "@albion-hub/shared";
 import { AccountService } from "../members/account.service.js";
 import { ReferralService } from "../members/referral.service.js";
 import { isConfiguredGuild, REGISTER_REPLIES } from "../domain/register-nick.js";
 import { DISCORD_GUILD_ID } from "./discord-guild.gateway.js";
 import type { SlashInteractionLike } from "./register-nick.command.js";
 
+/** O que o seletor de membros entrega: só o que a indicação usa (testes simulam). */
+export interface ReferrerPick {
+  id: string;
+  username: string;
+  globalName: string | null;
+}
+
 export class ReferralOptions {
-  @StringOption({
-    name: REFERRAL_COMMAND.option.name,
-    description: REFERRAL_COMMAND.option.description,
-    required: true,
-    min_length: NICK_MIN_LENGTH,
-    max_length: NICK_MAX_LENGTH,
-  })
-  indicado_por!: string;
+  /**
+   * Opção do tipo **usuário** (TASK-075): digitar @ abre o seletor de membros do Discord, e o indicador
+   * chega como ID — sem grafia para errar, que era o ponto fraco do nick digitado.
+   */
+  @UserOption({ name: REFERRAL_COMMAND.option.name, description: REFERRAL_COMMAND.option.description, required: true })
+  indicado_por!: ReferrerPick;
 }
 
 /**
- * `/indicacao indicado_por:<nick>` (TASK-074, AC#2): o caminho de quem já se registrou e esqueceu de
+ * `/indicacao indicado_por:@membro` (TASK-074, AC#2; seletor de membros desde a TASK-075): o caminho de quem já se registrou e esqueceu de
  * dizer quem o trouxe. Existe porque declarar depois é caso normal, não exceção — o campo é do usuário
  * e nunca fecha, então não há prazo para usar este comando.
  *
@@ -54,7 +59,8 @@ export class ReferralCommand {
         displayName: user.globalName,
         avatar: user.avatar,
       });
-      const outcome = await this.referrals.declare(account.id, options.indicado_por);
+      const picked = options.indicado_por;
+      const outcome = await this.referrals.declareByDiscordId(account.id, picked.id, picked.globalName ?? picked.username);
       await interaction.editReply({ content: buildReferralReply(outcome) });
     } catch (error) {
       this.logger.error(`/${REFERRAL_COMMAND.name} de ${interaction.user.id} falhou: ${String(error)}`);

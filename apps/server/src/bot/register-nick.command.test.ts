@@ -45,7 +45,7 @@ describe("/registrar metadados Necord (TASK-035)", () => {
       nick: expect.objectContaining({ name: "nick", required: true, min_length: 3, max_length: 16, resolver: "getString" }),
       // Quem indicou entra aqui como **opcional** (TASK-074, AC#2): o `required: false` é o que
       // garante que registrar sem informar indicação continua sendo o mesmo comando de antes.
-      indicado_por: expect.objectContaining({ name: "indicado_por", required: false, resolver: "getString" }),
+      indicado_por: expect.objectContaining({ name: "indicado_por", required: false, resolver: "getUser" }),
     });
   });
 });
