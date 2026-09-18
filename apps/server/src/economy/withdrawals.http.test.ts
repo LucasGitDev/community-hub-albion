@@ -8,6 +8,7 @@ import request from "supertest";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { AppModule, configureApp } from "../app.module.js";
 import { parseEnv } from "../config/env.js";
+import { FakeTimelinePublisher } from "../timeline/fake-timeline.publisher.js";
 
 const baseUrl = process.env.TEST_DATABASE_URL ?? process.env.DATABASE_URL;
 if (!baseUrl && process.env.CI) throw new Error("CI sem TEST_DATABASE_URL: testes HTTP de saque não podem ser pulados");
@@ -18,6 +19,7 @@ describe.skipIf(!baseUrl)("saque HTTP (TASK-030, Q11/Q12/Q24/Q25)", () => {
   let app: INestApplication;
   let handle: DbHandle;
   let seq = 0;
+  const timeline = new FakeTimelinePublisher();
 
   beforeAll(async () => {
     const target = new URL(baseUrl!);
@@ -44,7 +46,7 @@ describe.skipIf(!baseUrl)("saque HTTP (TASK-030, Q11/Q12/Q24/Q25)", () => {
       PUBLIC_URL,
     });
     if (!parsed.ok) throw new Error(parsed.message);
-    const moduleRef = await Test.createTestingModule({ imports: [AppModule.register(parsed.env, { bot: false })] }).compile();
+    const moduleRef = await Test.createTestingModule({ imports: [AppModule.register(parsed.env, { bot: false, timeline })] }).compile();
     app = configureApp(moduleRef.createNestApplication({ logger: false }));
     await app.listen(0, "127.0.0.1");
   }, 60_000);
@@ -61,7 +63,7 @@ describe.skipIf(!baseUrl)("saque HTTP (TASK-030, Q11/Q12/Q24/Q25)", () => {
     for (const role of roles) await grantRole(handle.db, user.id, role);
     if (silver !== 0n) await insertLedgerEntry(handle.db, { currency: "silver", userId: user.id, amount: silver, kind: "split_payout", memo: "saldo" });
     const { token } = await createSession(handle.db, user.id, new Date(Date.now() + 3_600_000));
-    return { id: user.id, cookie: `ah_session=${token}` };
+    return { id: user.id, discordId, cookie: `ah_session=${token}` };
   }
 
   const server = () => app.getHttpServer();
@@ -288,6 +290,68 @@ describe.skipIf(!baseUrl)("saque HTTP (TASK-030, Q11/Q12/Q24/Q25)", () => {
       expect(atual.body.status).toBe("approved");
       expect(atual.body.decidedByUserId).toBe(a.id);
       expect(atual.body.decisionNote).toBeNull();
+    });
+  });
+
+  /** Timeline (TASK-078): cada passo do saque publica depois do commit; recusa não publica. */
+  describe("timeline do saque (TASK-078)", () => {
+    it("pedido, aprovação e entrega publicam ator, alvo, prata por inteiro e o ID do saque", async () => {
+      timeline.clear();
+      const { member, id } = await pendingOf(2_000_000n, "1234567");
+      const staff = await actor(["member", "staff"]);
+      expect(timeline.only("economy.withdrawal_requested")).toMatchObject({
+        actor: { kind: "user", userId: member.id, discordId: member.discordId },
+        amounts: [{ value: 1_234_567n, currency: "silver" }],
+        recordId: id,
+      });
+      expect(timeline.only("economy.withdrawal_requested").target).toBeUndefined();
+
+      await post(`/api/withdrawals/${id}/approve`, staff.cookie, { note: "conferido" }).expect(200);
+      expect(timeline.only("economy.withdrawal_approved")).toMatchObject({
+        actor: { kind: "user", userId: staff.id, discordId: staff.discordId },
+        target: { id: member.id, discordId: member.discordId },
+        amounts: [{ value: 1_234_567n, currency: "silver" }],
+        recordId: id,
+        details: [{ name: "Nota", value: "conferido" }],
+      });
+
+      await post(`/api/withdrawals/${id}/settle`, staff.cookie, { note: "transferido 21h" }).expect(200);
+      expect(timeline.only("economy.withdrawal_settled")).toMatchObject({
+        actor: { kind: "user", userId: staff.id },
+        target: { id: member.id },
+        amounts: [{ value: 1_234_567n, currency: "silver" }],
+        recordId: id,
+        details: [{ name: "Nota", value: "transferido 21h" }],
+      });
+      expect(timeline.actions()).toEqual(["economy.withdrawal_requested", "economy.withdrawal_approved", "economy.withdrawal_settled"]);
+    });
+
+    it("recusa da staff publica com o motivo", async () => {
+      const { member, id } = await pendingOf(500_000n, "500000");
+      const staff = await actor(["member", "staff"]);
+      timeline.clear();
+      await post(`/api/withdrawals/${id}/reject`, staff.cookie, { note: "valor errado" }).expect(200);
+      expect(timeline.only("economy.withdrawal_rejected")).toMatchObject({
+        actor: { kind: "user", userId: staff.id },
+        target: { id: member.id },
+        amounts: [{ value: 500_000n, currency: "silver" }],
+        recordId: id,
+        details: [{ name: "Motivo", value: "valor errado" }],
+      });
+    });
+
+    it("operação recusada não publica nada", async () => {
+      const { member, id } = await pendingOf(100_000n, "100000");
+      const staff = await actor(["member", "staff"]);
+      timeline.clear();
+      await post("/api/me/withdrawals", member.cookie, { amount: "1" }).expect(409);
+      await post(`/api/withdrawals/${id}/settle`, staff.cookie, { note: "pago" }).expect(409);
+      await post(`/api/withdrawals/${id}/reject`, staff.cookie, {}).expect(400);
+      await post(`/api/withdrawals/${id}/approve`, member.cookie, {}).expect(403);
+      await post(`/api/withdrawals/${id}/approve`, staff.cookie, {}).expect(200);
+      timeline.clear();
+      await post(`/api/withdrawals/${id}/approve`, staff.cookie, {}).expect(409);
+      expect(timeline.entries).toEqual([]);
     });
   });
 });
