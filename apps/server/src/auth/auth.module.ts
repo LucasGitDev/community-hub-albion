@@ -4,6 +4,7 @@ import { AdminMemberProfileController } from "../admin/admin-member-profile.cont
 import { AdminMembersController } from "../admin/admin-members.controller.js";
 import { AdminUsersController } from "../admin/admin-users.controller.js";
 import { MemberBanController } from "../admin/member-ban.controller.js";
+import { ReferralsController } from "../admin/referrals.controller.js";
 import { MemberBanService } from "../members/member-ban.service.js";
 import { MEMBER_IMPORTER, type MemberImporter } from "../members/member-importer.token.js";
 import { AUTH_ENV, AuthController } from "./auth.controller.js";
@@ -24,7 +25,7 @@ export class AuthModule {
     return {
       module: AuthModule,
       // Dev login só existe quando habilitado (env proíbe em produção).
-      controllers: [AuthController, RolesController, AdminUsersController, AdminMembersController, AdminMemberProfileController, MemberBanController, ...(env.AUTH_DEV_LOGIN ? [DevLoginController] : [])],
+      controllers: [AuthController, RolesController, AdminUsersController, AdminMembersController, AdminMemberProfileController, MemberBanController, ReferralsController, ...(env.AUTH_DEV_LOGIN ? [DevLoginController] : [])],
       providers: [
         { provide: AUTH_ENV, useValue: env },
         SessionService,
