@@ -151,9 +151,9 @@ export class ShopController {
   @HttpCode(200)
   @UseGuards(SameOriginGuard)
   @Authorize("manage", "ShopItem")
-  async updateItem(@Param("id") id: string, @Body() body: unknown): Promise<ShopItemDto> {
+  async updateItem(@Param("id") id: string, @Body() body: unknown, @CurrentAuth() auth: Auth): Promise<ShopItemDto> {
     const patch = parseBody(shopItemUpdateSchema, body);
-    const item = await this.shop.update(parseId(id), patch);
+    const item = await this.shop.update(parseId(id), patch, auth.user.id);
     if (!item) throw new NotFoundException("Item não encontrado.");
     return item;
   }
