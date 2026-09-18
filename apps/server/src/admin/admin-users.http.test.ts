@@ -7,11 +7,13 @@ import request from "supertest";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { AppModule, configureApp } from "../app.module.js";
 import { parseEnv } from "../config/env.js";
+import { FakeTimelinePublisher } from "../timeline/fake-timeline.publisher.js";
 
 const baseUrl = process.env.TEST_DATABASE_URL ?? process.env.DATABASE_URL;
 if (!baseUrl && process.env.CI) throw new Error("CI sem TEST_DATABASE_URL: testes de gestão de papéis não podem ser pulados");
 
 const PUBLIC_URL = "http://localhost:3000";
+const timeline = new FakeTimelinePublisher();
 
 describe.skipIf(!baseUrl)("gestão de papéis por admin (TASK-011)", () => {
   let app: INestApplication;
@@ -44,7 +46,7 @@ describe.skipIf(!baseUrl)("gestão de papéis por admin (TASK-011)", () => {
       AUTH_DEV_LOGIN: "true",
     });
     if (!parsed.ok) throw new Error(parsed.message);
-    const moduleRef = await Test.createTestingModule({ imports: [AppModule.register(parsed.env, { bot: false })] }).compile();
+    const moduleRef = await Test.createTestingModule({ imports: [AppModule.register(parsed.env, { bot: false, timeline })] }).compile();
     app = configureApp(moduleRef.createNestApplication({ logger: false }));
     await app.listen(0, "127.0.0.1");
   }, 60_000);
@@ -85,8 +87,20 @@ describe.skipIf(!baseUrl)("gestão de papéis por admin (TASK-011)", () => {
     expect(list.status).toBe(200);
     expect(list.body.users.find((u: { id: string }) => u.id === target.id).roles).toEqual(["member"]);
 
+    timeline.clear();
     const grant = await http().put(`/api/admin/users/${target.id}/roles/caller`).set("Cookie", boss.cookie).set("Origin", PUBLIC_URL);
     expect(grant.status).toBe(204);
+    // Timeline (TASK-077): quem concedeu, para quem e qual papel.
+    expect(timeline.only("account.role_granted")).toEqual({
+      action: "account.role_granted",
+      summary: "Papel concedido: caller para novo-caller",
+      actor: { kind: "user", userId: boss.id, name: "chefe", discordId: "500000000000000010" },
+      target: { name: "novo-caller", id: target.id, discordId: "500000000000000011" },
+      details: [{ name: "Papel", value: "caller" }],
+    });
+    // Conceder de novo não muda nada e não publica de novo.
+    expect((await http().put(`/api/admin/users/${target.id}/roles/caller`).set("Cookie", boss.cookie).set("Origin", PUBLIC_URL)).status).toBe(204);
+    expect(timeline.entries).toHaveLength(1);
     expect(await rolesOf(target.id)).toEqual(["caller", "member"]);
     const [row] = await handle.db.select().from(schema.userRoles).where(eq(schema.userRoles.role, "caller"));
     expect(row!.grantedBy).toBe(boss.id);
@@ -94,6 +108,15 @@ describe.skipIf(!baseUrl)("gestão de papéis por admin (TASK-011)", () => {
     const revoke = await http().delete(`/api/admin/users/${target.id}/roles/caller`).set("Cookie", boss.cookie).set("Origin", PUBLIC_URL);
     expect(revoke.status).toBe(204);
     expect(await rolesOf(target.id)).toEqual(["member"]);
+    expect(timeline.only("account.role_revoked")).toMatchObject({
+      summary: "Papel removido: caller para novo-caller",
+      actor: { kind: "user", userId: boss.id },
+      target: { id: target.id },
+      details: [{ name: "Papel", value: "caller" }],
+    });
+    // Remover o que já não existe não publica.
+    expect((await http().delete(`/api/admin/users/${target.id}/roles/caller`).set("Cookie", boss.cookie).set("Origin", PUBLIC_URL)).status).toBe(204);
+    expect(timeline.entries).toHaveLength(2);
   });
 
   it("valida alvo: member não gerenciável, uuid inválido, usuário inexistente, outra origem", async () => {
@@ -125,8 +148,10 @@ describe.skipIf(!baseUrl)("gestão de papéis por admin (TASK-011)", () => {
     const last = admins[0]!.userId;
     const lastCookie = last === a.id ? a.cookie : b.cookie;
     const self = await http().delete(`/api/admin/users/${last}/roles/admin`).set("Cookie", lastCookie).set("Origin", PUBLIC_URL);
+    timeline.clear();
     expect(self.status).toBe(409);
     expect(self.body.message).toBe("Não é possível remover o último admin.");
+    expect(timeline.entries).toEqual([]);
     await grantRole(handle.db, last, "admin");
   });
 });
