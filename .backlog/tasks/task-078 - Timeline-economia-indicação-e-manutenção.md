@@ -5,7 +5,7 @@ status: In Progress
 assignee:
   - '@claude'
 created_date: '2026-09-18 03:22'
-updated_date: '2026-09-18 03:47'
+updated_date: '2026-09-18 03:50'
 labels: []
 milestone: m-12
 dependencies:
@@ -74,4 +74,6 @@ Evidência por AC:
 Decisões fora do doc-005: (1) estorno de loot split também publica (economy.loot_split_reversed) — T7 cobre tudo que altera dinheiro; (2) devolução em lote no cancel/start sai de um listener pós-commit de transição (EntryFeeTimelineService) que lê os estornos pelo memo, para não tocar events.service/events-repo (área da TASK-077); (3) revalidação de nick pelo painel do admin não publica aqui (conta, TASK-077) — só a porta de manutenção; (4) pagamento da indicação tem ator system 'pagamento da indicação' (quem dispara é a declaração ou a aprovação do nick).
 
 Skills: security-review (sem achado: nenhum header/token entra no registro, nomes passam pelo escape do embed e menções saem com allowed_mentions vazio, nenhuma rota/permissão nova), task-done-check. Sem UI alterada: DoD#4 não se aplica.
+
+Pós-rebase sobre TASK-077: helper próprio (after-commit.ts + listTimelinePeople) removido; a economia usa timeline-people.ts/listTimelineUsers da 077, estendido de forma compatível com actor(null) → system, name() para linhas de lote, build que pode devolver null e logger quebrado engolido. Limpeza por manutenção publica só o disparo (maintenance.cleanup_run); os registros por pessoa (account.left_guild) são da 077.
 <!-- SECTION:NOTES:END -->
