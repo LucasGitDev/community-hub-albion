@@ -18,7 +18,7 @@ import {
 import type { WithdrawalBalanceDto, WithdrawalDto, WithdrawalListQuery } from "@albion-hub/shared";
 import { DB_HANDLE } from "../db/db.module.js";
 import { TIMELINE_PUBLISHER, type TimelineAction, type TimelinePublisher } from "../domain/timeline.js";
-import { loadTimelinePeople, publishAfterCommit } from "../timeline/after-commit.js";
+import { loadTimelinePeople, publishAfterCommit, TIMELINE_LOGGER } from "../timeline/timeline-people.js";
 
 /**
  * Serviço interno único do saque (TASK-030, regra do repo: comando do Discord, painel e botão de embed
@@ -102,7 +102,7 @@ export class WithdrawalService {
    * Recusa não chega aqui. Prata por inteiro, no canal só de admins (T2).
    */
   private publish(action: TimelineAction, withdrawal: WithdrawalDto, actorUserId: string, note: string | null): Promise<void> {
-    return publishAfterCommit(this.timeline, async () => {
+    return publishAfterCommit(this.timeline, TIMELINE_LOGGER, async () => {
       const people = await loadTimelinePeople(this.handle.db, [actorUserId, withdrawal.userId]);
       const owner = people.target(withdrawal.userId);
       return {

@@ -17,7 +17,7 @@ import {
 import { ENTRY_FEE_REFUND_REASONS, type EventMemberDto, type EventOccupancyDto, type EventSignupDto } from "@albion-hub/shared";
 import { DB_HANDLE } from "../db/db.module.js";
 import { TIMELINE_PUBLISHER, type TimelineAction, type TimelinePublisher } from "../domain/timeline.js";
-import { loadTimelinePeople, publishAfterCommit } from "../timeline/after-commit.js";
+import { loadTimelinePeople, publishAfterCommit, TIMELINE_LOGGER } from "../timeline/timeline-people.js";
 import { ListenerSet } from "../members/listener-set.js";
 
 /** Emitido depois que a lista do evento mudou. O embed do Discord assina daqui (TASK-022). */
@@ -104,7 +104,7 @@ export class EventSignupsService {
 
   /** Timeline (TASK-078): taxa de entrada cobrada ou devolvida, depois do commit da inscrição (T5). */
   private publishFee(action: TimelineAction, signup: EventSignupDto, amount: bigint, reason: string | null): Promise<void> {
-    return publishAfterCommit(this.timeline, async () => {
+    return publishAfterCommit(this.timeline, TIMELINE_LOGGER, async () => {
       const [people, event] = await Promise.all([loadTimelinePeople(this.handle.db, [signup.userId]), getEvent(this.handle.db, signup.eventId)]);
       const eventName = event?.name ?? "evento";
       return {
