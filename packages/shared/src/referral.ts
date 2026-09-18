@@ -53,6 +53,8 @@ export type ReferralDeclarationOutcome =
   | { kind: "self" }
   | { kind: "already_declared"; referrerNick: string | null }
   | { kind: "referrer_not_found"; nick: string }
+  /** Escolheu pelo @ alguém que existe no Discord mas nunca entrou no painel (TASK-075). */
+  | { kind: "referrer_not_registered"; name: string }
   | { kind: "declared"; referrerNick: string; reward: ReferralReward };
 
 const buf = (value: bigint) => formatAmount(value, "buffunfa");
@@ -91,6 +93,8 @@ export function buildReferralReply(outcome: ReferralDeclarationOutcome): string 
         : "Você já declarou quem te indicou, e isso não muda mais. Se estiver errado, fale com a staff.";
     case "referrer_not_found":
       return `Não achei ninguém com o nick **${outcome.nick}** no painel. Confira a grafia e peça para essa pessoa registrar o nick dela com \`/registrar\` — depois disso você declara de novo.`;
+    case "referrer_not_registered":
+      return `**${outcome.name}** ainda não entrou no painel, então não dá para registrar a indicação. Peça para essa pessoa entrar no painel ou usar \`/registrar\` — depois disso você declara de novo.`;
     case "declared":
       return `Indicação registrada: **${outcome.referrerNick}** te indicou. ${rewardLine(outcome.reward)}`;
   }
@@ -138,6 +142,7 @@ export const REFERRAL_COMMAND = {
   description: "Declara quem te indicou para a guilda (uma vez só, não muda depois)",
   option: {
     name: "indicado_por",
-    description: "Nick de quem te indicou. Uma vez declarado não muda.",
+    // Opção do tipo usuário (TASK-075): o Discord abre o seletor de membros ao digitar @.
+    description: "Quem te indicou (digite @ e escolha). Uma vez declarado não muda.",
   },
 } as const;
