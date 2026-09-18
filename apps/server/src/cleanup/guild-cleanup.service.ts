@@ -4,6 +4,8 @@ import { guildCleanupNote } from "@albion-hub/shared";
 import { DISCORD_GUILD_MEMBERS_GATEWAY, type DiscordGuildMembersGateway } from "../bot/discord-guild-members.gateway.js";
 import { DB_HANDLE } from "../db/db.module.js";
 import { describeDiscordError } from "../domain/discord-errors.js";
+import { TIMELINE_PUBLISHER, type TimelinePublisher } from "../domain/timeline.js";
+import { loadTimelinePeople, publishAfterCommit } from "../timeline/timeline-people.js";
 import type { MaintenanceCleanup, MaintenanceCleanupResult } from "../maintenance/maintenance.tokens.js";
 
 export const GUILD_CLEANUP_CLOCK = Symbol("GUILD_CLEANUP_CLOCK");
@@ -34,6 +36,7 @@ export class GuildCleanupService implements MaintenanceCleanup {
     @Inject(DB_HANDLE) private readonly handle: DbHandle,
     @Inject(DISCORD_GUILD_MEMBERS_GATEWAY) private readonly members: DiscordGuildMembersGateway,
     @Inject(GUILD_CLEANUP_CLOCK) private readonly clock: Clock,
+    @Inject(TIMELINE_PUBLISHER) private readonly timeline: TimelinePublisher,
   ) {}
 
   /** Uma passada. Nunca lança: erro esperado vira log e contador `aborted`, como manda o contrato do token. */
@@ -67,6 +70,27 @@ export class GuildCleanupService implements MaintenanceCleanup {
         authorId: null,
         kind: "system",
         body: guildCleanupNote(member.sessionsRevoked, member.rolesRemoved),
+      });
+    }
+
+    // Uma linha por conta inativada (T4), depois do commit da passada (T5). O ator é sempre o job, inclusive
+    // quando a passada veio de `POST /api/maintenance/cleanup`: quem decide quem saiu é o Discord, não quem disparou.
+    if (result.deactivated.length > 0) {
+      await publishAfterCommit(this.timeline, this.logger, async () => {
+        const people = await loadTimelinePeople(this.handle.db, result.deactivated.map((m) => m.userId));
+        return result.deactivated.map((member) => {
+          const target = people.target(member.userId);
+          return {
+            action: "account.left_guild" as const,
+            summary: `Saiu do servidor: ${target.name}`,
+            actor: { kind: "system" as const, name: "Limpeza diária" },
+            target,
+            details: [
+              { name: "Sessões revogadas", value: String(member.sessionsRevoked) },
+              { name: "Papéis removidos", value: member.rolesRemoved.length > 0 ? member.rolesRemoved.join(", ") : "nenhum" },
+            ],
+          };
+        });
       });
     }
 

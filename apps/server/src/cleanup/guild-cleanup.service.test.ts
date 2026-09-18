@@ -2,6 +2,7 @@ import { createDb, createSession, findValidSession, getLedgerBalance, getLeftGui
 import { sql } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import type { GuildMemberSnapshot } from "../domain/member-import.js";
+import { FakeTimelinePublisher } from "../timeline/fake-timeline.publisher.js";
 import { GuildCleanupService } from "./guild-cleanup.service.js";
 
 const baseUrl = process.env.TEST_DATABASE_URL ?? process.env.DATABASE_URL;
@@ -24,7 +25,8 @@ describe("limpeza diária: falha do Discord (TASK-049, AC#5)", () => {
 
   it("consulta que falha aborta a passada sem alterar ninguém e registra o motivo", async () => {
     const members = { listMembers: vi.fn(async () => Promise.reject(new Error("504 Gateway Timeout"))) };
-    const service = new GuildCleanupService({ db: forbiddenDb } as unknown as DbHandle, members, clock);
+    const timeline = new FakeTimelinePublisher();
+    const service = new GuildCleanupService({ db: forbiddenDb } as unknown as DbHandle, members, clock, timeline);
     const erro = vi.spyOn(service["logger"], "error").mockImplementation(() => {});
 
     const result = await service.run();
@@ -32,11 +34,12 @@ describe("limpeza diária: falha do Discord (TASK-049, AC#5)", () => {
     expect(result).toMatchObject({ aborted: 1, deactivated: 0, sessionsRevoked: 0, rolesRemoved: 0 });
     expect(erro).toHaveBeenCalledWith(expect.stringContaining("504 Gateway Timeout"));
     expect(erro).toHaveBeenCalledWith(expect.stringContaining("Nenhuma conta foi alterada"));
+    expect(timeline.entries).toEqual([]);
   });
 
   it("duas chamadas ao mesmo tempo viram uma passada só (idempotência sob disparo manual + agendador)", async () => {
     const members = { listMembers: vi.fn(async () => Promise.reject(new Error("timeout"))) };
-    const service = new GuildCleanupService({ db: forbiddenDb } as unknown as DbHandle, members, clock);
+    const service = new GuildCleanupService({ db: forbiddenDb } as unknown as DbHandle, members, clock, new FakeTimelinePublisher());
     vi.spyOn(service["logger"], "error").mockImplementation(() => {});
 
     await Promise.all([service.run(), service.run()]);
@@ -83,11 +86,23 @@ describe.skipIf(!baseUrl)("limpeza diária: passada completa (TASK-049, Postgres
     await insertLedgerEntry(handle.db, { currency: "silver", userId: saiu.id, amount: 750_000n, kind: "adjustment", memo: "split", createdBy: admin.id });
 
     const members = { listMembers: vi.fn(async () => [snapshot(admin.discordId), snapshot(ficou.discordId)]) };
-    const service = new GuildCleanupService(handle, members, () => NOW);
+    const timeline = new FakeTimelinePublisher();
+    const service = new GuildCleanupService(handle, members, () => NOW, timeline);
 
     const result = await service.run();
 
     expect(result).toMatchObject({ aborted: 0, deactivated: 1, sessionsRevoked: 1, rolesRemoved: 2 });
+    // Timeline (TASK-077): uma linha por quem saiu, ator é o job, depois do commit da passada.
+    expect(timeline.only("account.left_guild")).toEqual({
+      action: "account.left_guild",
+      summary: `Saiu do servidor: ${saiu.discordUsername}`,
+      actor: { kind: "system", name: "Limpeza diária" },
+      target: { name: saiu.discordUsername, id: saiu.id, discordId: saiu.discordId },
+      details: [
+        { name: "Sessões revogadas", value: "1" },
+        { name: "Papéis removidos", value: expect.stringMatching(/member|staff/) },
+      ],
+    });
     expect(await findValidSession(handle.db, sessao.token)).toBeNull();
     expect(await listRoles(handle.db, saiu.id)).toEqual([]);
     expect(await getLeftGuildAt(handle.db, saiu.id)).toEqual(NOW);
@@ -106,6 +121,7 @@ describe.skipIf(!baseUrl)("limpeza diária: passada completa (TASK-049, Postgres
     // Segunda passada idêntica: nada novo acontece e nenhuma nota é duplicada (AC#1).
     const segunda = await service.run();
     expect(segunda).toMatchObject({ deactivated: 0 });
+    expect(timeline.entries).toHaveLength(1);
     expect(await listUserNotes(handle.db, saiu.id)).toHaveLength(1);
   });
 });
