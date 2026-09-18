@@ -1,11 +1,11 @@
 ---
 id: TASK-074
 title: 'Indicação declarada pelo indicado, no registro ou por comando'
-status: In Progress
+status: Done
 assignee:
   - '@claude'
 created_date: '2026-09-17 22:17'
-updated_date: '2026-09-17 23:01'
+updated_date: '2026-09-18 02:09'
 labels: []
 milestone: m-11
 dependencies: []
