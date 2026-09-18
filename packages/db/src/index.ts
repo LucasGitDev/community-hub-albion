@@ -239,3 +239,4 @@ export {
   type SettleReferralResult,
 } from "./referral-repo.js";
 export { listTimelineUsers, type TimelineUser } from "./timeline-users-repo.js";
+export { listTimelinePeople, type TimelinePerson } from "./timeline-people-repo.js";
