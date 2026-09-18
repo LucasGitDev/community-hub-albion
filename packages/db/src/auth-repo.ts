@@ -45,9 +45,13 @@ export async function findUserIdByDiscordId(db: Database, discordId: string): Pr
   return row?.id ?? null;
 }
 
-/** Concede papel; idempotente (papel já existente não altera nada). */
-export async function grantRole(db: Database, userId: string, role: Role, grantedBy: string | null = null): Promise<void> {
-  await db.insert(userRoles).values({ userId, role, grantedBy }).onConflictDoNothing();
+/**
+ * Concede papel; idempotente (papel já existente não altera nada). Retorna true só quando o papel é novo:
+ * a timeline (TASK-077) publica a concessão que de fato aconteceu, não o clique repetido.
+ */
+export async function grantRole(db: Database, userId: string, role: Role, grantedBy: string | null = null): Promise<boolean> {
+  const rows = await db.insert(userRoles).values({ userId, role, grantedBy }).onConflictDoNothing().returning({ role: userRoles.role });
+  return rows.length > 0;
 }
 
 /** Remove papel; retorna true se havia o papel. */
