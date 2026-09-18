@@ -14,6 +14,10 @@ import type { AlbionLookupResult } from "@albion-hub/shared";
 import { NickEmbedInteractions, type ButtonInteractionLike, type ModalInteractionLike } from "./nick-embed.interactions.js";
 import { NickStaffEmbedService } from "./nick-staff-embed.service.js";
 import { STAFF_CHANNEL_GATEWAY, type StaffChannelGateway } from "./staff-channel.gateway.js";
+import { TIMELINE_PUBLISHER } from "../domain/timeline.js";
+import { FakeTimelinePublisher } from "../timeline/fake-timeline.publisher.js";
+
+const timeline = new FakeTimelinePublisher();
 
 const baseUrl = process.env.TEST_DATABASE_URL ?? process.env.DATABASE_URL;
 if (!baseUrl && process.env.CI) throw new Error("CI sem TEST_DATABASE_URL: testes do embed da staff não podem ser pulados");
@@ -61,6 +65,7 @@ describe.skipIf(!baseUrl)("embed de pedido de nick com botões (TASK-015, Postgr
         NickStaffEmbedService,
         NickEmbedInteractions,
         { provide: DB_HANDLE, useValue: handle },
+        { provide: TIMELINE_PUBLISHER, useValue: timeline },
         { provide: STAFF_CHANNEL_GATEWAY, useValue: gateway },
         { provide: ALBION_PLAYER_LOOKUP, useValue: albion },
       ],

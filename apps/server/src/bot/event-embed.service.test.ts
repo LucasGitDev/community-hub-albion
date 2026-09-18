@@ -16,6 +16,10 @@ import { EventsService } from "../events/events.service.js";
 import { EventEmbedService } from "./event-embed.service.js";
 import { EventSignupInteractions, type EventButtonInteraction } from "./event-signup.interactions.js";
 import { EVENTS_CHANNEL_GATEWAY, type EventsChannelGateway } from "./events-channel.gateway.js";
+import { TIMELINE_PUBLISHER } from "../domain/timeline.js";
+import { FakeTimelinePublisher } from "../timeline/fake-timeline.publisher.js";
+
+const timeline = new FakeTimelinePublisher();
 
 const baseUrl = process.env.TEST_DATABASE_URL ?? process.env.DATABASE_URL;
 if (!baseUrl && process.env.CI) throw new Error("CI sem TEST_DATABASE_URL: testes do embed de evento não podem ser pulados");
@@ -70,6 +74,7 @@ describe.skipIf(!baseUrl)("embed de inscrição no Discord (TASK-022, Postgres r
         EventSignupInteractions,
         AccountService,
         { provide: DB_HANDLE, useValue: handle },
+        { provide: TIMELINE_PUBLISHER, useValue: timeline },
         { provide: AUTH_ENV, useValue: { BOOTSTRAP_ADMIN_DISCORD_IDS: [] } },
         { provide: EVENTS_CHANNEL_GATEWAY, useValue: gateway },
       ],

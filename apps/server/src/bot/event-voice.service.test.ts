@@ -25,6 +25,10 @@ import { DISCORD_GUILD_ID } from "./discord-guild.gateway.js";
 import { EVENT_VOICE_GATEWAY, type EventVoiceGateway } from "./event-voice.gateway.js";
 import { EventVoiceService } from "./event-voice.service.js";
 import { EventCommand, type EventCommandInteraction } from "./event.command.js";
+import { TIMELINE_PUBLISHER } from "../domain/timeline.js";
+import { FakeTimelinePublisher } from "../timeline/fake-timeline.publisher.js";
+
+const timeline = new FakeTimelinePublisher();
 
 const baseUrl = process.env.TEST_DATABASE_URL ?? process.env.DATABASE_URL;
 if (!baseUrl && process.env.CI) throw new Error("CI sem TEST_DATABASE_URL: testes do canal de voz do evento não podem ser pulados");
@@ -142,6 +146,7 @@ describe.skipIf(!baseUrl)("canal de voz do evento (TASK-024, Postgres real + Dis
         EventVoiceService,
         EventCommand,
         { provide: DB_HANDLE, useValue: handle },
+        { provide: TIMELINE_PUBLISHER, useValue: timeline },
         { provide: EVENT_VOICE_GATEWAY, useValue: discord.gateway },
         { provide: DISCORD_GUILD_ID, useValue: GUILD },
       ],
