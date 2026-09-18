@@ -7,6 +7,10 @@ import { DB_HANDLE } from "../db/db.module.js";
 import { NickDecisionService } from "../members/nick-decision.service.js";
 import { DISCORD_GUILD_GATEWAY, type DiscordGuildGateway } from "./discord-guild.gateway.js";
 import { DISCORD_MEMBER_ROLE_ID, DiscordMemberSync } from "./discord-member-sync.service.js";
+import { TIMELINE_PUBLISHER } from "../domain/timeline.js";
+import { FakeTimelinePublisher } from "../timeline/fake-timeline.publisher.js";
+
+const timeline = new FakeTimelinePublisher();
 
 const baseUrl = process.env.TEST_DATABASE_URL ?? process.env.DATABASE_URL;
 if (!baseUrl && process.env.CI) throw new Error("CI sem TEST_DATABASE_URL: testes do sync Discord não podem ser pulados");
@@ -37,6 +41,7 @@ describe.skipIf(!baseUrl)("DiscordMemberSync (TASK-014, Postgres real + gateway 
         NickDecisionService,
         DiscordMemberSync,
         { provide: DB_HANDLE, useValue: handle },
+        { provide: TIMELINE_PUBLISHER, useValue: timeline },
         { provide: DISCORD_GUILD_GATEWAY, useValue: gateway },
         { provide: DISCORD_MEMBER_ROLE_ID, useValue: ROLE },
       ],
