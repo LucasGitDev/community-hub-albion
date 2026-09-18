@@ -201,7 +201,9 @@ export class ShopService {
 
   /** Estorno de pedido entregue: estorno no ledger + estoque de volta, juntos (AC#7, F6-19). */
   async refund(id: string, options: ShopOrderActionOptions): Promise<ShopOrderActionResult> {
-    return this.transition("refunded", await refundShopOrder(this.handle.db, id, options), options);
+    // A nota do pedido acumula a da entrega; o motivo do estorno vai à parte para ser lido de relance.
+    const reason = options.note?.trim();
+    return this.transition("refunded", await refundShopOrder(this.handle.db, id, options), options, reason ? [{ name: "Motivo do estorno", value: reason }] : []);
   }
 }
 
