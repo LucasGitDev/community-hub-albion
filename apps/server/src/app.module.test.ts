@@ -8,6 +8,8 @@ import { afterEach, describe, expect, it } from "vitest";
 import { AppModule, configureApp } from "./app.module.js";
 import { parseEnv } from "./config/env.js";
 import { DB_HANDLE } from "./db/db.module.js";
+import { TIMELINE_PUBLISHER } from "./domain/timeline.js";
+import { NoopTimelinePublisher } from "./timeline/noop-timeline.publisher.js";
 
 const TEST_DATABASE_URL = process.env.TEST_DATABASE_URL ?? process.env.DATABASE_URL;
 
@@ -66,6 +68,12 @@ describe("API HTTP (sem Discord)", () => {
     const response = await request(app.getHttpServer()).get("/api/health");
     expect(response.status).toBe(503);
     expect(response.body).toEqual({ status: "degraded", db: "down", bot: "offline" });
+  });
+
+  it("sem DISCORD_TIMELINE_CHANNEL_ID sobe normal com a timeline desligada (TASK-076, T6)", async () => {
+    app = await start(fakeHandle(true));
+    expect(app.get(TIMELINE_PUBLISHER)).toBeInstanceOf(NoopTimelinePublisher);
+    expect((await request(app.getHttpServer()).get("/api/health")).status).toBe(200);
   });
 
   it("rotas fora de /api não pertencem à API", async () => {

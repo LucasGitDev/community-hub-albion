@@ -13,6 +13,8 @@ import type { MemberImporter } from "./members/member-importer.token.js";
 import { NickModule } from "./nick/nick.module.js";
 import { ShopModule } from "./shop/shop.module.js";
 import { TemplatesModule } from "./templates/templates.module.js";
+import type { TimelinePublisher } from "./domain/timeline.js";
+import { TimelineModule } from "./timeline/timeline.module.js";
 import { serveSpa } from "./web/spa.js";
 
 /** Tudo da API fica sob /api; a raiz é da SPA (web/spa.ts). */
@@ -23,6 +25,8 @@ export interface AppModuleOptions {
   bot: boolean;
   /** Dublê do import de membros (TASK-043): só testes passam, para exercitar o endpoint sem bot. */
   memberImporter?: MemberImporter;
+  /** Dublê da timeline (TASK-076): testes de integração passam um `FakeTimelinePublisher` para afirmar o que foi publicado. */
+  timeline?: TimelinePublisher;
 }
 
 @Module({})
@@ -30,7 +34,7 @@ export class AppModule {
   static register(env: Env, options: AppModuleOptions = { bot: true }): DynamicModule {
     return {
       module: AppModule,
-      imports: [DbModule.register(env.DATABASE_URL), EconomyModule.register(env), AuthModule.register(env, options.memberImporter), NickModule.register(env), MembersModule.register(env), TemplatesModule.register(env), EventsModule.register(env), ShopModule.register(env), ...(options.bot ? [BotModule.register(env), CleanupModule.register()] : []), ...maintenance(env)],
+      imports: [DbModule.register(env.DATABASE_URL), TimelineModule.register(env, { bot: options.bot, publisher: options.timeline }), EconomyModule.register(env), AuthModule.register(env, options.memberImporter), NickModule.register(env), MembersModule.register(env), TemplatesModule.register(env), EventsModule.register(env), ShopModule.register(env), ...(options.bot ? [BotModule.register(env), CleanupModule.register()] : []), ...maintenance(env)],
       controllers: [HealthController],
     };
   }
