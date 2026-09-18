@@ -18,6 +18,7 @@ import { DISCORD_EVENTS_CHANNEL_ID, DiscordJsEventsChannelGateway, EVENTS_CHANNE
 import { NickEmbedInteractions } from "./nick-embed.interactions.js";
 import { NickStaffEmbedService } from "./nick-staff-embed.service.js";
 import { PingCommand } from "./ping.command.js";
+import { ReferralCommand } from "./referral.command.js";
 import { RegisterNickCommand } from "./register-nick.command.js";
 import { ReadyListener } from "./ready.listener.js";
 import { DISCORD_STAFF_CHANNEL_ID, DiscordJsStaffChannelGateway, STAFF_CHANNEL_GATEWAY } from "./staff-channel.gateway.js";
@@ -81,6 +82,7 @@ export class BotModule {
         NickStaffEmbedService,
         NickEmbedInteractions,
         // TASK-035: /registrar nick pelo Discord (mesmo serviço do painel).
+        ReferralCommand,
         RegisterNickCommand,
         // TASK-042: import dos membros já regularizados no Discord (leitura da guild por REST + /importar-membros).
         { provide: DISCORD_GUILD_MEMBERS_GATEWAY, useClass: DiscordJsGuildMembersGateway },
