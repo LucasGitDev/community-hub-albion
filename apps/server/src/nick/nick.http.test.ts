@@ -7,6 +7,7 @@ import request from "supertest";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { AppModule, configureApp } from "../app.module.js";
 import { parseEnv } from "../config/env.js";
+import { FakeTimelinePublisher } from "../timeline/fake-timeline.publisher.js";
 import { ALBION_PLAYER_LOOKUP } from "../members/albion-lookup.token.js";
 import { NickRequestService, type NickRequestedEvent } from "../members/nick-request.service.js";
 
@@ -14,6 +15,7 @@ const baseUrl = process.env.TEST_DATABASE_URL ?? process.env.DATABASE_URL;
 if (!baseUrl && process.env.CI) throw new Error("CI sem TEST_DATABASE_URL: testes HTTP de nick não podem ser pulados");
 
 const PUBLIC_URL = "http://localhost:3000";
+const timeline = new FakeTimelinePublisher();
 /** Consulta Albion que nunca responde: prova que o pedido de nick não espera a API (TASK-016 AC#2). */
 const albionCalls: string[] = [];
 const hangingAlbion = { lookup: (nick: string) => (albionCalls.push(nick), new Promise<never>(() => undefined)) };
@@ -47,7 +49,7 @@ describe.skipIf(!baseUrl)("nick do usuário HTTP (TASK-012, Q14/Q31)", () => {
       PUBLIC_URL,
     });
     if (!parsed.ok) throw new Error(parsed.message);
-    const moduleRef = await Test.createTestingModule({ imports: [AppModule.register(parsed.env, { bot: false })] })
+    const moduleRef = await Test.createTestingModule({ imports: [AppModule.register(parsed.env, { bot: false, timeline })] })
       .overrideProvider(ALBION_PLAYER_LOOKUP)
       .useValue(hangingAlbion)
       .compile();
@@ -109,9 +111,22 @@ describe.skipIf(!baseUrl)("nick do usuário HTTP (TASK-012, Q14/Q31)", () => {
 
   it("segunda solicitação troca o nick da pendente, sem duplicar (AC#2)", async () => {
     const { user, cookie } = await member("600000000000000002");
+    timeline.clear();
     const first = await post(cookie, { nick: "Thalya" });
     const second = await post(cookie, { nick: "ThalyaReal" });
     expect(second.status).toBe(200);
+    // Timeline (TASK-077): o membro é ator e alvo; a correção da pendência também aparece.
+    expect(timeline.entries).toEqual([
+      {
+        action: "account.nick_requested",
+        summary: "Nick pedido: Thalya",
+        actor: { kind: "user", userId: user.id, name: "u002", discordId: "600000000000000002" },
+        target: { name: "u002", id: user.id, discordId: "600000000000000002" },
+        recordId: first.body.pending.id,
+        details: [{ name: "Nick pedido", value: "Thalya" }],
+      },
+      expect.objectContaining({ action: "account.nick_requested", summary: "Pedido de nick corrigido: ThalyaReal", recordId: first.body.pending.id }),
+    ]);
     expect(second.body.pending.id).toBe(first.body.pending.id);
     const rows = await handle.db.select().from(schema.nickRequests).where(eq(schema.nickRequests.userId, user.id));
     expect(rows.map((r) => [r.nick, r.status])).toEqual([["ThalyaReal", "pending"]]);
@@ -131,6 +146,7 @@ describe.skipIf(!baseUrl)("nick do usuário HTTP (TASK-012, Q14/Q31)", () => {
 
   it("recusa nick inválido (400), igual ao vigente (409) e outra origem (403)", async () => {
     const { cookie } = await member("600000000000000004", "Kestrel");
+    timeline.clear();
     const bad = await post(cookie, { nick: "Kes trel!" });
     expect(bad.status).toBe(400);
     expect(bad.body.message).toContain("só letras e números");
@@ -139,6 +155,7 @@ describe.skipIf(!baseUrl)("nick do usuário HTTP (TASK-012, Q14/Q31)", () => {
     expect((await post(cookie, { nick: "KestrelNovo" }, "https://evil.example")).status).toBe(403);
     const status = await request(app.getHttpServer()).get("/api/me/nick").set("Cookie", cookie);
     expect(status.body.pending).toBeNull();
+    expect(timeline.entries).toEqual([]);
   });
 
   it("hook onRequested recebe pedido criado e corrigido; listener com erro não quebra o pedido (TASK-015)", async () => {
