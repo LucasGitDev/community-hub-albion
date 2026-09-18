@@ -3,6 +3,11 @@ name: deploy
 # CD: roda quando o quality-gate termina verde num push na main (PR mergeado = push na main).
 # Build da imagem → push no Docker Hub → webhook de deploy do Easypanel.
 # Também pode ser disparado manualmente (Actions > deploy > Run workflow).
+#
+# TASK-070. Cada arquitetura é construída no runner NATIVO dela e as duas se juntam num manifest
+# multi-arch no fim. Antes o arm64 saía emulado por QEMU num runner x86: levava horas, travou uma run
+# por 2h40 (entupindo a fila de todas as seguintes) e acabou quebrando com SIGILL (exit 132) no
+# `pnpm deploy`. O runner `ubuntu-24.04-arm` é gratuito em repositório público.
 
 on:
   workflow_run:
@@ -14,24 +19,37 @@ on:
 permissions:
   contents: read
 
+# Deploy novo substitui o que ainda está rodando: só a versão mais recente da main importa, e
+# esperar uma run lenta terminar foi o que fez a fila acumular (runs #69 a #77).
 concurrency:
   group: deploy-main
-  cancel-in-progress: false
+  cancel-in-progress: true
+
+env:
+  # Commit exato que passou no gate (no manual, o HEAD da main).
+  DEPLOY_SHA: ${{ github.event.workflow_run.head_sha || github.sha }}
+  # Imagem: variable DOCKERHUB_IMAGE ou, sem ela, <DOCKERHUB_USERNAME>/albion-hub.
+  DOCKERHUB_IMAGE_VAR: ${{ vars.DOCKERHUB_IMAGE }}
 
 jobs:
-  deploy:
+  build:
     if: >-
       github.event_name == 'workflow_dispatch' ||
       (github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.event == 'push')
-    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: true
+      matrix:
+        include:
+          - platform: linux/amd64
+            runner: ubuntu-latest
+            arch: amd64
+          - platform: linux/arm64
+            runner: ubuntu-24.04-arm
+            arch: arm64
+    runs-on: ${{ matrix.runner }}
     environment: production
-    env:
-      # Imagem: variable DOCKERHUB_IMAGE ou, sem ela, <DOCKERHUB_USERNAME>/albion-hub (resolvida no 1º step).
-      DOCKERHUB_IMAGE_VAR: ${{ vars.DOCKERHUB_IMAGE }}
-      # Commit exato que passou no gate (no manual, o HEAD da main).
-      DEPLOY_SHA: ${{ github.event.workflow_run.head_sha || github.sha }}
     steps:
-      - name: Verifica secrets
+      - name: Verifica secrets e resolve a imagem
         shell: bash
         env:
           DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
@@ -45,16 +63,10 @@ jobs:
             exit 1
           fi
           user="$(printf '%s' "$DOCKERHUB_USERNAME" | tr -d '[:space:]' | tr '[:upper:]' '[:lower:]')"
-          image="${DOCKERHUB_IMAGE_VAR:-$user/albion-hub}"
-          echo "DOCKERHUB_IMAGE=$image" >> "$GITHUB_ENV"
-          echo "Imagem: $image  commit: $DEPLOY_SHA"
+          echo "DOCKERHUB_IMAGE=${DOCKERHUB_IMAGE_VAR:-$user/albion-hub}" >> "$GITHUB_ENV"
       - uses: actions/checkout@v4
         with:
           ref: ${{ env.DEPLOY_SHA }}
-      # VPS de produção é ARM: build multi-arch (arm64 via QEMU).
-      - uses: docker/setup-qemu-action@v3
-        with:
-          platforms: arm64
       - uses: docker/setup-buildx-action@v3
       # Login manual com trim: secret colado com quebra de linha/espaço gera
       # "malformed HTTP Authorization header" no docker/login-action.
@@ -64,26 +76,80 @@ jobs:
           DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
           DOCKERHUB_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}
         run: |
-          user="$(printf '%s' "$DOCKERHUB_USERNAME" | tr -d '[:space:]')"
+          user="$(printf '%s' "$DOCKERHUB_USERNAME" | tr -d '[:space:]' | tr '[:upper:]' '[:lower:]')"
           token="$(printf '%s' "$DOCKERHUB_TOKEN" | tr -d '[:space:]')"
           case "$user" in *@*) echo "::error::DOCKERHUB_USERNAME deve ser o usuário do Docker Hub, não o e-mail"; exit 1;; esac
           printf '%s' "$token" | docker login docker.io --username "$user" --password-stdin
-      - id: short
-        shell: bash
-        run: echo "sha=${DEPLOY_SHA::7}" >> "$GITHUB_OUTPUT"
-      - uses: docker/build-push-action@v6
+      # Publica só por digest, sem tag: a tag nasce no job `manifest`, quando as duas arquiteturas
+      # existem. Assim um build que falhe numa arquitetura nunca deixa `:latest` apontando para metade.
+      - id: build
+        uses: docker/build-push-action@v6
         with:
           context: .
-          platforms: linux/amd64,linux/arm64
-          push: true
-          tags: |
-            ${{ env.DOCKERHUB_IMAGE }}:latest
-            ${{ env.DOCKERHUB_IMAGE }}:sha-${{ steps.short.outputs.sha }}
+          platforms: ${{ matrix.platform }}
+          outputs: type=image,name=${{ env.DOCKERHUB_IMAGE }},push-by-digest=true,name-canonical=true,push=true
           labels: |
             org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
             org.opencontainers.image.revision=${{ env.DEPLOY_SHA }}
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+          cache-from: type=gha,scope=${{ matrix.arch }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.arch }}
+      - name: Guarda o digest
+        shell: bash
+        run: |
+          mkdir -p /tmp/digests
+          digest="${{ steps.build.outputs.digest }}"
+          touch "/tmp/digests/${digest#sha256:}"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: digest-${{ matrix.arch }}
+          path: /tmp/digests/*
+          if-no-files-found: error
+          retention-days: 1
+
+  manifest:
+    needs: build
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - name: Resolve a imagem
+        shell: bash
+        env:
+          DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
+        run: |
+          user="$(printf '%s' "$DOCKERHUB_USERNAME" | tr -d '[:space:]' | tr '[:upper:]' '[:lower:]')"
+          echo "DOCKERHUB_IMAGE=${DOCKERHUB_IMAGE_VAR:-$user/albion-hub}" >> "$GITHUB_ENV"
+          echo "SHORT_SHA=${DEPLOY_SHA::7}" >> "$GITHUB_ENV"
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: digest-*
+          path: /tmp/digests
+          merge-multiple: true
+      - uses: docker/setup-buildx-action@v3
+      - name: Login no Docker Hub
+        shell: bash
+        env:
+          DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
+          DOCKERHUB_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}
+        run: |
+          user="$(printf '%s' "$DOCKERHUB_USERNAME" | tr -d '[:space:]' | tr '[:upper:]' '[:lower:]')"
+          token="$(printf '%s' "$DOCKERHUB_TOKEN" | tr -d '[:space:]')"
+          printf '%s' "$token" | docker login docker.io --username "$user" --password-stdin
+      # As duas arquiteturas viram um manifest só, com as duas tags ao mesmo tempo.
+      - name: Publica o manifest multi-arch
+        shell: bash
+        working-directory: /tmp/digests
+        run: |
+          refs=()
+          for digest in *; do refs+=("$DOCKERHUB_IMAGE@sha256:$digest"); done
+          if [ "${#refs[@]}" -ne 2 ]; then
+            echo "::error::Esperava 2 digests (amd64 e arm64), achei ${#refs[@]}"
+            exit 1
+          fi
+          docker buildx imagetools create \
+            -t "$DOCKERHUB_IMAGE:latest" \
+            -t "$DOCKERHUB_IMAGE:sha-$SHORT_SHA" \
+            "${refs[@]}"
+          docker buildx imagetools inspect "$DOCKERHUB_IMAGE:sha-$SHORT_SHA"
       - name: Deploy no Easypanel
         shell: bash
         env:
@@ -94,12 +160,12 @@ jobs:
             exit 0
           fi
           curl -fsS -X POST "$EASYPANEL_DEPLOY_WEBHOOK" > /dev/null
-          echo "Deploy disparado no Easypanel (sha-${{ steps.short.outputs.sha }})."
+          echo "Deploy disparado no Easypanel (sha-$SHORT_SHA)."
       - name: Resumo
         shell: bash
         run: |
           {
             echo "## Deploy"
-            echo "- Imagem: \`$DOCKERHUB_IMAGE:sha-${{ steps.short.outputs.sha }}\` e \`:latest\`"
+            echo "- Imagem: \`$DOCKERHUB_IMAGE:sha-$SHORT_SHA\` e \`:latest\` (amd64 + arm64, builds nativos)"
             echo "- Commit: \`$DEPLOY_SHA\`"
           } >> "$GITHUB_STEP_SUMMARY"
