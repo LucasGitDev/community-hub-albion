@@ -4,9 +4,11 @@ import {
   claimShopOrder,
   createShopItem,
   deliverShopOrder,
+  findDiscordIdByUserId,
   getShopBalance,
   getShopItem,
   getShopOrder,
+  listMemberNicks,
   listShopItems,
   listShopOrders,
   purchaseShopItem,
@@ -22,6 +24,20 @@ import {
 } from "@albion-hub/db";
 import type { ShopBalanceDto, ShopItemCreateInput, ShopItemDto, ShopItemUpdateInput, ShopOrderDto, ShopOrderListQuery } from "@albion-hub/shared";
 import { DB_HANDLE } from "../db/db.module.js";
+import { TIMELINE_PUBLISHER, type TimelineActor, type TimelineDetail, type TimelinePublisher, type TimelineTarget } from "../domain/timeline.js";
+
+type Person = { id: string; name: string; discordId: string | null };
+type OrderTransition = "claimed" | "released" | "delivered" | "cancelled" | "rejected" | "refunded";
+
+/** Frase do título de cada transição do pedido na timeline (TASK-079). */
+const ORDER_SUMMARY: Record<OrderTransition, string> = {
+  claimed: "Pedido pego pela staff",
+  released: "Pedido devolvido à fila",
+  delivered: "Pedido entregue",
+  cancelled: "Pedido cancelado",
+  rejected: "Pedido recusado",
+  refunded: "Pedido estornado",
+};
 
 /**
  * Serviço interno único da loja (TASK-059; regra do repo: comando do Discord, painel e botão de embed
@@ -38,7 +54,63 @@ import { DB_HANDLE } from "../db/db.module.js";
  */
 @Injectable()
 export class ShopService {
-  constructor(@Inject(DB_HANDLE) private readonly handle: DbHandle) {}
+  constructor(
+    @Inject(DB_HANDLE) private readonly handle: DbHandle,
+    @Inject(TIMELINE_PUBLISHER) private readonly timeline: TimelinePublisher,
+  ) {}
+
+  /**
+   * Nome e Discord de quem aparece na timeline (TASK-079). Lido **depois** do commit, fora da transação:
+   * é só rótulo, e errar um nick nunca pode desfazer a operação.
+   */
+  private async person(userId: string): Promise<Person> {
+    const [[nick], discordId] = await Promise.all([listMemberNicks(this.handle.db, [userId]), findDiscordIdByUserId(this.handle.db, userId)]);
+    return { id: userId, name: nick?.nick ?? "Membro", discordId };
+  }
+
+  private static actor(p: Person): TimelineActor {
+    return { kind: "user", userId: p.id, name: p.name, discordId: p.discordId };
+  }
+
+  private static target(p: Person): TimelineTarget {
+    return { name: p.name, id: p.id, discordId: p.discordId };
+  }
+
+  private publishItem(action: "created" | "updated" | "unpublished", item: ShopItemDto, actor: Person, details: TimelineDetail[] = []): void {
+    const verb = { created: "Item criado", updated: "Item editado", unpublished: "Item despublicado" }[action];
+    this.timeline.publish({
+      action: `shop.item_${action}`,
+      summary: `${verb}: ${item.name}`,
+      actor: ShopService.actor(actor),
+      amounts: [{ value: BigInt(item.price), currency: "buffunfa", label: "Preço" }],
+      recordId: item.id,
+      details: [{ name: "Estoque", value: item.stock === null ? "ilimitado" : String(item.stock) }, { name: "Publicado", value: item.published ? "sim" : "não" }, ...details],
+    });
+  }
+
+  /** Uma linha por transição do pedido: comprador (alvo), item, valor e quem agiu. */
+  private async publishOrder(transition: OrderTransition | "reserved", order: ShopOrderDto, actorUserId: string, extra: TimelineDetail[] = []): Promise<void> {
+    const actor = await this.person(actorUserId);
+    const buyer = order.userId === actorUserId ? actor : await this.person(order.userId);
+    const summary = transition === "reserved" ? "Pedido reservado" : ORDER_SUMMARY[transition];
+    const details: TimelineDetail[] = [{ name: "Item", value: order.itemName }, { name: "Status", value: order.status }, ...extra];
+    if (order.note && transition !== "reserved") details.push({ name: "Nota", value: order.note });
+    this.timeline.publish({
+      action: `shop.order_${transition}`,
+      summary: `${summary}: ${order.itemName} para ${buyer.name}`,
+      actor: ShopService.actor(actor),
+      target: ShopService.target(buyer),
+      amounts: [{ value: BigInt(order.price), currency: "buffunfa" }],
+      recordId: order.id,
+      details,
+    });
+  }
+
+  /** Publica a transição só quando ela aconteceu: recusa não vai para a timeline (T5). */
+  private async transition(transition: OrderTransition, result: ShopOrderActionResult, options: ShopOrderActionOptions, extra: TimelineDetail[] = []): Promise<ShopOrderActionResult> {
+    if (result.ok) await this.publishOrder(transition, result.order, options.actorUserId, extra);
+    return result;
+  }
 
   /** Catálogo. `includeUnpublished` só para quem tem `shop:manage`; o membro vê o publicado. */
   items(options: { includeUnpublished?: boolean } = {}): Promise<ShopItemDto[]> {
@@ -49,13 +121,27 @@ export class ShopService {
     return getShopItem(this.handle.db, id);
   }
 
-  create(input: ShopItemCreateInput, createdBy: string): Promise<ShopItemDto> {
-    return createShopItem(this.handle.db, { ...input, createdBy });
+  async create(input: ShopItemCreateInput, createdBy: string): Promise<ShopItemDto> {
+    const item = await createShopItem(this.handle.db, { ...input, createdBy });
+    this.publishItem("created", item, await this.person(createdBy));
+    return item;
   }
 
-  /** Editar e despublicar são o mesmo caminho (AC#1): despublicar é `published: false`. */
-  update(id: string, patch: ShopItemUpdateInput): Promise<ShopItemDto | null> {
-    return updateShopItem(this.handle.db, id, patch);
+  /**
+   * Editar e despublicar são o mesmo caminho (AC#1): despublicar é `published: false`. Na timeline, a
+   * edição que tira da loja um item publicado vira `shop.item_unpublished`; o resto é `shop.item_updated`,
+   * com os campos enviados. `actorUserId` vem da sessão.
+   */
+  async update(id: string, patch: ShopItemUpdateInput, actorUserId: string): Promise<ShopItemDto | null> {
+    const before = await getShopItem(this.handle.db, id);
+    const item = await updateShopItem(this.handle.db, id, patch);
+    if (!item) return null;
+    const changed = Object.keys(patch).join(", ");
+    const details: TimelineDetail[] = changed ? [{ name: "Campos", value: changed }] : [];
+    if (before && before.price !== item.price) details.push({ name: "Preço anterior", value: before.price });
+    const unpublished = before?.published === true && !item.published;
+    this.publishItem(unpublished ? "unpublished" : "updated", item, await this.person(actorUserId), details);
+    return item;
   }
 
   /** Saldo de Buffunfa com a reserva dos pedidos descontada: a conta única da loja (AC#4). */
@@ -64,8 +150,10 @@ export class ShopService {
   }
 
   /** Compra: reserva moeda e estoque, revalidando dentro da transação (AC#4, AC#5). */
-  purchase(userId: string, itemId: string): Promise<PurchaseShopItemResult> {
-    return purchaseShopItem(this.handle.db, { userId, itemId });
+  async purchase(userId: string, itemId: string): Promise<PurchaseShopItemResult> {
+    const result = await purchaseShopItem(this.handle.db, { userId, itemId });
+    if (result.ok) await this.publishOrder("reserved", result.order, userId);
+    return result;
   }
 
   /** Pedidos. `filters.userId` é sempre preenchido pelo controller na visão do membro. */
@@ -85,33 +173,35 @@ export class ShopService {
    *
    * `actorUserId` e `isStaff` vêm do controller, da sessão e do CASL — nunca do corpo da requisição.
    */
-  claim(id: string, options: ShopOrderActionOptions): Promise<ShopOrderActionResult> {
-    return claimShopOrder(this.handle.db, id, options);
+  async claim(id: string, options: ShopOrderActionOptions): Promise<ShopOrderActionResult> {
+    return this.transition("claimed", await claimShopOrder(this.handle.db, id, options), options);
   }
 
   /** Devolve o pedido à fila (F6-22): quem pegou desistiu. */
-  release(id: string, options: ShopOrderActionOptions): Promise<ShopOrderActionResult> {
-    return releaseShopOrder(this.handle.db, id, options);
+  async release(id: string, options: ShopOrderActionOptions): Promise<ShopOrderActionResult> {
+    return this.transition("released", await releaseShopOrder(this.handle.db, id, options), options);
   }
 
   /** Entrega: lança o débito de Buffunfa e amarra o lançamento ao pedido, na mesma transação (AC#5). */
-  deliver(id: string, options: ShopOrderActionOptions): Promise<ShopOrderActionResult> {
-    return deliverShopOrder(this.handle.db, id, options);
+  async deliver(id: string, options: ShopOrderActionOptions): Promise<ShopOrderActionResult> {
+    return this.transition("delivered", await deliverShopOrder(this.handle.db, id, options), options);
   }
 
   /** Cancelamento. O comprador só antes de `claimed`; depois disso, só a staff (AC#6, F6-24). */
-  cancel(id: string, options: ShopOrderActionOptions): Promise<ShopOrderActionResult> {
-    return cancelShopOrder(this.handle.db, id, options);
+  async cancel(id: string, options: ShopOrderActionOptions): Promise<ShopOrderActionResult> {
+    const result = await cancelShopOrder(this.handle.db, id, options);
+    const by = result.ok && result.order.userId === options.actorUserId && !options.isStaff ? "comprador" : "staff";
+    return this.transition("cancelled", result, options, [{ name: "Cancelado por", value: by }]);
   }
 
   /** Recusa da staff: devolve Buffunfa e estoque na mesma transação (AC#7). */
-  reject(id: string, options: ShopOrderActionOptions): Promise<ShopOrderActionResult> {
-    return rejectShopOrder(this.handle.db, id, options);
+  async reject(id: string, options: ShopOrderActionOptions): Promise<ShopOrderActionResult> {
+    return this.transition("rejected", await rejectShopOrder(this.handle.db, id, options), options);
   }
 
   /** Estorno de pedido entregue: estorno no ledger + estoque de volta, juntos (AC#7, F6-19). */
-  refund(id: string, options: ShopOrderActionOptions): Promise<ShopOrderActionResult> {
-    return refundShopOrder(this.handle.db, id, options);
+  async refund(id: string, options: ShopOrderActionOptions): Promise<ShopOrderActionResult> {
+    return this.transition("refunded", await refundShopOrder(this.handle.db, id, options), options);
   }
 }
 
