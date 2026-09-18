@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
-import { Ban, Check, CircleDashed, CloudOff, Download, Loader2, LogOut, Receipt, RefreshCw, Search, ShieldCheck, SlidersHorizontal, TriangleAlert, UserRoundX, Users } from "lucide-react";
+import { Ban, Check, CircleDashed, CloudOff, Download, Loader2, LogOut, Receipt, RefreshCw, Search, ShieldCheck, SlidersHorizontal, TriangleAlert, UserPlus, UserRoundX, Users } from "lucide-react";
 import { toast } from "sonner";
 import {
   asSubject,
@@ -20,6 +20,7 @@ import { useCurrentUser } from "@/auth/AuthProvider";
 import { MemberBanDialog } from "@/components/MemberBanDialog";
 import { MemberLedgerDialog } from "@/components/MemberLedgerDialog";
 import { MemberManageDialog } from "@/components/MemberManageDialog";
+import { MemberReferralsDialog } from "@/components/MemberReferralsDialog";
 import { EmptyState, PageHeader, Panel, Pill, StatCard, type Tone } from "@/components/display";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
@@ -69,6 +70,7 @@ export function AdminMembers() {
   const [managing, setManaging] = useState<string | null>(null);
   const [banning, setBanning] = useState<string | null>(null);
   const [statement, setStatement] = useState<string | null>(null);
+  const [referrals, setReferrals] = useState<string | null>(null);
   const { user, ability } = useCurrentUser();
   // Conferir o nick, editar nick/tag e as notas: admin e staff (TASK-047, G3).
   const canManage = ability.can("update", "MemberProfile");
@@ -83,6 +85,13 @@ export function AdminMembers() {
    * `read Wallet` cru a mostraria pra todo membro logado: é o erro da TASK-027.
    */
   const canReadLedger = (userId: string) => ability.can("read", asSubject("Wallet", { userId }));
+  /**
+   * Indicações (TASK-074, AC#8): subject próprio, sem condição de dono — a indicação mora na linha de
+   * uma pessoa mas paga duas, então não existe "a minha". Ler é de staff e admin; estornar é a mesma
+   * permissão da API (`reverse`), perguntada aqui para o botão não aparecer e devolver 403 no clique.
+   */
+  const canReadReferrals = ability.can("read", "Referral");
+  const canReverseReferral = ability.can("reverse", "Referral");
   // Staff bane quem está abaixo dela; banir staff ou admin é coisa de admin (a API recusa igual).
   const isAdmin = user.roles.includes("admin");
   /**
@@ -270,10 +279,12 @@ export function AdminMembers() {
                   canManage={canManage}
                   canBan={canBan && (isAdmin || !m.roles.some((r) => r === "staff" || r === "admin"))}
                   canReadLedger={canReadLedger(m.id)}
+                  canReadReferrals={canReadReferrals}
                   onChecked={(albion) => patch(m.id, { albion })}
                   onManage={() => setManaging(m.id)}
                   onBan={() => setBanning(m.id)}
                   onStatement={() => setStatement(m.id)}
+                  onReferrals={() => setReferrals(m.id)}
                 />
               ))}
             </TableBody>
@@ -323,6 +334,15 @@ export function AdminMembers() {
         onClose={() => setStatement(null)}
       />
 
+      <MemberReferralsDialog
+        member={(() => {
+          const m = members.find((x) => x.id === referrals);
+          return m ? { id: m.id, name: m.gameNick || m.displayName || m.discordUsername } : null;
+        })()}
+        canReverse={canReverseReferral}
+        onClose={() => setReferrals(null)}
+      />
+
       <MemberManageDialog
         member={members.find((m) => m.id === managing) ?? null}
         onClose={() => setManaging(null)}
@@ -365,10 +385,12 @@ interface RowActions {
   canManage: boolean;
   canBan: boolean;
   canReadLedger: boolean;
+  canReadReferrals: boolean;
   onChecked: (albion: AdminMember["albion"]) => void;
   onManage: () => void;
   onBan: () => void;
   onStatement: () => void;
+  onReferrals: () => void;
 }
 
 function MemberRow({ member, ...actions }: { member: AdminMember } & RowActions) {
@@ -436,7 +458,7 @@ function MemberRow({ member, ...actions }: { member: AdminMember } & RowActions)
  * Ações da linha (AC#1/AC#2/AC#3). Botões de ícone com rótulo acessível e dica: a coluna precisa caber em
  * 400px de largura, e nome de ação por extenso em toda linha rouba o espaço do que o admin veio ler.
  */
-function MemberActions({ member, isSelf, canManage, canBan, canReadLedger, onChecked, onManage, onBan, onStatement }: { member: AdminMember } & RowActions) {
+function MemberActions({ member, isSelf, canManage, canBan, canReadLedger, canReadReferrals, onChecked, onManage, onBan, onStatement, onReferrals }: { member: AdminMember } & RowActions) {
   const [checking, setChecking] = useState(false);
   const name = member.gameNick || member.discordUsername;
 
@@ -502,6 +524,17 @@ function MemberActions({ member, isSelf, canManage, canBan, canReadLedger, onChe
             </Button>
           </TooltipTrigger>
           <TooltipContent>Ver o extrato: saldo, reservado e de onde veio cada prata</TooltipContent>
+        </Tooltip>
+      )}
+
+      {canReadReferrals && (
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <Button variant="outline" size="icon" className="press" aria-label={`Ver as indicações de ${name}`} onClick={onReferrals}>
+              <UserPlus />
+            </Button>
+          </TooltipTrigger>
+          <TooltipContent>Ver as indicações: quem trouxe essa pessoa e quem ela trouxe</TooltipContent>
         </Tooltip>
       )}
 
