@@ -8,6 +8,7 @@ import request from "supertest";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { AppModule, configureApp } from "../app.module.js";
 import { parseEnv } from "../config/env.js";
+import { FakeTimelinePublisher } from "../timeline/fake-timeline.publisher.js";
 
 const baseUrl = process.env.TEST_DATABASE_URL ?? process.env.DATABASE_URL;
 if (!baseUrl && process.env.CI) throw new Error("CI sem TEST_DATABASE_URL: testes HTTP de Buffunfa por presença não podem ser pulados");
@@ -34,6 +35,7 @@ describe.skipIf(!baseUrl)("Buffunfa por presença HTTP (TASK-057)", () => {
   let membroDiscordId: string;
   let templateId: string;
   let seq = 0;
+  const timeline = new FakeTimelinePublisher();
 
   beforeAll(async () => {
     const target = new URL(baseUrl!);
@@ -60,7 +62,7 @@ describe.skipIf(!baseUrl)("Buffunfa por presença HTTP (TASK-057)", () => {
       PUBLIC_URL,
     });
     if (!parsed.ok) throw new Error(parsed.message);
-    const moduleRef = await Test.createTestingModule({ imports: [AppModule.register(parsed.env, { bot: false })] }).compile();
+    const moduleRef = await Test.createTestingModule({ imports: [AppModule.register(parsed.env, { bot: false, timeline })] }).compile();
     app = configureApp(moduleRef.createNestApplication({ logger: false }));
     await app.listen(0, "127.0.0.1");
 
@@ -231,9 +233,21 @@ describe.skipIf(!baseUrl)("Buffunfa por presença HTTP (TASK-057)", () => {
       const preview = (await attendance(caller, event.id)).body as EventAttendanceDto;
       expect(preview).toMatchObject({ measured: true, paidAt: null, total: "30" });
 
+      timeline.clear();
       const paid = await send("post", `/api/events/${event.id}/attendance/payout`, caller);
       expect(paid.status).toBe(201);
       expect(paid.body as EventAttendanceDto).toMatchObject({ total: "30" });
+      // Timeline (TASK-078, AC#3): um registro consolidado, Buffunfa (nunca prata), uma linha por pessoa.
+      const entry = timeline.only("economy.attendance_paid");
+      expect(entry).toMatchObject({
+        actor: { kind: "user" },
+        target: { name: event.name, id: event.id },
+        amounts: [{ value: 30n, currency: "buffunfa", label: "Total pago" }],
+        recordId: event.id,
+        details: [{ name: "Pessoas pagas", value: "1" }],
+      });
+      expect(entry.list?.items).toHaveLength(1);
+      expect(entry.list?.items[0]).toMatch(/: 30/);
       expect((paid.body as EventAttendanceDto).paidAt).not.toBeNull();
       expect(await getLedgerBalance(handle.db, membroId, "buffunfa")).toBe(30n);
 
@@ -242,8 +256,9 @@ describe.skipIf(!baseUrl)("Buffunfa por presença HTTP (TASK-057)", () => {
       expect(extrato.body.entries[0]).toMatchObject({ kind: "event_attendance", currency: "buffunfa", amount: "30" });
       expect(extrato.body.entries[0].memo).toContain("Presença em");
 
-      // Segundo clique não credita de novo, e o valor por role não muda mais.
+      // Segundo clique não credita de novo (nem publica), e o valor por role não muda mais.
       expect((await send("post", `/api/events/${event.id}/attendance/payout`, caller)).status).toBe(201);
+      expect(timeline.entries).toHaveLength(1);
       expect(await getLedgerBalance(handle.db, membroId, "buffunfa")).toBe(30n);
       const late = await send("patch", `/api/events/${event.id}/attendance/roles/${event.roles[0]!.id}`, caller, { value: 10 });
       expect(late.status).toBe(409);
@@ -271,8 +286,10 @@ describe.skipIf(!baseUrl)("Buffunfa por presença HTTP (TASK-057)", () => {
       const preview = (await attendance(caller, event.id)).body as EventAttendanceDto;
       expect(preview.measured).toBe(false);
       expect(preview.lines.every((l) => l.skip === "no_channel")).toBe(true);
+      timeline.clear();
       const refused = await send("post", `/api/events/${event.id}/attendance/payout`, caller);
       expect(refused.status).toBe(409);
+      expect(timeline.entries).toEqual([]);
       expect(refused.body.message).toContain("sem presença medida");
       expect(await getLedgerBalance(handle.db, membroId, "buffunfa")).toBe(before);
     });
