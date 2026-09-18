@@ -74,15 +74,17 @@ describe.skipIf(!url)("@albion-hub/db (Postgres real)", () => {
     await reset.db.execute(sql`drop schema if exists public cascade`);
     await reset.db.execute(sql`create schema public`);
     await reset.close();
+    // Migrations aqui, não no primeiro teste: `vitest -t` pula testes e o arquivo não pode depender da ordem (TASK-069).
+    await runMigrations(url!);
     handle = createDb(url!);
-  });
+  }, 60_000);
 
   afterAll(async () => {
     await handle?.close();
   });
 
   it("aplica migrations do zero e reexecução é idempotente", async () => {
-    await runMigrations(url!);
+    // O beforeAll partiu de schema vazio e já aplicou tudo; aqui só a reexecução.
     const count = async () => (await handle.db.execute<{ n: bigint }>(sql`select count(*) as n from drizzle.__drizzle_migrations`))[0]!.n;
     const first = await count();
     expect(first).toBeGreaterThan(0n);
