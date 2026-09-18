@@ -5,6 +5,7 @@ import { AuthorizeGuard } from "../auth/authorize.js";
 import { SameOriginGuard } from "../auth/same-origin.guard.js";
 import { SessionService } from "../auth/session.service.js";
 import { EventAttendanceController } from "./event-attendance.controller.js";
+import { EntryFeeTimelineService } from "./entry-fee-timeline.service.js";
 import { EventAttendanceService } from "./event-attendance.service.js";
 import { LedgerService } from "./ledger.service.js";
 import { LootSplitController } from "./loot-split.controller.js";
@@ -30,7 +31,7 @@ export class EconomyModule {
       module: EconomyModule,
       global: true,
       controllers: [MyLedgerController, MemberLedgerController, MyWithdrawalsController, WithdrawalsController, LootSplitController, EventAttendanceController],
-      providers: [{ provide: AUTH_ENV, useValue: env }, SessionService, AuthorizeGuard, SameOriginGuard, LedgerService, WithdrawalService, LootSplitService, EventAttendanceService],
+      providers: [{ provide: AUTH_ENV, useValue: env }, SessionService, AuthorizeGuard, SameOriginGuard, LedgerService, WithdrawalService, LootSplitService, EventAttendanceService, EntryFeeTimelineService],
       exports: [LedgerService, WithdrawalService, LootSplitService, EventAttendanceService],
     };
   }

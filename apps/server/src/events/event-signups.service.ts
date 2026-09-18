@@ -1,6 +1,7 @@
 import { Inject, Injectable, Logger } from "@nestjs/common";
 import {
   getBanStatus,
+  getEvent,
   joinEventRole,
   leaveEvent,
   listEventSignups,
@@ -13,8 +14,10 @@ import {
   type LeaveEventResult,
   type MoveEventSignupResult,
 } from "@albion-hub/db";
-import type { EventMemberDto, EventOccupancyDto, EventSignupDto } from "@albion-hub/shared";
+import { ENTRY_FEE_REFUND_REASONS, type EventMemberDto, type EventOccupancyDto, type EventSignupDto } from "@albion-hub/shared";
 import { DB_HANDLE } from "../db/db.module.js";
+import { TIMELINE_PUBLISHER, type TimelineAction, type TimelinePublisher } from "../domain/timeline.js";
+import { loadTimelinePeople, publishAfterCommit } from "../timeline/after-commit.js";
 import { ListenerSet } from "../members/listener-set.js";
 
 /** Emitido depois que a lista do evento mudou. O embed do Discord assina daqui (TASK-022). */
@@ -45,7 +48,10 @@ export class EventSignupsService {
   private readonly logger = new Logger(EventSignupsService.name);
   private readonly listeners = new ListenerSet<EventSignupChangedEvent>(this.logger, "Listener de inscrição de evento");
 
-  constructor(@Inject(DB_HANDLE) private readonly handle: DbHandle) {}
+  constructor(
+    @Inject(DB_HANDLE) private readonly handle: DbHandle,
+    @Inject(TIMELINE_PUBLISHER) private readonly timeline: TimelinePublisher,
+  ) {}
 
   /** Registra um listener (o embed do bot). Retorna função pra remover. */
   onSignupChanged(listener: (event: EventSignupChangedEvent) => void | Promise<void>): () => void {
@@ -77,12 +83,15 @@ export class EventSignupsService {
     if (ban) return { ok: false, reason: "banned", banReason: ban.banReason };
     const result = await joinEventRole(this.handle.db, { eventId, userId, slotId });
     if (result.ok) await this.emit(eventId, "join", result);
+    // Inscrição em si não vai para a timeline (T8); a **cobrança** vai, porque é dinheiro saindo.
+    if (result.ok && result.charged) await this.publishFee("economy.entry_fee_charged", result.signup, result.charged, null);
     return result;
   }
 
   async leave(eventId: string, userId: string): Promise<LeaveEventResult> {
     const result = await leaveEvent(this.handle.db, { eventId, userId });
     if (result.ok) await this.emit(eventId, "leave", result);
+    if (result.ok && result.refunded) await this.publishFee("economy.entry_fee_refunded", result.signup, result.refunded, ENTRY_FEE_REFUND_REASONS.left);
     return result;
   }
 
@@ -91,6 +100,23 @@ export class EventSignupsService {
     const result = await moveEventSignup(this.handle.db, { eventId, userId, target, actorUserId });
     if (result.ok) await this.emit(eventId, "move", result);
     return result;
+  }
+
+  /** Timeline (TASK-078): taxa de entrada cobrada ou devolvida, depois do commit da inscrição (T5). */
+  private publishFee(action: TimelineAction, signup: EventSignupDto, amount: bigint, reason: string | null): Promise<void> {
+    return publishAfterCommit(this.timeline, async () => {
+      const [people, event] = await Promise.all([loadTimelinePeople(this.handle.db, [signup.userId]), getEvent(this.handle.db, signup.eventId)]);
+      const eventName = event?.name ?? "evento";
+      return {
+        action,
+        summary: `${action === "economy.entry_fee_charged" ? "Taxa de entrada cobrada" : "Taxa de entrada devolvida"}: ${eventName}`,
+        actor: people.actor(signup.userId),
+        target: { name: eventName, id: signup.eventId },
+        amounts: [{ value: amount, currency: "buffunfa" as const }],
+        recordId: signup.id,
+        ...(reason ? { details: [{ name: "Motivo", value: reason }] } : {}),
+      };
+    });
   }
 
   private emit(eventId: string, change: EventSignupChangedEvent["change"], result: { signup: EventSignupDto; promoted: EventSignupDto | null }): Promise<void> {
