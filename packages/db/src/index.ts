@@ -224,6 +224,7 @@ export {
 } from "./event-attendance-repo.js";
 export {
   declareReferral,
+  findUserByDiscordId,
   findUserByGameNick,
   getMemberReferrals,
   getReferrerOf,

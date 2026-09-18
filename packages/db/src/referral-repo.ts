@@ -40,6 +40,21 @@ export async function findUserByGameNick(db: Database, nick: string): Promise<(R
   return row ? { ...row, name: row.name ?? nick } : null;
 }
 
+/**
+ * Indicador pelo ID do Discord (TASK-075): é a chave que o seletor de membros (@) do slash command
+ * entrega. Diferente do nick, não tem grafia — quem escolheu da lista não erra. Qualquer conta do
+ * painel serve como indicador, com ou sem nick aprovado; o nick aprovado que importa para o pagamento
+ * é o do **indicado**.
+ */
+export async function findUserByDiscordId(db: Database, discordId: string): Promise<(ReferralPerson & { bannedAt: Date | null; leftGuildAt: Date | null }) | null> {
+  const [row] = await db
+    .select({ ...personColumns(users), bannedAt: users.bannedAt, leftGuildAt: users.leftGuildAt })
+    .from(users)
+    .where(eq(users.discordId, discordId))
+    .limit(1);
+  return row ? { ...row, name: row.name ?? discordId } : null;
+}
+
 export type DeclareReferralResult = { ok: true } | { ok: false; reason: "already_declared"; referrer: ReferralPerson | null };
 
 /**
