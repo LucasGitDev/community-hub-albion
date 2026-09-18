@@ -1,6 +1,8 @@
 import { Inject, Injectable, Logger } from "@nestjs/common";
 import { decideNickRequest, type DbHandle, type NickDecision, type NickRequest } from "@albion-hub/db";
 import { DB_HANDLE } from "../db/db.module.js";
+import { TIMELINE_PUBLISHER, type TimelinePublisher } from "../domain/timeline.js";
+import { loadTimelinePeople, publishAfterCommit } from "../timeline/timeline-people.js";
 import { ListenerSet } from "./listener-set.js";
 
 /** Evento emitido depois que a decisão foi gravada (TASK-014 aplica apelido/cargo no Discord). */
@@ -25,7 +27,10 @@ export class NickDecisionService {
   private readonly logger = new Logger(NickDecisionService.name);
   private readonly listeners = new ListenerSet<NickDecidedEvent>(this.logger, "Listener de decisão de nick");
 
-  constructor(@Inject(DB_HANDLE) private readonly handle: DbHandle) {}
+  constructor(
+    @Inject(DB_HANDLE) private readonly handle: DbHandle,
+    @Inject(TIMELINE_PUBLISHER) private readonly timeline: TimelinePublisher,
+  ) {}
 
   /** Registra um listener (ex.: módulo do bot no onModuleInit). Retorna função pra remover. */
   onDecided(listener: NickDecidedListener): () => void {
@@ -45,6 +50,23 @@ export class NickDecisionService {
   private async decide(requestId: string, decision: NickDecision, deciderUserId: string, note: string | null): Promise<NickDecisionResult> {
     const result = await decideNickRequest(this.handle.db, { requestId, decision, deciderUserId, note });
     if (!result.ok) return result;
+    const { request } = result;
+    await publishAfterCommit(this.timeline, this.logger, async () => {
+      const people = await loadTimelinePeople(this.handle.db, [deciderUserId, request.userId]);
+      const approved = decision === "approved";
+      return {
+        action: approved ? "account.nick_approved" : "account.nick_rejected",
+        summary: `${approved ? "Nick aprovado" : "Nick recusado"}: ${request.nick}`,
+        actor: people.actor(deciderUserId),
+        target: people.target(request.userId),
+        recordId: request.id,
+        details: [
+          { name: "Nick", value: request.nick },
+          ...(approved && result.previousGameNick ? [{ name: "Nick anterior", value: result.previousGameNick }] : []),
+          ...(note ? [{ name: approved ? "Observação" : "Motivo", value: note }] : []),
+        ],
+      };
+    });
     const event: NickDecidedEvent = { decision, request: result.request, previousGameNick: result.previousGameNick, deciderUserId };
     await this.listeners.emit(event, `request ${requestId}`);
     return { ok: true, request: result.request };

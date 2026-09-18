@@ -8,6 +8,7 @@ import request from "supertest";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { AppModule, configureApp } from "../app.module.js";
 import { parseEnv } from "../config/env.js";
+import { FakeTimelinePublisher } from "../timeline/fake-timeline.publisher.js";
 import { ALBION_PLAYER_LOOKUP } from "./albion-lookup.token.js";
 import { NickDecisionService, type NickDecidedEvent } from "./nick-decision.service.js";
 
@@ -15,6 +16,7 @@ const baseUrl = process.env.TEST_DATABASE_URL ?? process.env.DATABASE_URL;
 if (!baseUrl && process.env.CI) throw new Error("CI sem TEST_DATABASE_URL: testes HTTP da fila de nick não podem ser pulados");
 
 const PUBLIC_URL = "http://localhost:3000";
+const timeline = new FakeTimelinePublisher();
 const CHECKED_AT = "2026-09-15T12:00:00.000Z";
 
 /** Consulta Albion falsa (nunca chama a API real): por nick; o resto fica indisponível. */
@@ -50,7 +52,7 @@ describe.skipIf(!baseUrl)("fila de nick da staff HTTP (TASK-013, Q14/Q31)", () =
       PUBLIC_URL,
     });
     if (!parsed.ok) throw new Error(parsed.message);
-    const moduleRef = await Test.createTestingModule({ imports: [AppModule.register(parsed.env, { bot: false })] })
+    const moduleRef = await Test.createTestingModule({ imports: [AppModule.register(parsed.env, { bot: false, timeline })] })
       .overrideProvider(ALBION_PLAYER_LOOKUP)
       .useValue(fakeAlbion)
       .compile();
@@ -133,6 +135,7 @@ describe.skipIf(!baseUrl)("fila de nick da staff HTTP (TASK-013, Q14/Q31)", () =
     });
     const { user, cookie: memberCookie, request: r } = await pendingOf("610000000000000003", "Aprovado", "Antigo");
     const { user: staff, cookie } = await login("610000000000000103", ["staff"]);
+    timeline.clear();
     const res = await decide(cookie, r.id, "approve");
     off();
     offBroken();
@@ -145,17 +148,42 @@ describe.skipIf(!baseUrl)("fila de nick da staff HTTP (TASK-013, Q14/Q31)", () =
     expect(me.body).toEqual({ gameNick: "Aprovado", pending: null, lastRejection: null });
     expect(events).toEqual([expect.objectContaining({ decision: "approved", previousGameNick: "Antigo", deciderUserId: staff.id })]);
     expect(events[0]!.request.userId).toBe(user.id);
+    // Timeline (TASK-077): quem decidiu, quem pediu, o nick novo e o anterior.
+    expect(timeline.only("account.nick_approved")).toEqual({
+      action: "account.nick_approved",
+      summary: "Nick aprovado: Aprovado",
+      actor: { kind: "user", userId: staff.id, name: "Nome103", discordId: "610000000000000103" },
+      target: { name: "Aprovado", id: user.id, discordId: "610000000000000003" },
+      recordId: r.id,
+      details: [
+        { name: "Nick", value: "Aprovado" },
+        { name: "Nick anterior", value: "Antigo" },
+      ],
+    });
 
     const again = await decide(cookie, r.id, "reject", { note: "tarde" });
     expect(again.status).toBe(409);
     expect(events).toHaveLength(1);
+    // Recusa (já decidido) não publica.
+    expect(timeline.actions()).toEqual(["account.nick_approved"]);
   });
 
   it("staff recusa com motivo: nick anterior mantido e membro vê o motivo (AC#2, AC#4)", async () => {
     const { cookie: memberCookie, request: r } = await pendingOf("610000000000000004", "Errado", "Mantido");
     const { user: staff, cookie } = await login("610000000000000104", ["staff"]);
+    timeline.clear();
     const res = await decide(cookie, r.id, "reject", { note: "  Esse nick não existe no jogo. " });
     expect(res.status).toBe(200);
+    expect(timeline.only("account.nick_rejected")).toMatchObject({
+      summary: "Nick recusado: Errado",
+      actor: { kind: "user", userId: staff.id },
+      target: { name: "Mantido", id: r.userId },
+      recordId: r.id,
+      details: [
+        { name: "Nick", value: "Errado" },
+        { name: "Motivo", value: "Esse nick não existe no jogo." },
+      ],
+    });
     expect(res.body).toMatchObject({ status: "rejected", decidedBy: staff.id });
     expect(await rowOf(r.id)).toMatchObject({ status: "rejected", decidedBy: staff.id, decisionNote: "Esse nick não existe no jogo." });
     const me = await http().get("/api/me/nick").set("Cookie", memberCookie);
