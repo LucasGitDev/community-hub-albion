@@ -81,6 +81,26 @@ recusado.
 O namespace **não** loga, não cria sessão, não lê sessão e não age como outro usuário — o `userId` é
 sempre alvo, nunca ator. Login sem Discord continua só no dev-login, proibido em produção pelo env.
 
+## Timeline no Discord (TASK-076)
+
+Canal `#timeline` com uma linha por operação que muda estado (decisões T1 a T14 no doc-005). Serve para
+depurar e auditar, **não** para a guilda: mostra valores de prata e Buffunfa por inteiro.
+
+- Ligar: `DISCORD_TIMELINE_CHANNEL_ID=<id do canal>` no env, com o bot ligado. **Opcional**: vazia ou
+  ausente = timeline desligada e a aplicação sobe normal (T6). Com `DISCORD_BOT_ENABLED=false` também fica desligada.
+- **O canal é criado pelo admin, não pelo bot** (T13). No Discord: criar canal de texto `#timeline` →
+  Editar canal → Permissões → em `@everyone` negar **Ver canal**; liberar **Ver canal** só para o cargo de
+  admin; no cargo (ou membro) do bot liberar **Ver canal**, **Enviar mensagens** e **Inserir links** (embeds).
+  Copiar o ID (modo desenvolvedor → clique direito no canal → Copiar ID) para a env e reiniciar.
+- Canal errado ou sem permissão não derruba nada: vira aviso `Timeline:` no log do servidor.
+- Código: serviços injetam `TIMELINE_PUBLISHER` (`apps/server/src/domain/timeline.ts`) e chamam
+  `publish(entry)` **depois do commit**, nunca dentro da transação. `publish` é síncrono, nunca lança e
+  nunca espera o Discord; a fila em memória agrupa até 10 embeds por mensagem e respeita ~5 mensagens/5s.
+  Reiniciar com a fila cheia perde essas linhas (aceito, T11).
+- Teste: `FakeTimelinePublisher` (`apps/server/src/timeline/fake-timeline.publisher.ts`) no construtor do
+  serviço, ou `AppModule.register(env, { bot: false, timeline: fake })` em teste de integração. Toda operação
+  nova que muda estado precisa de teste provando o que publicou (T14, DoD).
+
 ## Uso automático de skills
 Invocar skill via Skill tool sem o usuário pedir sempre que o gatilho do doc "Skills" (backlog) bater.
 Resumo:
