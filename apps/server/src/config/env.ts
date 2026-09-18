@@ -69,6 +69,14 @@ const envSchema = z.object({
     .optional()
     .or(z.literal("").transform(() => undefined)),
   /**
+   * Canal #timeline só de admins (TASK-076, T6/T13). **Opcional** mesmo com o bot ligado: ausente ou vazio
+   * = timeline desligada e a aplicação sobe normal. O canal é criado pelo admin; o bot só recebe o id.
+   */
+  DISCORD_TIMELINE_CHANNEL_ID: z.preprocess(
+    (value) => (typeof value === "string" && value.trim() === "" ? undefined : typeof value === "string" ? value.trim() : value),
+    z.string().regex(SNOWFLAKE, { error: "formato inválido (esperado snowflake numérico de 17 a 20 dígitos, ou vazio para desligar)" }).optional(),
+  ),
+  /**
    * Id do emoji da Buffunfa no Discord (F6-28, doc-009). Vazio = o bot procura na guild pelo nome e, se
    * não achar, tenta criar a partir do PNG. Emoji é por servidor, então nunca existe id default aqui.
    */
