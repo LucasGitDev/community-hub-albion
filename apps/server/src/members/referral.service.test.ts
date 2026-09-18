@@ -104,6 +104,35 @@ describe.skipIf(!baseUrl)("Indicação: serviço e rota da staff (TASK-074, Post
     expect(await referrals.declare(quem.id, "NickSemConta")).toEqual({ kind: "referrer_not_found", nick: "NickSemConta" });
   });
 
+  describe("pelo @ do membro (TASK-075)", () => {
+    it("declara pelo ID do Discord que o seletor de membros entrega", async () => {
+      const referrer = await newUser("IndPeloArroba");
+      const referred = await newUser("IndicadoPorArroba");
+      expect(await referrals.declareByDiscordId(referred.id, referrer.discordId, "Ind no Discord")).toMatchObject({
+        kind: "declared",
+        referrerNick: "IndPeloArroba",
+      });
+    });
+
+    it("quem existe no Discord mas nunca entrou no painel é recusado pelo nome que o Discord mostrou", async () => {
+      const referred = await newUser("IndicadoDeFantasma");
+      expect(await referrals.declareByDiscordId(referred.id, "999999999999999999", "Fulano")).toEqual({ kind: "referrer_not_registered", name: "Fulano" });
+    });
+
+    it("autoindicação pelo @ continua recusada", async () => {
+      const quem = await newUser("ArrobaEuMesmo");
+      expect(await referrals.declareByDiscordId(quem.id, quem.discordId, "eu")).toEqual({ kind: "self" });
+    });
+
+    it("quem já declarou não troca de indicador pelo @", async () => {
+      const primeiro = await newUser("PrimeiroArroba");
+      const segundo = await newUser("SegundoArroba");
+      const referred = await newUser("IndicadoArrobaDuasVezes");
+      await referrals.declareByDiscordId(referred.id, primeiro.discordId, "primeiro");
+      expect(await referrals.declareByDiscordId(referred.id, segundo.discordId, "segundo")).toEqual({ kind: "already_declared", referrerNick: "PrimeiroArroba" });
+    });
+  });
+
   it("recusa nick inválido antes de tocar no banco", async () => {
     const quem = await newUser("NickInvalido");
     expect(await referrals.declare(quem.id, "ab")).toMatchObject({ kind: "invalid" });

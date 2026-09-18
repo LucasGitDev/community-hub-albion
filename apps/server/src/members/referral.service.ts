@@ -1,5 +1,5 @@
 import { Inject, Injectable, Logger, type OnModuleInit } from "@nestjs/common";
-import { declareReferral, findUserByGameNick, getMemberReferrals, getReferrerOf, reverseReferral, settleReferral, type DbHandle, type MemberReferrals, type ReverseReferralResult, type SettleReferralResult } from "@albion-hub/db";
+import { declareReferral, findUserByDiscordId, findUserByGameNick, getMemberReferrals, getReferrerOf, reverseReferral, settleReferral, type DbHandle, type MemberReferrals, type ReverseReferralResult, type SettleReferralResult } from "@albion-hub/db";
 import { validateNick, type ReferralDeclarationOutcome, type ReferralReward } from "@albion-hub/shared";
 import { DB_HANDLE } from "../db/db.module.js";
 import { NickDecisionService } from "./nick-decision.service.js";
@@ -43,15 +43,30 @@ export class ReferralService implements OnModuleInit {
   async declare(referredUserId: string, input: unknown): Promise<ReferralDeclarationOutcome> {
     const parsed = validateNick(input);
     if (!parsed.ok) return { kind: "invalid", error: parsed.error };
-    const db = this.handle.db;
-
-    const existing = await getReferrerOf(db, referredUserId);
+    const existing = await getReferrerOf(this.handle.db, referredUserId);
     if (existing) return { kind: "already_declared", referrerNick: existing.gameNick ?? existing.name };
-
-    const referrer = await findUserByGameNick(db, parsed.nick);
+    const referrer = await findUserByGameNick(this.handle.db, parsed.nick);
     if (!referrer) return { kind: "referrer_not_found", nick: parsed.nick };
-    if (referrer.id === referredUserId) return { kind: "self" };
+    return this.declareTo(referredUserId, referrer);
+  }
 
+  /**
+   * Mesma declaração, com o indicador escolhido pelo seletor de membros do Discord (TASK-075). O ID não
+   * tem grafia, então a recusa possível deixa de ser "nick errado" e passa a ser "essa pessoa nunca
+   * entrou no painel" — `label` é o nome que o Discord mostrou, para a mensagem dizer de quem se trata.
+   */
+  async declareByDiscordId(referredUserId: string, referrerDiscordId: string, label: string): Promise<ReferralDeclarationOutcome> {
+    const existing = await getReferrerOf(this.handle.db, referredUserId);
+    if (existing) return { kind: "already_declared", referrerNick: existing.gameNick ?? existing.name };
+    const referrer = await findUserByDiscordId(this.handle.db, referrerDiscordId);
+    if (!referrer) return { kind: "referrer_not_registered", name: label };
+    return this.declareTo(referredUserId, referrer);
+  }
+
+  /** O que as duas portas têm em comum, depois que o indicador já foi achado. */
+  private async declareTo(referredUserId: string, referrer: { id: string; gameNick: string | null; name: string }): Promise<ReferralDeclarationOutcome> {
+    if (referrer.id === referredUserId) return { kind: "self" };
+    const db = this.handle.db;
     const declared = await declareReferral(db, referredUserId, referrer.id);
     // Perdeu a corrida para outra declaração da mesma pessoa: a que venceu é a que vale, e não se troca.
     if (!declared.ok) return { kind: "already_declared", referrerNick: declared.referrer?.gameNick ?? declared.referrer?.name ?? null };
