@@ -5,7 +5,7 @@ status: In Progress
 assignee:
   - '@claude'
 created_date: '2026-09-17 17:53'
-updated_date: '2026-09-18 13:46'
+updated_date: '2026-09-18 13:50'
 labels: []
 milestone: m-12
 dependencies: []
@@ -28,19 +28,19 @@ Relacionado, do mesmo achado: os testes de integração não isolam nomes por ex
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 Rodar um único teste do packages/db por nome funciona, com as migrations aplicadas
-- [ ] #2 A suíte completa continua verde e não fica mais lenta de forma perceptível
+- [x] #1 Rodar um único teste do packages/db por nome funciona, com as migrations aplicadas
+- [x] #2 A suíte completa continua verde e não fica mais lenta de forma perceptível
 <!-- AC:END -->
 
 ## Definition of Done
 <!-- DOD:BEGIN -->
-- [ ] #1 pnpm quality sem falha bloqueante; resumo do gate colado nas notas
-- [ ] #2 Cada AC verificado com evidência objetiva (teste, e2e, screenshot ou saída de comando), nunca só leitura de código
-- [ ] #3 Skills aplicáveis do doc-003 invocadas e listadas nas notas
+- [x] #1 pnpm quality sem falha bloqueante; resumo do gate colado nas notas
+- [x] #2 Cada AC verificado com evidência objetiva (teste, e2e, screenshot ou saída de comando), nunca só leitura de código
+- [x] #3 Skills aplicáveis do doc-003 invocadas e listadas nas notas
 - [ ] #4 UI alterada: fluxo coberto por e2e e screenshots desktop 1280 e mobile 400 revisados pelo agent
-- [ ] #5 Comportamento confere com decisões do doc-005 (Qs citadas) e nada fora do escopo da task
+- [x] #5 Comportamento confere com decisões do doc-005 (Qs citadas) e nada fora do escopo da task
 - [ ] #6 Toca auth, ledger, prata ou saque: security-review sem achado crítico
-- [ ] #7 Notas e final summary com evidências; commits Conventional atômicos sem co-autor
+- [x] #7 Notas e final summary com evidências; commits Conventional atômicos sem co-autor
 - [ ] #8 PR merged na main com quality gate verde; branch e worktree removidos
 <!-- DOD:END -->
 
@@ -58,4 +58,47 @@ Relacionado, do mesmo achado: os testes de integração não isolam nomes por ex
 
 <!-- SECTION:NOTES:BEGIN -->
 Reincidente: apareceu de novo na TASK-066 (2026-09-17), agora com o sintoma 'relation users does not exist' num banco novo. Terceira vez que custa tempo de quem está depurando — dois agents diferentes caíram nela. Sobe de prioridade se acontecer mais uma vez.
+
+Diagnóstico: só packages/db/src/db.integration.test.ts migrava dentro do 1º it(). Os outros 11 arquivos *.integration.test.ts do db e todos os testes de banco do apps/server já migram no beforeAll (conferido por grep/awk); nada a extrair, a correção é num único arquivo. Por isso o RED só reproduz ali; ledger.integration filtrado já passava antes.
+
+RED (antes):
+$ pnpm exec vitest run src/db.integration.test.ts -t "upsert por discord_id atualiza o mesmo usuário"
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+Caused by: PostgresError: relation "users" does not exist
+ Test Files  1 failed (1)
+      Tests  1 failed | 69 skipped (70)
+
+$ pnpm exec vitest run src/db.integration.test.ts -t "cria e edita role"
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+Caused by: PostgresError: relation "event_roles" does not exist
+ Test Files  1 failed (1)
+      Tests  1 failed | 69 skipped (70)
+
+$ pnpm exec vitest run src/ledger.integration.test.ts -t "TRUNCATE é rejeitado pelo banco"
+ Test Files  1 passed (1)
+      Tests  1 passed | 22 skipped (23)
+
+GREEN (depois):
+$ pnpm exec vitest run src/db.integration.test.ts -t "upsert por discord_id atualiza o mesmo usuário"
+ Test Files  1 passed (1)
+      Tests  1 passed | 69 skipped (70)
+
+$ pnpm exec vitest run src/db.integration.test.ts -t "cria e edita role"
+ Test Files  1 passed (1)
+      Tests  1 passed | 69 skipped (70)
+
+$ pnpm exec vitest run src/db.integration.test.ts -t "conecta e executa consultas"
+ Test Files  1 passed (1)
+      Tests  1 passed | 69 skipped (70)
+
+Tempo da suíte do packages/db (261 testes): antes 3.32/3.44/3.62/4.47/5.17/4.36s, depois 3.45/3.87/3.46/3.56s (uma rodada de 41s coincidiu com load 9, descartada).
+
+Gate (pnpm quality, commit 4a3be90): ⚠️ passou com avisos. Lint 0, race 0, typecheck ok, coverage branch 87.52%, e2e 146 ok na porta 4184, Docker ok, duplicação 2.27%, vulns 0; dead code 10 itens advisory pré-existentes, nenhum tocado aqui.
+Skills: task-done-check. Sem UI (DoD#4 n/a), sem auth/ledger/prata/saque (DoD#6 n/a); nenhuma Q do doc-005 envolvida.
 <!-- SECTION:NOTES:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+Migrations do db.integration.test.ts passam a rodar no beforeAll, depois de recriar o schema; o primeiro teste só prova idempotência. vitest -t com qualquer teste do arquivo agora funciona (RED/GREEN nas notas), suíte completa verde sem ganho de tempo perceptível.
+<!-- SECTION:FINAL_SUMMARY:END -->
