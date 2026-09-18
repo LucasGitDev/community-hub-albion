@@ -2,12 +2,13 @@ import "reflect-metadata";
 import type { INestApplication } from "@nestjs/common";
 import { Test } from "@nestjs/testing";
 import { createDb, createSession, grantRole, insertLedgerEntry, runMigrations, upsertUserByDiscordId, type DbHandle } from "@albion-hub/db";
-import type { ShopCatalogResponse, ShopItemDto } from "@albion-hub/shared";
+import { shopItemCreateSchema, type ShopCatalogResponse, type ShopItemDto } from "@albion-hub/shared";
 import { sql } from "drizzle-orm";
 import request from "supertest";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { AppModule, configureApp } from "../app.module.js";
 import { parseEnv } from "../config/env.js";
+import { ShopService } from "./shop.service.js";
 import { FakeTimelinePublisher } from "../timeline/fake-timeline.publisher.js";
 
 const baseUrl = process.env.TEST_DATABASE_URL ?? process.env.DATABASE_URL;
@@ -195,5 +196,19 @@ describe.skipIf(!baseUrl)("timeline da loja (TASK-079)", () => {
     const refunded = timeline.only("shop.order_refunded");
     expect(refunded).toMatchObject({ actor: user(b.staff.id), target: target(b.comprador.id), amounts: buf(300n), recordId: b.order.id });
     expect(refunded.details).toEqual(detail("Motivo do estorno", "item errado"));
+  });
+
+  it("falha ao publicar nunca derruba a operação já commitada (T6)", async () => {
+    const staff = await member(["member", "staff"]);
+    const broken = new ShopService(handle, {
+      publish() {
+        throw new Error("Discord fora");
+      },
+    });
+    const created = await broken.create(shopItemCreateSchema.parse({ name: "Item resiliente", price: "10" }), staff.id);
+    expect(created.name).toBe("Item resiliente");
+    const comprador = await member(["member"], 100n);
+    const bought = await broken.purchase(comprador.id, created.id);
+    expect(bought.ok).toBe(true);
   });
 });

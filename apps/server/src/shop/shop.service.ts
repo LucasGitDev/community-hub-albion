@@ -1,4 +1,4 @@
-import { Inject, Injectable } from "@nestjs/common";
+import { Inject, Injectable, Logger } from "@nestjs/common";
 import {
   cancelShopOrder,
   claimShopOrder,
@@ -54,6 +54,8 @@ const ORDER_SUMMARY: Record<OrderTransition, string> = {
  */
 @Injectable()
 export class ShopService {
+  private readonly logger = new Logger("ShopService");
+
   constructor(
     @Inject(DB_HANDLE) private readonly handle: DbHandle,
     @Inject(TIMELINE_PUBLISHER) private readonly timeline: TimelinePublisher,
@@ -66,6 +68,18 @@ export class ShopService {
   private async person(userId: string): Promise<Person> {
     const [[nick], discordId] = await Promise.all([listMemberNicks(this.handle.db, [userId]), findDiscordIdByUserId(this.handle.db, userId)]);
     return { id: userId, name: nick?.nick ?? "Membro", discordId };
+  }
+
+  /**
+   * Roda a publicação sem deixar erro subir (T6): a operação já commitou, e falha ao montar o registro
+   * (ex.: banco caiu na leitura do nick) vira aviso no log, nunca 500 para quem comprou ou entregou.
+   */
+  private async safely(what: string, publish: () => Promise<void> | void): Promise<void> {
+    try {
+      await publish();
+    } catch (error) {
+      this.logger.warn(`Timeline: não publicou ${what}: ${error instanceof Error ? error.message : String(error)}`);
+    }
   }
 
   private static actor(p: Person): TimelineActor {
@@ -108,7 +122,7 @@ export class ShopService {
 
   /** Publica a transição só quando ela aconteceu: recusa não vai para a timeline (T5). */
   private async transition(transition: OrderTransition, result: ShopOrderActionResult, options: ShopOrderActionOptions, extra: TimelineDetail[] = []): Promise<ShopOrderActionResult> {
-    if (result.ok) await this.publishOrder(transition, result.order, options.actorUserId, extra);
+    if (result.ok) await this.safely(`shop.order_${transition}`, () => this.publishOrder(transition, result.order, options.actorUserId, extra));
     return result;
   }
 
@@ -123,7 +137,7 @@ export class ShopService {
 
   async create(input: ShopItemCreateInput, createdBy: string): Promise<ShopItemDto> {
     const item = await createShopItem(this.handle.db, { ...input, createdBy });
-    this.publishItem("created", item, await this.person(createdBy));
+    await this.safely("shop.item_created", async () => this.publishItem("created", item, await this.person(createdBy)));
     return item;
   }
 
@@ -133,14 +147,14 @@ export class ShopService {
    * com os campos enviados. `actorUserId` vem da sessão.
    */
   async update(id: string, patch: ShopItemUpdateInput, actorUserId: string): Promise<ShopItemDto | null> {
-    const before = await getShopItem(this.handle.db, id);
+    const before = await getShopItem(this.handle.db, id).catch(() => null);
     const item = await updateShopItem(this.handle.db, id, patch);
     if (!item) return null;
     const changed = Object.keys(patch).join(", ");
     const details: TimelineDetail[] = changed ? [{ name: "Campos", value: changed }] : [];
     if (before && before.price !== item.price) details.push({ name: "Preço anterior", value: before.price });
     const unpublished = before?.published === true && !item.published;
-    this.publishItem(unpublished ? "unpublished" : "updated", item, await this.person(actorUserId), details);
+    await this.safely("shop.item_updated", async () => this.publishItem(unpublished ? "unpublished" : "updated", item, await this.person(actorUserId), details));
     return item;
   }
 
@@ -152,7 +166,7 @@ export class ShopService {
   /** Compra: reserva moeda e estoque, revalidando dentro da transação (AC#4, AC#5). */
   async purchase(userId: string, itemId: string): Promise<PurchaseShopItemResult> {
     const result = await purchaseShopItem(this.handle.db, { userId, itemId });
-    if (result.ok) await this.publishOrder("reserved", result.order, userId);
+    if (result.ok) await this.safely("shop.order_reserved", () => this.publishOrder("reserved", result.order, userId));
     return result;
   }
 
