@@ -23,7 +23,7 @@ export interface TimelineQueueOptions {
   maxQueued?: number;
 }
 
-export const TIMELINE_QUEUE_DEFAULTS = {
+const TIMELINE_QUEUE_DEFAULTS = {
   maxEmbedsPerMessage: 10,
   maxCharsPerMessage: DISCORD_EMBED_LIMITS.total,
   maxMessagesPerWindow: 5,
