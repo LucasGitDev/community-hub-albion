@@ -9,7 +9,7 @@ export type TimelineClientLike = { channels: { fetch(id: string): Promise<Timeli
 type WarnLogger = Pick<Logger, "warn">;
 
 /** Payload da API do Discord para um lote. Menções nunca notificam: o canal é de auditoria, não de aviso. */
-export function toTimelinePayload(embeds: readonly TimelineEmbed[]) {
+function toTimelinePayload(embeds: readonly TimelineEmbed[]) {
   return {
     embeds: embeds.map((e) => ({
       title: e.title,
