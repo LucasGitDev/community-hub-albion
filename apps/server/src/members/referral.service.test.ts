@@ -12,6 +12,7 @@ import { ALBION_PLAYER_LOOKUP } from "./albion-lookup.token.js";
 import { NickDecisionService } from "./nick-decision.service.js";
 import { NickRegistrationService } from "./nick-registration.service.js";
 import { ReferralService } from "./referral.service.js";
+import { FakeTimelinePublisher } from "../timeline/fake-timeline.publisher.js";
 
 const baseUrl = process.env.TEST_DATABASE_URL ?? process.env.DATABASE_URL;
 if (!baseUrl && process.env.CI) throw new Error("CI sem TEST_DATABASE_URL: testes da indicação não podem ser pulados");
@@ -32,6 +33,7 @@ describe.skipIf(!baseUrl)("Indicação: serviço e rota da staff (TASK-074, Post
   let registration: NickRegistrationService;
   let decisions: NickDecisionService;
   let seq = 0;
+  const timeline = new FakeTimelinePublisher();
 
   const newUser = async (nick: string | null) => {
     const n = ++seq;
@@ -77,7 +79,7 @@ describe.skipIf(!baseUrl)("Indicação: serviço e rota da staff (TASK-074, Post
       PUBLIC_URL,
     });
     if (!parsed.ok) throw new Error(parsed.message);
-    const moduleRef = await Test.createTestingModule({ imports: [AppModule.register(parsed.env, { bot: false })] })
+    const moduleRef = await Test.createTestingModule({ imports: [AppModule.register(parsed.env, { bot: false, timeline })] })
       .overrideProvider(ALBION_PLAYER_LOOKUP)
       .useValue(hangingAlbion)
       .compile();
@@ -204,6 +206,98 @@ describe.skipIf(!baseUrl)("Indicação: serviço e rota da staff (TASK-074, Post
     expect(await buffunfa(excedente.id)).toBe(REFERRAL_BONUS.referred);
     // Registrada mesmo sem pagar: o vínculo é o que a staff precisa enxergar depois.
     expect((await referrals.list(excedente.id)).declared).toMatchObject({ referrerPaid: false });
+  });
+
+  /** Timeline (TASK-078): declarada, paga (os dois lados) e estornada, sempre depois do commit. */
+  describe("timeline da indicação (TASK-078)", () => {
+    it("declaração retroativa publica declarada e paga, com os dois lados em Buffunfa", async () => {
+      const referrer = await newUser("TlIndicador");
+      const referred = await newUser("TlIndicado");
+      timeline.clear();
+      await referrals.declare(referred.id, "tlindicador");
+      expect(timeline.actions().filter((a) => a.startsWith("referral."))).toEqual(["referral.declared", "referral.paid"]);
+      expect(timeline.only("referral.declared")).toMatchObject({
+        actor: { kind: "user", userId: referred.id, name: "TlIndicado", discordId: referred.discordId },
+        target: { name: "TlIndicador", id: referrer.id, discordId: referrer.discordId },
+        recordId: referred.id,
+      });
+      expect(timeline.only("referral.paid")).toMatchObject({
+        actor: { kind: "system" },
+        target: { name: "TlIndicado", id: referred.id },
+        amounts: [
+          { value: REFERRAL_BONUS.referred, currency: "buffunfa", label: "Indicado" },
+          { value: REFERRAL_BONUS.referrer, currency: "buffunfa", label: "Indicador" },
+        ],
+        recordId: referred.id,
+        details: [{ name: "Indicador", value: "TlIndicador" }],
+      });
+    });
+
+    it("declarar antes do nick publica só a declaração; a aprovação publica o pagamento uma vez", async () => {
+      const staff = await newUser("TlStaff");
+      await newUser("TlIndPendente");
+      const referred = await newUser(null);
+      timeline.clear();
+      await referrals.declare(referred.id, "tlindpendente");
+      expect(timeline.ofAction("referral.paid")).toEqual([]);
+      timeline.only("referral.declared");
+      await approveNickFor(referred.id, "TlAprovado", staff.id);
+      await approveNickFor(referred.id, "TlAprovado2", staff.id);
+      expect(timeline.only("referral.paid")).toMatchObject({ target: { id: referred.id }, recordId: referred.id });
+    });
+
+    it("recusas (autoindicação, sem conta, segunda declaração) não publicam", async () => {
+      const solo = await newUser("TlSolo");
+      const primeiro = await newUser("TlPrimeiro");
+      const referred = await newUser(null);
+      await referrals.declare(referred.id, "tlprimeiro");
+      timeline.clear();
+      await referrals.declare(solo.id, "tlsolo");
+      await referrals.declare(solo.id, "NinguemComEsseNick");
+      await referrals.declare(referred.id, "tlsolo");
+      await referrals.declareByDiscordId(referred.id, primeiro.discordId, "primeiro");
+      expect(timeline.entries.filter((e) => e.action.startsWith("referral."))).toEqual([]);
+    });
+
+    it("teto do mês: o pagamento publica só o lado do indicado e diz por quê", async () => {
+      await newUser("TlNoTeto");
+      for (let i = 0; i < REFERRAL_MONTHLY_REWARD_CAP; i += 1) await referrals.declare((await newUser(`TlTeto${i}`)).id, "tlnoteto");
+      const excedente = await newUser("TlExcedente");
+      timeline.clear();
+      await referrals.declare(excedente.id, "tlnoteto");
+      const paid = timeline.only("referral.paid");
+      expect(paid.amounts).toEqual([{ value: REFERRAL_BONUS.referred, currency: "buffunfa", label: "Indicado" }]);
+      expect(paid.details).toContainEqual({ name: "Indicador não recebeu", value: "teto mensal de indicações pagas atingido" });
+    });
+
+    it("estorno da staff publica os dois lados negativos e o motivo; o segundo estorno não publica", async () => {
+      const staff = await newUser("TlStaffEstorno");
+      await grantRole(handle.db, staff.id, "staff");
+      const token = (await createSession(handle.db, staff.id, new Date(Date.now() + 3_600_000))).token;
+      const referrer = await newUser("TlIndEstorno");
+      const referred = await newUser("TlIndicadoEstorno");
+      await referrals.declare(referred.id, "tlindestorno");
+      timeline.clear();
+      const reverse = () =>
+        request(app.getHttpServer()).post(`/api/admin/members/${referred.id}/referrals/reverse`).set("Origin", PUBLIC_URL).set("Cookie", `ah_session=${token}`).send({ reason: "bônus foi para a pessoa errada" });
+      expect((await reverse()).status).toBe(200);
+      expect(timeline.only("referral.reversed")).toMatchObject({
+        actor: { kind: "user", userId: staff.id, name: "TlStaffEstorno" },
+        target: { id: referred.id },
+        amounts: [
+          { value: -REFERRAL_BONUS.referred, currency: "buffunfa", label: "Indicado" },
+          { value: -REFERRAL_BONUS.referrer, currency: "buffunfa", label: "Indicador" },
+        ],
+        recordId: referred.id,
+        details: [
+          { name: "Motivo", value: "bônus foi para a pessoa errada" },
+          { name: "Indicador", value: "TlIndEstorno" },
+        ],
+      });
+      expect(referrer.id).toBeTruthy();
+      expect((await reverse()).status).toBe(409);
+      expect(timeline.ofAction("referral.reversed")).toHaveLength(1);
+    });
   });
 
   describe("rota da staff (AC#8)", () => {
