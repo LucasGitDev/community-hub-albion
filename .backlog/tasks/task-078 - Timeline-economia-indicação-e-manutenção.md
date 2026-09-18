@@ -1,11 +1,11 @@
 ---
 id: TASK-078
 title: 'Timeline: economia, indicação e manutenção'
-status: In Progress
+status: Done
 assignee:
   - '@claude'
 created_date: '2026-09-18 03:22'
-updated_date: '2026-09-18 03:50'
+updated_date: '2026-09-18 03:52'
 labels: []
 milestone: m-12
 dependencies:

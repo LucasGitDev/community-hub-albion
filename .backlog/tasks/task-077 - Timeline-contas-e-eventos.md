@@ -1,11 +1,11 @@
 ---
 id: TASK-077
 title: 'Timeline: contas e eventos'
-status: In Progress
+status: Done
 assignee:
   - '@claude'
 created_date: '2026-09-18 03:22'
-updated_date: '2026-09-18 03:44'
+updated_date: '2026-09-18 03:52'
 labels: []
 milestone: m-12
 dependencies:
