@@ -8,6 +8,7 @@ import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest
 import { AppModule, configureApp } from "../app.module.js";
 import { parseEnv, type Env } from "../config/env.js";
 import { ALBION_PLAYER_LOOKUP } from "../members/albion-lookup.token.js";
+import { FakeTimelinePublisher } from "../timeline/fake-timeline.publisher.js";
 import { MAINTENANCE_RATE_LIMIT, MAINTENANCE_TOKEN_HEADER } from "./maintenance-token.guard.js";
 import { MAINTENANCE_CLEANUP, type MaintenanceCleanup } from "./maintenance.tokens.js";
 
@@ -47,6 +48,7 @@ describe.skipIf(!baseUrl)("/api/maintenance (TASK-048)", () => {
   let seq = 0;
   const cleanup: MaintenanceCleanup = { run: vi.fn(async () => ({ sessionsRevoked: 2 })) };
   const lookup = { lookup: vi.fn() };
+  const timeline = new FakeTimelinePublisher();
 
   /**
    * Dublê do módulo que a TASK-049 vai escrever: global e exportando `MAINTENANCE_CLEANUP`. Se este
@@ -57,7 +59,7 @@ describe.skipIf(!baseUrl)("/api/maintenance (TASK-048)", () => {
 
   const buildApp = async (env: Env, options: { withCleanup?: boolean } = {}) => {
     const builder = Test.createTestingModule({
-      imports: [...(options.withCleanup ? [{ module: CleanupStubModule, global: true }] : []), AppModule.register(env, { bot: false })],
+      imports: [...(options.withCleanup ? [{ module: CleanupStubModule, global: true }] : []), AppModule.register(env, { bot: false, timeline })],
     });
     builder.overrideProvider(ALBION_PLAYER_LOOKUP).useValue(lookup);
     const app = configureApp((await builder.compile()).createNestApplication({ logger: false }));
@@ -84,6 +86,7 @@ describe.skipIf(!baseUrl)("/api/maintenance (TASK-048)", () => {
 
   afterEach(() => {
     vi.clearAllMocks();
+    timeline.clear();
   });
 
   async function member(nick?: string) {
@@ -308,6 +311,81 @@ describe.skipIf(!baseUrl)("/api/maintenance (TASK-048)", () => {
           const res = await post(app, "/api/maintenance/cleanup", TOKEN).expect(200);
           expect(res.body).toEqual({ result: { sessionsRevoked: 2 } });
           expect(cleanup.run).toHaveBeenCalledTimes(1);
+        },
+        { withCleanup: true },
+      );
+    });
+  });
+
+  describe("timeline (TASK-078, T9): manutenção aparece sempre, com ator manutenção", () => {
+    const dump = () => JSON.stringify(timeline.entries, (_k, v: unknown) => (typeof v === "bigint" ? v.toString() : v));
+
+    it("ajuste de prata publica depois do commit com alvo, valor em prata, ID do lançamento e motivo", async () => {
+      await withApp(async (app) => {
+        const user = await member("Ajustado");
+        const res = await post(app, "/api/maintenance/silver", TOKEN, { userId: user.id, amount: "-1500000", reason: "split 12 pago em dobro" }).expect(201);
+        expect(timeline.only("maintenance.silver_adjusted")).toMatchObject({
+          actor: { kind: "maintenance" },
+          target: { name: "Ajustado", id: user.id, discordId: user.discordId },
+          amounts: [
+            { value: -1_500_000n, currency: "silver", label: "Ajuste" },
+            { value: -1_500_000n, currency: "silver", label: "Saldo depois" },
+          ],
+          recordId: res.body.entryId,
+          details: [{ name: "Motivo", value: "split 12 pago em dobro" }],
+        });
+        expect(dump()).not.toContain(TOKEN);
+      });
+    });
+
+    it("ajuste de Buffunfa publica na moeda Buffunfa, nunca em prata", async () => {
+      await withApp(async (app) => {
+        const user = await member();
+        const res = await post(app, "/api/maintenance/buffunfa", TOKEN, { userId: user.id, amount: "340", reason: "taxa cobrada em dobro" }).expect(201);
+        const entry = timeline.only("maintenance.buffunfa_adjusted");
+        expect(entry).toMatchObject({ actor: { kind: "maintenance" }, recordId: res.body.entryId, details: [{ name: "Motivo", value: "taxa cobrada em dobro" }] });
+        expect(entry.amounts?.map((a) => a.currency)).toEqual(["buffunfa", "buffunfa"]);
+        expect(entry.amounts?.[0]?.value).toBe(340n);
+      });
+    });
+
+    it("recusa (sem motivo, token errado, membro inexistente) não publica nada", async () => {
+      await withApp(async (app) => {
+        const user = await member();
+        await post(app, "/api/maintenance/silver", TOKEN, { userId: user.id, amount: "10", reason: "" }).expect(400);
+        await post(app, "/api/maintenance/silver", `${TOKEN}x`, { userId: user.id, amount: "10", reason: "x" }).expect(404);
+        await post(app, "/api/maintenance/buffunfa", TOKEN, { userId: "11111111-1111-1111-1111-111111111111", amount: "10", reason: "x" }).expect(404);
+        await post(app, "/api/maintenance/albion-check", TOKEN, { userId: user.id }).expect(400);
+        expect(timeline.entries).toEqual([]);
+      });
+    });
+
+    it("revalidação de nick publica o resultado", async () => {
+      await withApp(async (app) => {
+        const user = await member("Revisto");
+        lookup.lookup.mockResolvedValue({ status: "found", playerId: "p-9", guildName: "Genei", checkedAt: "2026-09-16T10:00:00.000Z" });
+        await post(app, "/api/maintenance/albion-check", TOKEN, { userId: user.id }).expect(201);
+        expect(timeline.only("maintenance.albion_rechecked")).toMatchObject({
+          actor: { kind: "maintenance" },
+          target: { name: "Revisto", id: user.id },
+          recordId: user.id,
+          details: [
+            { name: "Resultado", value: "found" },
+            { name: "Guilda", value: "Genei" },
+          ],
+        });
+      });
+    });
+
+    it("limpeza sob demanda publica o resumo; sem limpeza registrada (503) não publica", async () => {
+      await withApp(async (app) => {
+        await post(app, "/api/maintenance/cleanup", TOKEN).expect(503);
+        expect(timeline.entries).toEqual([]);
+      });
+      await withApp(
+        async (app) => {
+          await post(app, "/api/maintenance/cleanup", TOKEN).expect(200);
+          expect(timeline.only("maintenance.cleanup_run")).toMatchObject({ actor: { kind: "maintenance" }, details: [{ name: "sessionsRevoked", value: "2" }] });
         },
         { withCleanup: true },
       );
