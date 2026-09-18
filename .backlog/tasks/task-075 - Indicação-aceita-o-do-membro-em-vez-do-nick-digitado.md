@@ -1,9 +1,10 @@
 ---
 id: TASK-075
 title: Indicação aceita o @ do membro em vez do nick digitado
-status: To Do
+status: Done
 assignee: []
 created_date: '2026-09-18 03:01'
+updated_date: '2026-09-18 03:06'
 labels: []
 milestone: m-11
 dependencies: []
