@@ -1,6 +1,8 @@
 import { Inject, Injectable, Logger, Optional } from "@nestjs/common";
 import { addUserNote, banUser, getBanStatus, unbanUser, type BanUserResult, type DbHandle, type UnbanUserResult } from "@albion-hub/db";
 import { DB_HANDLE } from "../db/db.module.js";
+import { TIMELINE_PUBLISHER, type TimelinePublisher } from "../domain/timeline.js";
+import { loadTimelinePeople, publishAfterCommit } from "../timeline/timeline-people.js";
 import { describeDiscordError } from "../domain/discord-errors.js";
 import { DISCORD_GUILD_GATEWAY, type DiscordGuildGateway } from "../bot/discord-guild.gateway.js";
 import { DISCORD_MEMBER_ROLE_ID } from "../bot/discord-member-sync.service.js";
@@ -23,6 +25,7 @@ export class MemberBanService {
 
   constructor(
     @Inject(DB_HANDLE) private readonly handle: DbHandle,
+    @Inject(TIMELINE_PUBLISHER) private readonly timeline: TimelinePublisher,
     @Optional() @Inject(DISCORD_GUILD_GATEWAY) private readonly gateway: DiscordGuildGateway | null = null,
     @Optional() @Inject(DISCORD_MEMBER_ROLE_ID) private readonly memberRoleId: string | null = null,
   ) {}
@@ -31,6 +34,10 @@ export class MemberBanService {
     const result = await banUser(this.handle.db, { userId, actorId, reason });
     if (!result.ok) return result;
 
+    await this.publish("account.banned", "Banido", userId, actorId, [
+      { name: "Motivo", value: reason },
+      { name: "Sessões revogadas", value: String(result.sessionsRevoked) },
+    ]);
     await addUserNote(this.handle.db, { userId, authorId: actorId, kind: "system", body: `Banido. Motivo: ${reason}` });
     this.logger.warn(`Usuário ${userId} banido por ${actorId}; ${result.sessionsRevoked} sessão(ões) revogada(s).`);
     await this.syncMemberRole("remove", result.discordId, `Banido no painel: ${reason}`);
@@ -42,6 +49,7 @@ export class MemberBanService {
     const result = await unbanUser(this.handle.db, userId);
     if (!result.ok) return result;
 
+    await this.publish("account.unbanned", "Desbanido", userId, actorId, before ? [{ name: "Motivo do banimento", value: before.banReason }] : []);
     await addUserNote(this.handle.db, {
       userId,
       authorId: actorId,
@@ -52,6 +60,14 @@ export class MemberBanService {
     // O cargo Membro volta na próxima aprovação de nick, não aqui: quem foi banido pode ter perdido o nick
     // no meio do caminho, e devolver cargo às cegas é dar acesso que ninguém conferiu.
     return result;
+  }
+
+  private publish(action: "account.banned" | "account.unbanned", verb: string, userId: string, actorId: string, details: { name: string; value: string }[]): Promise<void> {
+    return publishAfterCommit(this.timeline, this.logger, async () => {
+      const people = await loadTimelinePeople(this.handle.db, [actorId, userId]);
+      const target = people.target(userId);
+      return { action, summary: `${verb}: ${target.name}`, actor: people.actor(actorId), target, details };
+    });
   }
 
   /** Cargo Membro no Discord. Sem bot ligado (teste, e2e) não há o que sincronizar. */
