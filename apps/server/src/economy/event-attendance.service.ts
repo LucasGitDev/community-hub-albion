@@ -8,8 +8,10 @@ import {
   type PayEventAttendanceResult,
   type SetEventRoleBuffunfaResult,
 } from "@albion-hub/db";
-import { attendanceLineToDto, BUFFUNFA_ROLE_MAX, type EventAttendanceDto, type EventDto } from "@albion-hub/shared";
+import { attendanceLineToDto, BUFFUNFA_ROLE_MAX, formatAmount, type EventAttendanceDto, type EventDto } from "@albion-hub/shared";
 import { DB_HANDLE } from "../db/db.module.js";
+import { TIMELINE_PUBLISHER, type TimelinePublisher } from "../domain/timeline.js";
+import { loadTimelinePeople, publishAfterCommit } from "../timeline/after-commit.js";
 import { assertEventEditable } from "../events/archived.guard.js";
 
 /**
@@ -24,7 +26,10 @@ import { assertEventEditable } from "../events/archived.guard.js";
  */
 @Injectable()
 export class EventAttendanceService {
-  constructor(@Inject(DB_HANDLE) private readonly handle: DbHandle) {}
+  constructor(
+    @Inject(DB_HANDLE) private readonly handle: DbHandle,
+    @Inject(TIMELINE_PUBLISHER) private readonly timeline: TimelinePublisher,
+  ) {}
 
   /** Prévia antes do fechamento e recibo depois dele: a mesma conta, então a tela não tem dois desenhos. */
   preview(eventId: string): Promise<EventAttendancePreview | null> {
@@ -44,7 +49,28 @@ export class EventAttendanceService {
   /** Fechamento: cria a Buffunfa de quem bateu os 90% (AC#4, AC#6). Idempotente. */
   async pay(event: EventDto, actorUserId: string | null): Promise<PayEventAttendanceResult> {
     assertEventEditable(event);
-    return payEventAttendance(this.handle.db, event.id, { actorUserId });
+    const result = await payEventAttendance(this.handle.db, event.id, { actorUserId });
+    // Idempotente: o segundo fechamento não cria Buffunfa, então não publica.
+    if (result.ok && !result.alreadyPaid) await this.publishPaid(event, result.preview, actorUserId);
+    return result;
+  }
+
+  /** Timeline (TASK-078, AC#3): um registro por fechamento, com uma linha por pessoa paga e o valor dela. */
+  private publishPaid(event: EventDto, preview: EventAttendancePreview, actorUserId: string | null): Promise<void> {
+    return publishAfterCommit(this.timeline, async () => {
+      const people = await loadTimelinePeople(this.handle.db, [actorUserId]);
+      const paid = preview.rows.filter((row) => row.skip === null && row.userId !== null && row.amount > 0n);
+      return {
+        action: "economy.attendance_paid" as const,
+        summary: `Buffunfa por presença paga: ${event.name}`,
+        actor: people.actor(actorUserId),
+        target: { name: event.name, id: event.id },
+        amounts: [{ value: paid.reduce((sum, row) => sum + row.amount, 0n), currency: "buffunfa" as const, label: "Total pago" }],
+        recordId: event.id,
+        details: [{ name: "Pessoas pagas", value: String(paid.length) }],
+        list: { title: "Pagos", items: paid.map((row) => `${row.nick} (${row.roleName ?? "sem role"}): ${formatAmount(row.amount, "buffunfa")}`) },
+      };
+    });
   }
 }
 

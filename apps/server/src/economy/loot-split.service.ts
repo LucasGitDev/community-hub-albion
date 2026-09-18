@@ -19,6 +19,7 @@ import {
 import {
   eventStatusLabel,
   feeFromDto,
+  formatAmount,
   splitConfirmRefusalMessage,
   type EventDto,
   type EventFee,
@@ -27,6 +28,8 @@ import {
   type LootSplitUpdateInput,
 } from "@albion-hub/shared";
 import { DB_HANDLE } from "../db/db.module.js";
+import { TIMELINE_PUBLISHER, type TimelinePublisher } from "../domain/timeline.js";
+import { loadTimelinePeople, publishAfterCommit } from "../timeline/after-commit.js";
 import { assertEventEditable } from "../events/archived.guard.js";
 import { EventsService } from "../events/events.service.js";
 
@@ -65,6 +68,7 @@ export class LootSplitService implements OnModuleInit {
   constructor(
     @Inject(DB_HANDLE) private readonly handle: DbHandle,
     @Inject(EventsService) private readonly events: EventsService,
+    @Inject(TIMELINE_PUBLISHER) private readonly timeline: TimelinePublisher,
   ) {}
 
   /**
@@ -122,13 +126,67 @@ export class LootSplitService implements OnModuleInit {
    */
   async confirm(event: EventDto, splitId: string, actorUserId: string | null): Promise<ConfirmLootSplitResult> {
     assertEventEditable(event);
-    return confirmLootSplit(this.handle.db, splitId, { actorUserId });
+    const result = await confirmLootSplit(this.handle.db, splitId, { actorUserId });
+    // A segunda confirmação não credita nada: publicar de novo mostraria dinheiro que não existiu.
+    if (result.ok && !result.alreadyConfirmed) await this.publishConfirmed(event, result.split, actorUserId);
+    return result;
   }
 
   /** Única correção de um split confirmado (Q24): estorna todos os lançamentos dele, nunca edita. */
   async reverse(event: EventDto, splitId: string, reason: string, actorUserId: string | null): Promise<ReverseLootSplitResult> {
     assertEventEditable(event);
-    return reverseLootSplit(this.handle.db, splitId, { reason, actorUserId });
+    const result = await reverseLootSplit(this.handle.db, splitId, { reason, actorUserId });
+    if (result.ok) await this.publishReversed(event, splitId, reason, result.reversed, actorUserId);
+    return result;
+  }
+
+  /**
+   * Timeline (TASK-078, AC#3): **um** registro consolidado por split, com uma linha por pessoa e o valor
+   * dela. Um registro por participante encheria o canal e estouraria o ritmo do Discord numa ZvZ.
+   */
+  private publishConfirmed(event: EventDto, split: LootSplitDto, actorUserId: string | null): Promise<void> {
+    return publishAfterCommit(this.timeline, async () => {
+      const people = await loadTimelinePeople(this.handle.db, [actorUserId, event.ownerUserId]);
+      const ownerSilver = BigInt(split.feeSilver) + BigInt(split.residualSilver);
+      const items = split.lines
+        .filter((line) => BigInt(line.amount) > 0n)
+        .map((line) => {
+          const who = line.nick ?? `Discord ${line.discordUserId}`;
+          return line.userId ? `${who}: ${formatAmount(BigInt(line.amount), "silver")}` : `${who}: sem conta no painel, não recebeu`;
+        });
+      if (ownerSilver > 0n) items.push(`${people.name(event.ownerUserId)} (taxa e sobra): ${formatAmount(ownerSilver, "silver")}`);
+      return {
+        action: "economy.loot_split_confirmed" as const,
+        summary: `Loot split confirmado: ${event.name}`,
+        actor: people.actor(actorUserId),
+        target: { name: event.name, id: event.id },
+        amounts: [
+          { value: BigInt(split.totalSilver), currency: "silver" as const, label: "Total da leva" },
+          { value: BigInt(split.distributableSilver), currency: "silver" as const, label: "Distribuído" },
+          { value: ownerSilver, currency: "silver" as const, label: "Taxa e sobra" },
+        ],
+        recordId: split.id,
+        list: { title: "Pagos", items },
+      };
+    });
+  }
+
+  private publishReversed(event: EventDto, splitId: string, reason: string, reversed: number, actorUserId: string | null): Promise<void> {
+    return publishAfterCommit(this.timeline, async () => {
+      const [people, split] = await Promise.all([loadTimelinePeople(this.handle.db, [actorUserId]), getLootSplit(this.handle.db, splitId)]);
+      return {
+        action: "economy.loot_split_reversed" as const,
+        summary: `Loot split estornado: ${event.name}`,
+        actor: people.actor(actorUserId),
+        target: { name: event.name, id: event.id },
+        ...(split ? { amounts: [{ value: BigInt(split.totalSilver), currency: "silver" as const, label: "Total da leva" }] } : {}),
+        recordId: splitId,
+        details: [
+          { name: "Motivo", value: reason },
+          { name: "Lançamentos estornados", value: String(reversed) },
+        ],
+      };
+    });
   }
 
   /** Troca a taxa do evento (Q26: vale até o arquivamento). Não mexe em split já rascunhado. */

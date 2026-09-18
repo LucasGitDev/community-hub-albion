@@ -17,6 +17,8 @@ import {
 } from "@albion-hub/db";
 import type { WithdrawalBalanceDto, WithdrawalDto, WithdrawalListQuery } from "@albion-hub/shared";
 import { DB_HANDLE } from "../db/db.module.js";
+import { TIMELINE_PUBLISHER, type TimelineAction, type TimelinePublisher } from "../domain/timeline.js";
+import { loadTimelinePeople, publishAfterCommit } from "../timeline/after-commit.js";
 
 /**
  * Serviço interno único do saque (TASK-030, regra do repo: comando do Discord, painel e botão de embed
@@ -41,7 +43,10 @@ export type DecideSilverResult = WithdrawalDecisionResult;
 
 @Injectable()
 export class WithdrawalService {
-  constructor(@Inject(DB_HANDLE) private readonly handle: DbHandle) {}
+  constructor(
+    @Inject(DB_HANDLE) private readonly handle: DbHandle,
+    @Inject(TIMELINE_PUBLISHER) private readonly timeline: TimelinePublisher,
+  ) {}
 
   /** Saldo, reserva e disponível do membro: a conta única do sistema (AC#2). */
   async balance(userId: string): Promise<WithdrawalBalance> {
@@ -60,7 +65,9 @@ export class WithdrawalService {
   async request(userId: string, amount: bigint): Promise<RequestSilverResult> {
     const ban = await getBanStatus(this.handle.db, userId);
     if (ban) return { ok: false, reason: "banned", banReason: ban.banReason };
-    return requestWithdrawal(this.handle.db, { userId, amount });
+    const result = await requestWithdrawal(this.handle.db, { userId, amount });
+    if (result.ok) await this.publish("economy.withdrawal_requested", result.withdrawal, userId, null);
+    return result;
   }
 
   /**
@@ -70,18 +77,44 @@ export class WithdrawalService {
    * onde está, com a reserva de pé. Quem quiser liberar o saldo rejeita (isso continua permitido) ou
    * desbane — aprovar seria pagar prata a quem acabou de ser expulso da comunidade.
    */
-  approve(id: string, options: DecideWithdrawalOptions): Promise<DecideSilverResult> {
-    return approveWithdrawal(this.handle.db, id, options);
+  async approve(id: string, options: DecideWithdrawalOptions): Promise<DecideSilverResult> {
+    const result = await approveWithdrawal(this.handle.db, id, options);
+    if (result.ok) await this.publish("economy.withdrawal_approved", result.withdrawal, options.actorUserId, result.withdrawal.decisionNote);
+    return result;
   }
 
   /** Libera a reserva sem lançamento; motivo obrigatório (AC#3). */
-  reject(id: string, options: DecideWithdrawalOptions): Promise<WithdrawalDecisionResult> {
-    return rejectWithdrawal(this.handle.db, id, options);
+  async reject(id: string, options: DecideWithdrawalOptions): Promise<WithdrawalDecisionResult> {
+    const result = await rejectWithdrawal(this.handle.db, id, options);
+    if (result.ok) await this.publish("economy.withdrawal_rejected", result.withdrawal, options.actorUserId, result.withdrawal.decisionNote);
+    return result;
   }
 
   /** Registra o pagamento in-game: exige `settled_by` + nota (AC#4, Q11). */
-  settle(id: string, options: DecideWithdrawalOptions): Promise<WithdrawalDecisionResult> {
-    return settleWithdrawal(this.handle.db, id, options);
+  async settle(id: string, options: DecideWithdrawalOptions): Promise<WithdrawalDecisionResult> {
+    const result = await settleWithdrawal(this.handle.db, id, options);
+    if (result.ok) await this.publish("economy.withdrawal_settled", result.withdrawal, options.actorUserId, result.withdrawal.settlementNote);
+    return result;
+  }
+
+  /**
+   * Timeline (TASK-078): só depois de o repo devolver `ok`, ou seja, com a transação já commitada (T5).
+   * Recusa não chega aqui. Prata por inteiro, no canal só de admins (T2).
+   */
+  private publish(action: TimelineAction, withdrawal: WithdrawalDto, actorUserId: string, note: string | null): Promise<void> {
+    return publishAfterCommit(this.timeline, async () => {
+      const people = await loadTimelinePeople(this.handle.db, [actorUserId, withdrawal.userId]);
+      const owner = people.target(withdrawal.userId);
+      return {
+        action,
+        summary: `${WITHDRAWAL_SUMMARY[action]}: ${owner.name}`,
+        actor: people.actor(actorUserId),
+        ...(actorUserId === withdrawal.userId ? {} : { target: owner }),
+        amounts: [{ value: BigInt(withdrawal.amount), currency: "silver" as const }],
+        recordId: withdrawal.id,
+        ...(note ? { details: [{ name: action === "economy.withdrawal_rejected" ? "Motivo" : "Nota", value: note }] } : {}),
+      };
+    });
   }
 
   get(id: string): Promise<WithdrawalDto | null> {
@@ -93,6 +126,13 @@ export class WithdrawalService {
     return listWithdrawals(this.handle.db, filters);
   }
 }
+
+const WITHDRAWAL_SUMMARY: Record<string, string> = {
+  "economy.withdrawal_requested": "Saque pedido",
+  "economy.withdrawal_approved": "Saque aprovado",
+  "economy.withdrawal_rejected": "Saque recusado",
+  "economy.withdrawal_settled": "Saque entregue",
+};
 
 /** Prata vai para o JSON como string: número de JS não aguenta bigint (Q20). */
 export const toBalanceDto = (balance: WithdrawalBalance): WithdrawalBalanceDto => ({
