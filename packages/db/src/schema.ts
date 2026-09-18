@@ -56,9 +56,48 @@ export const users = pgTable("users", {
    * comunidade com a pessoa, mesmo depois de ela sair.
    */
   leftGuildAt: timestamp("left_guild_at", { withTimezone: true }),
+  /**
+   * Indicação declarada (TASK-074, F11). É **campo do usuário**, não tabela de convites: quem foi
+   * indicado carrega na própria linha quem o indicou, e por isso declarar depois é sempre possível —
+   * não há prazo nem janela, sempre sobra espaço para indicação retroativa.
+   *
+   * **Write-once garantido pelo banco**, não pelo serviço: a migration cria a trigger
+   * `users_referred_by_immutable`, que recusa qualquer UPDATE que troque um `referred_by` já
+   * preenchido (limpar também). Quem grava é um UPDATE condicional `where referred_by is null`, então
+   * duas declarações simultâneas para a mesma pessoa terminam com uma gravada e a outra recusada.
+   *
+   * `restrict`: apagar a conta de quem indicou exigiria alterar esta coluna, e a trigger recusa —
+   * indicação é histórico, como o ledger.
+   */
+  referredBy: uuid("referred_by").references((): AnyPgColumn => users.id, { onDelete: "restrict" }),
+  referredAt: timestamp("referred_at", { withTimezone: true }),
+  /**
+   * Quando a indicação foi **liquidada**: o instante em que os dois lançamentos nasceram. Só tem valor
+   * depois que as duas condições existem (declaração feita e nick do indicado aprovado) — o que
+   * acontecer por último dispara. É também a trava de idempotência: o pagamento é um UPDATE condicional
+   * `where referral_rewarded_at is null`, então declarar no exato momento da aprovação paga uma vez só.
+   */
+  referralRewardedAt: timestamp("referral_rewarded_at", { withTimezone: true }),
+  /**
+   * Se o **indicador** levou o bônus dele. False quando ele já bateu o teto do mês, está banido ou saiu
+   * do servidor: nesses casos a indicação fica registrada e liquidada, e só o indicado recebe — quem
+   * acabou de chegar não paga por um limite de outra pessoa. É esta coluna que conta o teto mensal.
+   */
+  referralReferrerPaid: boolean("referral_referrer_paid").notNull().default(false),
   createdAt: createdAt(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
-});
+}, (t) => [
+  // Autoindicação é impossível por construção, além de recusada com mensagem no serviço.
+  check("users_referred_by_not_self", sql`${t.referredBy} is distinct from ${t.id}`),
+  // Quem indicou e quando andam juntos: nenhum dos dois existe sozinho.
+  check("users_referral_declaration_consistent", sql`(${t.referredBy} is null) = (${t.referredAt} is null)`),
+  // Não se liquida indicação que não foi declarada.
+  check("users_referral_reward_requires_referrer", sql`${t.referralRewardedAt} is null or ${t.referredBy} is not null`),
+  // O indicador só consta como pago dentro de uma liquidação.
+  check("users_referral_referrer_paid_requires_reward", sql`not ${t.referralReferrerPaid} or ${t.referralRewardedAt} is not null`),
+  // A staff procura "quem este membro indicou" e o teto conta por mês: os dois caminhos são este índice.
+  index("users_referred_by_idx").on(t.referredBy, t.referralRewardedAt),
+]);
 
 /** Papéis atribuídos. PK (user_id, role): vários papéis por usuário, sem duplicata. */
 export const userRoles = pgTable(
