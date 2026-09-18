@@ -19,6 +19,7 @@ import request from "supertest";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { AppModule, configureApp } from "../app.module.js";
 import { parseEnv } from "../config/env.js";
+import { FakeTimelinePublisher } from "../timeline/fake-timeline.publisher.js";
 
 const baseUrl = process.env.TEST_DATABASE_URL ?? process.env.DATABASE_URL;
 if (!baseUrl && process.env.CI) throw new Error("CI sem TEST_DATABASE_URL: testes HTTP de loot split não podem ser pulados");
@@ -40,6 +41,7 @@ describe.skipIf(!baseUrl)("loot split HTTP (TASK-027)", () => {
   let membroDiscordId: string;
   let templateId: string;
   let seq = 0;
+  const timeline = new FakeTimelinePublisher();
 
   beforeAll(async () => {
     const target = new URL(baseUrl!);
@@ -66,7 +68,7 @@ describe.skipIf(!baseUrl)("loot split HTTP (TASK-027)", () => {
       PUBLIC_URL,
     });
     if (!parsed.ok) throw new Error(parsed.message);
-    const moduleRef = await Test.createTestingModule({ imports: [AppModule.register(parsed.env, { bot: false })] }).compile();
+    const moduleRef = await Test.createTestingModule({ imports: [AppModule.register(parsed.env, { bot: false, timeline })] }).compile();
     app = configureApp(moduleRef.createNestApplication({ logger: false }));
     await app.listen(0, "127.0.0.1");
 
@@ -446,6 +448,55 @@ describe.skipIf(!baseUrl)("loot split HTTP (TASK-027)", () => {
         const res = await reverse(staff, event.id, split.id);
         expect(res.status).toBe(409);
         expect(res.body.message).toBe("Este loot split ainda é rascunho: não há lançamento para estornar.");
+      });
+    });
+
+    /** Timeline (TASK-078, AC#3): um registro consolidado por split, com uma linha por pessoa. */
+    describe("timeline do loot split (TASK-078)", () => {
+      it("confirmar publica um registro só, com ator, evento, valores em prata, ID e a lista de pagos", async () => {
+        const { event, split } = await drafted("1000000", { type: "percent", value: "1000" });
+        timeline.clear();
+        expect((await confirm(caller, event.id, split.id)).status).toBe(200);
+        const entry = timeline.only("economy.loot_split_confirmed");
+        expect(entry).toMatchObject({
+          actor: { kind: "user", userId: callerId },
+          target: { name: event.name, id: event.id },
+          amounts: [
+            { value: 1_000_000n, currency: "silver", label: "Total da leva" },
+            { value: 900_000n, currency: "silver", label: "Distribuído" },
+            { value: 100_000n, currency: "silver", label: "Taxa e sobra" },
+          ],
+          recordId: split.id,
+        });
+        expect(entry.list?.title).toBe("Pagos");
+        expect(entry.list?.items).toHaveLength(2);
+        expect(entry.list?.items[0]).toMatch(/900\.000/);
+        expect(entry.list?.items[1]).toMatch(/\(taxa e sobra\): 100\.000/);
+        // Segunda confirmação não credita nada, então não publica.
+        expect((await confirm(caller, event.id, split.id)).status).toBe(200);
+        expect(timeline.entries).toHaveLength(1);
+      });
+
+      it("estorno publica com o motivo; recusas (soma errada, rascunho sem estorno) não publicam", async () => {
+        const { event, split } = await drafted("1000000");
+        timeline.clear();
+        expect((await reverse(staff, event.id, split.id)).status).toBe(409);
+        expect((await patch(caller, event.id, split.id, { lines: split.lines.map((l) => ({ id: l.id, shareBp: 4000 })) })).status).toBe(200);
+        expect((await confirm(caller, event.id, split.id)).status).toBe(409);
+        expect(timeline.entries).toEqual([]);
+        const { event: e2, split: s2 } = await drafted("500000");
+        expect((await confirm(caller, e2.id, s2.id)).status).toBe(200);
+        timeline.clear();
+        expect((await reverse(staff, e2.id, s2.id, { reason: "loot contado errado" })).status).toBe(200);
+        expect(timeline.only("economy.loot_split_reversed")).toMatchObject({
+          actor: { kind: "user" },
+          target: { id: e2.id },
+          amounts: [{ value: 500_000n, currency: "silver" }],
+          recordId: s2.id,
+          details: [{ name: "Motivo", value: "loot contado errado" }, { name: "Lançamentos estornados", value: "1" }],
+        });
+        expect((await reverse(staff, e2.id, s2.id)).status).toBe(409);
+        expect(timeline.entries).toHaveLength(1);
       });
     });
   });
