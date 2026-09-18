@@ -195,6 +195,23 @@ describe("parseEnv", () => {
     });
   });
 
+  describe("canal da timeline (TASK-076, T6)", () => {
+    it("opcional mesmo com o bot ligado: ausente ou vazio desliga a timeline", () => {
+      for (const value of [undefined, "", "  "]) {
+        const result = parseEnv({ ...valid, DISCORD_TIMELINE_CHANNEL_ID: value });
+        expect(result.ok && result.env.DISCORD_BOT_ENABLED).toBe(true);
+        expect(result.ok && result.env.DISCORD_TIMELINE_CHANNEL_ID).toBeUndefined();
+      }
+    });
+
+    it("com valor, é validado como snowflake e chega limpo", () => {
+      const ok = parseEnv({ ...valid, DISCORD_TIMELINE_CHANNEL_ID: " 823456789012345678 " });
+      expect(ok.ok && ok.env.DISCORD_TIMELINE_CHANNEL_ID).toBe("823456789012345678");
+      const bad = parseEnv({ ...valid, DISCORD_TIMELINE_CHANNEL_ID: "timeline" });
+      expect(!bad.ok && bad.message).toContain("DISCORD_TIMELINE_CHANNEL_ID: formato inválido");
+    });
+  });
+
   describe("canal de eventos (TASK-022)", () => {
     it("obrigatório com o bot ligado", () => {
       const rest: Record<string, string | undefined> = { ...valid, DISCORD_EVENTS_CHANNEL_ID: undefined };
