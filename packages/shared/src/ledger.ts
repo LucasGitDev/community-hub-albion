@@ -12,15 +12,19 @@ import { CURRENCIES, type Currency } from "./currency.js";
  * `entry_fee` é o contrário: nasce na TASK-058 **com** consumidor, porque a taxa de entrada é débito
  * imediato — cobrada na inscrição (F6-13) e devolvida por estorno quando é devolvida (F6-14).
  *
+ * `referral` é o bônus de indicação (TASK-074, F11): dois lançamentos por indicação — o do indicador e o do
+ * indicado — sempre na mesma transação, com origem `referral` apontando para o **indicado**, que é quem carrega
+ * a indicação. Um estorno da staff desfaz os dois.
+ *
  * `event_attendance` é o ganho de Buffunfa por comparecimento (TASK-057, F6-10): a primeira fonte da
  * moeda, com origem `event` — o evento é que paga, não o split.
  */
-export const LEDGER_ENTRY_KINDS = ["split_payout", "split_fee", "withdrawal", "reversal", "adjustment", "purchase", "entry_fee", "event_attendance"] as const;
+export const LEDGER_ENTRY_KINDS = ["split_payout", "split_fee", "withdrawal", "reversal", "adjustment", "purchase", "entry_fee", "event_attendance", "referral"] as const;
 
 export type LedgerEntryKind = (typeof LEDGER_ENTRY_KINDS)[number];
 
 /** Tipos de origem de um lançamento (`reference_type`): de onde ele veio. */
-export const LEDGER_REFERENCE_TYPES = ["event", "loot_split", "withdrawal", "manual", "shop_order"] as const;
+export const LEDGER_REFERENCE_TYPES = ["event", "loot_split", "withdrawal", "manual", "shop_order", "referral"] as const;
 
 export type LedgerReferenceType = (typeof LEDGER_REFERENCE_TYPES)[number];
 
@@ -37,6 +41,7 @@ export const LEDGER_ENTRY_KIND_LABELS: Record<LedgerEntryKind, string> = {
   purchase: "Compra na loja",
   entry_fee: "Taxa de entrada",
   event_attendance: "Presença em evento",
+  referral: "Indicação",
 };
 
 /**
