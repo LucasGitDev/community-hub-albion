@@ -11,6 +11,7 @@ import { AlbionCheckService } from "./albion-check.service.js";
 import { NickDecisionService } from "./nick-decision.service.js";
 import { NickRegistrationService } from "./nick-registration.service.js";
 import { NickRequestService } from "./nick-request.service.js";
+import { ReferralService } from "./referral.service.js";
 import { StaffNickRequestsController } from "./staff-nick-requests.controller.js";
 
 /** Entrada de membros pela staff (TASK-013). Exporta os serviços de pedido/decisão (com hooks) para bot/embed (TASK-014/015). */
@@ -27,12 +28,13 @@ export class MembersModule {
         NickDecisionService,
         NickRequestService,
         NickRegistrationService,
+        ReferralService,
         { provide: ALBION_PLAYER_LOOKUP, useFactory: () => new FetchAlbionPlayerLookup({
             region: env.ALBION_REGION,
             onUnavailable: (reason) => new Logger("AlbionPlayerLookup").warn(`API do Albion indisponível: ${reason}`),
           }) },
       ],
-      exports: [AccountService, AlbionCheckService, NickDecisionService, NickRequestService, NickRegistrationService, ALBION_PLAYER_LOOKUP],
+      exports: [AccountService, AlbionCheckService, NickDecisionService, NickRequestService, NickRegistrationService, ReferralService, ALBION_PLAYER_LOOKUP],
     };
   }
 }

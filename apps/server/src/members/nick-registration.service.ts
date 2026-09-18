@@ -12,6 +12,17 @@ export type NickRegistrationResult =
   | Exclude<RegisterNickOutcome, { kind: "requested" }>
   | { kind: "requested"; created: boolean; request: NickRequest; status: NickStatus };
 
+/**
+ * Registro vindo do Discord: o resultado mais o id da conta garantida na interação. O id sai daqui porque
+ * o `/registrar` também declara a indicação (TASK-074, AC#1), e a indicação é gravada por id de usuário —
+ * sem isso o comando teria que redescobrir a conta que este serviço acabou de garantir.
+ */
+export interface DiscordRegistration {
+  result: NickRegistrationResult;
+  /** null só quando o nick era inválido: nesse caso nenhuma conta foi criada. */
+  userId: string | null;
+}
+
 /** Converte para o resultado plano usado nas respostas do comando. */
 export function toRegisterOutcome(result: NickRegistrationResult): RegisterNickOutcome {
   if (result.kind !== "requested") return result;
@@ -42,11 +53,12 @@ export class NickRegistrationService {
    * Comando do bot: identidade vem da interação na guild configurada (o chamador confere a guild). Valida antes de
    * criar o usuário e concede os mesmos papéis do login OAuth (`member`, `admin` só para BOOTSTRAP_ADMIN_DISCORD_IDS).
    */
-  async registerFromDiscord(profile: DiscordProfile, input: unknown): Promise<NickRegistrationResult> {
+  async registerFromDiscord(profile: DiscordProfile, input: unknown): Promise<DiscordRegistration> {
     const parsed = validateNick(input);
-    if (!parsed.ok) return { kind: "invalid", error: parsed.error };
+    // Nick inválido nem cria conta: não há usuário para devolver, e nada foi gravado.
+    if (!parsed.ok) return { result: { kind: "invalid", error: parsed.error }, userId: null };
     const { user } = await this.accounts.ensureFromDiscord(profile);
-    return this.registerValid(user.id, parsed.nick);
+    return { result: await this.registerValid(user.id, parsed.nick), userId: user.id };
   }
 
   private async registerValid(userId: string, nick: string): Promise<NickRegistrationResult> {
