@@ -9,6 +9,7 @@ definition_of_done:
   - "UI alterada: fluxo coberto por e2e e screenshots desktop 1280 e mobile 400 revisados pelo agent"
   - "Comportamento confere com decisões do doc-005 (Qs citadas) e nada fora do escopo da task"
   - "Toca auth, ledger, prata ou saque: security-review sem achado crítico"
+  - "Operação nova que muda estado publica na timeline depois do commit (ator, alvo, valor, ID), com teste que comprova; falha ao publicar nunca derruba a operação"
   - "Notas e final summary com evidências; commits Conventional atômicos sem co-autor"
   - "PR merged na main com quality gate verde; branch e worktree removidos"
 date_format: yyyy-mm-dd

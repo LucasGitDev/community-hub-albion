@@ -3,7 +3,7 @@ id: doc-005
 title: Decisões v1
 type: specification
 created_date: '2026-09-15 03:22'
-updated_date: '2026-09-17 21:19'
+updated_date: '2026-09-18 03:21'
 ---
 Resultado do grill (R1–R3, 2026-09-15). Referência pra specs e tasks.
 
@@ -247,3 +247,26 @@ serem esquecidas na base: os dois casos são o mesmo erro, e os dois agora têm 
 | F6-60 | O ícone é um `span` com `background-image`, não um `img`: o Chrome não contava a largura do `img` ao medir a coluna do extrato e o valor vazava a borda do card em 400 px. |
 | F6-61 | A marca do painel continua o **brasão de espadas**; o javali é a **moeda**. Usar o javali como símbolo do servidor misturaria as duas coisas. O nome "Toca da Turma" some do header abaixo de 640 px (fica o brasão) em vez de aparecer cortado. |
 | F6-62 | Assets do painel são gerados a partir do PNG de origem em tamanho de uso (64 px, 9 KB) e entram pelo bundle do Vite — **não** viram dependência de runtime do servidor, ao contrário do PNG do emoji, que o bot lê do disco. |
+
+## Grelha de 2026-09-18 — Timeline da plataforma
+
+Uma linha do tempo de tudo que acontece na plataforma, publicada num canal do Discord. Pedido do
+usuário: "basicamente um event source de tudo que acontece". Serve para depurar e para identificar
+erros, não para mostrar à guilda.
+
+| # | Decisão |
+|---|---|
+| T1 | Nome **Timeline**: `#timeline` no Discord, `timeline` no código. "Events" colidiria com os eventos do Albion (raid, DG, ZvZ), que já têm tabela, tela e comando próprios. |
+| T2 | Canal **só de admins**, com **todos os detalhes**: ator, alvo, valor em prata e em Buffunfa, ID do registro, hora. Como ninguém de fora vê, não há motivo para esconder valor de prata. |
+| T3 | **Sem banco nesta primeira versão**, mas preparado para ter. Os serviços falam com uma interface `TimelinePublisher`; hoje o único consumidor é o Discord, e depois a gravação em banco entra atrás da mesma interface sem mexer em serviço nenhum. |
+| T4 | **Uma mensagem por transição.** A alternativa (uma mensagem por ciclo, editada no lugar) fica para se o canal ficar poluído. Decisão explícita do usuário: testar primeiro. |
+| T5 | Publica **depois do commit**, nunca dentro da transação. Sem banco, a mensagem é o único registro, e mostrar uma operação que foi desfeita seria pior para depurar do que não mostrar nada. |
+| T6 | **Nunca obrigatório.** Sem `DISCORD_TIMELINE_CHANNEL_ID`, a timeline fica desligada. Falha do Discord não derruba nem atrasa a operação. |
+| T7 | Cobertura: **tudo que já existe e altera dados** (contas, eventos, economia, loja, indicação, manutenção). Ficam de fora leitura, login e polling do painel. |
+| T8 | **Inscrição em evento não aparece uma a uma.** Ao **fechar as inscrições**, sai um registro com a lista de todos que estavam inscritos. |
+| T9 | **Rotas de manutenção aparecem sempre**, com o ator "manutenção": elas criam prata em produção, e sem elas o canal de auditoria ficaria cego justamente onde mais importa. |
+| T10 | Formato **embed**, com as informações de T2. Quando várias chegam juntas, vão até 10 embeds por mensagem. |
+| T11 | **Fila em memória** com agrupamento, respeitando o limite do Discord (cerca de 5 mensagens a cada 5 segundos por canal) e mantendo a ordem. Se o servidor reiniciar com a fila cheia, essas linhas se perdem; é aceito, porque é um extra. |
+| T12 | **Sem BullMQ.** Ele exige Redis, um serviço novo em produção. Quando a timeline passar a gravar em banco, a fila persistente certa é o **pg-boss**, que guarda os jobs no Postgres já existente, sem infraestrutura nova. |
+| T13 | O **canal é criado pelo admin**; o bot só recebe o ID pela env. Dar ao bot permissão de criar canal só para isso seria abrir uma permissão sem necessidade. |
+| T14 | **Entra no DoD do projeto:** toda operação nova que muda estado publica na timeline depois do commit, com teste que comprova. Sem o teste, o critério vira texto que ninguém cumpre. |

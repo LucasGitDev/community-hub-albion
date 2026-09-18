@@ -3,7 +3,7 @@ id: doc-006
 title: Quality Gate e DoD
 type: guide
 created_date: '2026-09-15 03:49'
-updated_date: '2026-09-15 05:33'
+updated_date: '2026-09-18 03:21'
 ---
 Como o albion-hub garante que uma task está pronta: **gate automático** (local = CI) + **DoD no backlog** + **verificação do agent** (skill `task-done-check`).
 
@@ -42,8 +42,10 @@ Default em `.backlog/config.yml`, aplicado a toda task nova (e já adicionado à
 4. UI alterada: e2e cobre o fluxo + screenshots 1280 e 400 revisados
 5. Confere com doc-005 (Qs citadas), sem escopo extra
 6. Toca auth/ledger/prata/saque: `security-review` sem crítico
-7. Notas + final summary com evidências; commits Conventional atômicos sem co-autor
-8. PR merged na `main` com gate verde; branch e worktree removidos
+7. **Operação nova que muda estado publica na timeline** depois do commit (ator, alvo, valor, ID),
+   com teste que comprova; falha ao publicar nunca derruba a operação (decisões T1–T14, 2026-09-18)
+8. Notas + final summary com evidências; commits Conventional atômicos sem co-autor
+9. PR merged na `main` com gate verde; branch e worktree removidos
 
 ## 3. Acceptance criteria — como escrever
 - Resultado observável, testável, sem passo de implementação.
