@@ -29,7 +29,7 @@ import {
 } from "@albion-hub/shared";
 import { DB_HANDLE } from "../db/db.module.js";
 import { TIMELINE_PUBLISHER, type TimelinePublisher } from "../domain/timeline.js";
-import { loadTimelinePeople, publishAfterCommit } from "../timeline/after-commit.js";
+import { loadTimelinePeople, publishAfterCommit, TIMELINE_LOGGER } from "../timeline/timeline-people.js";
 import { assertEventEditable } from "../events/archived.guard.js";
 import { EventsService } from "../events/events.service.js";
 
@@ -145,7 +145,7 @@ export class LootSplitService implements OnModuleInit {
    * dela. Um registro por participante encheria o canal e estouraria o ritmo do Discord numa ZvZ.
    */
   private publishConfirmed(event: EventDto, split: LootSplitDto, actorUserId: string | null): Promise<void> {
-    return publishAfterCommit(this.timeline, async () => {
+    return publishAfterCommit(this.timeline, TIMELINE_LOGGER, async () => {
       const people = await loadTimelinePeople(this.handle.db, [actorUserId, event.ownerUserId]);
       const ownerSilver = BigInt(split.feeSilver) + BigInt(split.residualSilver);
       const items = split.lines
@@ -172,7 +172,7 @@ export class LootSplitService implements OnModuleInit {
   }
 
   private publishReversed(event: EventDto, splitId: string, reason: string, reversed: number, actorUserId: string | null): Promise<void> {
-    return publishAfterCommit(this.timeline, async () => {
+    return publishAfterCommit(this.timeline, TIMELINE_LOGGER, async () => {
       const [people, split] = await Promise.all([loadTimelinePeople(this.handle.db, [actorUserId]), getLootSplit(this.handle.db, splitId)]);
       return {
         action: "economy.loot_split_reversed" as const,

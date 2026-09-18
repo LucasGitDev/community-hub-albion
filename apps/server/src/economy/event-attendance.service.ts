@@ -11,7 +11,7 @@ import {
 import { attendanceLineToDto, BUFFUNFA_ROLE_MAX, formatAmount, type EventAttendanceDto, type EventDto } from "@albion-hub/shared";
 import { DB_HANDLE } from "../db/db.module.js";
 import { TIMELINE_PUBLISHER, type TimelinePublisher } from "../domain/timeline.js";
-import { loadTimelinePeople, publishAfterCommit } from "../timeline/after-commit.js";
+import { loadTimelinePeople, publishAfterCommit, TIMELINE_LOGGER } from "../timeline/timeline-people.js";
 import { assertEventEditable } from "../events/archived.guard.js";
 
 /**
@@ -57,7 +57,7 @@ export class EventAttendanceService {
 
   /** Timeline (TASK-078, AC#3): um registro por fechamento, com uma linha por pessoa paga e o valor dela. */
   private publishPaid(event: EventDto, preview: EventAttendancePreview, actorUserId: string | null): Promise<void> {
-    return publishAfterCommit(this.timeline, async () => {
+    return publishAfterCommit(this.timeline, TIMELINE_LOGGER, async () => {
       const people = await loadTimelinePeople(this.handle.db, [actorUserId]);
       const paid = preview.rows.filter((row) => row.skip === null && row.userId !== null && row.amount > 0n);
       return {

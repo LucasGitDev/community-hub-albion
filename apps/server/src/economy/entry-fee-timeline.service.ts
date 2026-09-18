@@ -4,7 +4,7 @@ import { ENTRY_FEE_REFUND_REASONS, formatAmount } from "@albion-hub/shared";
 import { DB_HANDLE } from "../db/db.module.js";
 import { TIMELINE_PUBLISHER, type TimelinePublisher } from "../domain/timeline.js";
 import { EventsService, type EventTransitionEvent } from "../events/events.service.js";
-import { loadTimelinePeople, publishAfterCommit } from "../timeline/after-commit.js";
+import { loadTimelinePeople, publishAfterCommit, TIMELINE_LOGGER } from "../timeline/timeline-people.js";
 import { LedgerService } from "./ledger.service.js";
 
 /**
@@ -32,7 +32,7 @@ export class EntryFeeTimelineService implements OnModuleInit {
   async onTransition({ event, to, actorUserId }: EventTransitionEvent): Promise<void> {
     const reason = to === "cancelled" ? ENTRY_FEE_REFUND_REASONS.cancelled : to === "running" ? ENTRY_FEE_REFUND_REASONS.waitlisted : null;
     if (!reason) return;
-    await publishAfterCommit(this.timeline, async () => {
+    await publishAfterCommit(this.timeline, TIMELINE_LOGGER, async () => {
       const refunds = (await this.ledger.byReference("event", event.id)).filter((e) => e.kind === "reversal" && e.currency === "buffunfa" && e.memo === reason);
       if (refunds.length === 0) return null;
       const people = await loadTimelinePeople(this.handle.db, [actorUserId, ...refunds.map((e) => e.userId)]);

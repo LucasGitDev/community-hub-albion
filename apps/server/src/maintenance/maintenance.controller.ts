@@ -4,7 +4,7 @@ import { DB_HANDLE } from "../db/db.module.js";
 import { CURRENCY_LABELS, formatAmount, MAINTENANCE_LEDGER_REFERENCE, type Currency } from "@albion-hub/shared";
 import { parseAdjustment } from "../domain/maintenance.js";
 import { TIMELINE_PUBLISHER, type TimelineDetail, type TimelineEntry, type TimelinePublisher } from "../domain/timeline.js";
-import { loadTimelinePeople, publishAfterCommit } from "../timeline/after-commit.js";
+import { loadTimelinePeople, publishAfterCommit, TIMELINE_LOGGER } from "../timeline/timeline-people.js";
 import { LedgerService } from "../economy/ledger.service.js";
 import { AlbionCheckService, type AlbionCheckDto } from "../members/albion-check.service.js";
 import { MaintenanceTokenGuard } from "./maintenance-token.guard.js";
@@ -138,7 +138,7 @@ export class MaintenanceController {
    * que a operação gravou vai para o registro — nem header, nem token.
    */
   private publish(userId: string, build: (target: { name: string; id: string; discordId?: string | null }) => Omit<TimelineEntry, "actor" | "target">): Promise<void> {
-    return publishAfterCommit(this.timeline, async () => {
+    return publishAfterCommit(this.timeline, TIMELINE_LOGGER, async () => {
       const target = (await loadTimelinePeople(this.handle.db, [userId])).target(userId);
       return { ...build({ ...target, id: userId }), actor: { kind: "maintenance" as const }, target };
     });

@@ -30,7 +30,6 @@ describe.skipIf(!baseUrl)("inscrição em evento HTTP (TASK-022, Q27)", () => {
   let outroId: string;
   let terceiroId: string;
   let templateId: string;
-  const timeline = new FakeTimelinePublisher();
 
   beforeAll(async () => {
     const target = new URL(baseUrl!);

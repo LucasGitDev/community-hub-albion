@@ -3,7 +3,7 @@ import { declareReferral, findUserByDiscordId, findUserByGameNick, getMemberRefe
 import { REFERRAL_BONUS, validateNick, type ReferralDeclarationOutcome, type ReferralReward, type ReferrerSkipReason } from "@albion-hub/shared";
 import { DB_HANDLE } from "../db/db.module.js";
 import { TIMELINE_PUBLISHER, type TimelinePublisher } from "../domain/timeline.js";
-import { loadTimelinePeople, publishAfterCommit } from "../timeline/after-commit.js";
+import { loadTimelinePeople, publishAfterCommit, TIMELINE_LOGGER } from "../timeline/timeline-people.js";
 import { NickDecisionService } from "./nick-decision.service.js";
 
 /**
@@ -102,7 +102,7 @@ export class ReferralService implements OnModuleInit {
   // O `recordId` é o id do indicado: é a chave da indicação no ledger (`referralReference`).
 
   private publishDeclared(referredUserId: string, referrerUserId: string): Promise<void> {
-    return publishAfterCommit(this.timeline, async () => {
+    return publishAfterCommit(this.timeline, TIMELINE_LOGGER, async () => {
       const people = await loadTimelinePeople(this.handle.db, [referredUserId, referrerUserId]);
       return {
         action: "referral.declared" as const,
@@ -115,7 +115,7 @@ export class ReferralService implements OnModuleInit {
   }
 
   private publishPaid(referredUserId: string, result: Extract<SettleReferralResult, { kind: "paid" | "paid_referred_only" }>): Promise<void> {
-    return publishAfterCommit(this.timeline, async () => {
+    return publishAfterCommit(this.timeline, TIMELINE_LOGGER, async () => {
       const people = await loadTimelinePeople(this.handle.db, [referredUserId, result.referrer.id]);
       const referrerPaid = result.kind === "paid";
       return {
@@ -137,7 +137,7 @@ export class ReferralService implements OnModuleInit {
   }
 
   private publishReversed(referredUserId: string, referrerUserId: string, referrerPaid: boolean, options: { reason: string; actorUserId: string }): Promise<void> {
-    return publishAfterCommit(this.timeline, async () => {
+    return publishAfterCommit(this.timeline, TIMELINE_LOGGER, async () => {
       const people = await loadTimelinePeople(this.handle.db, [options.actorUserId, referredUserId, referrerUserId]);
       return {
         action: "referral.reversed" as const,
