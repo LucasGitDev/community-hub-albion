@@ -30,6 +30,7 @@ describe.skipIf(!baseUrl)("inscrição em evento HTTP (TASK-022, Q27)", () => {
   let outroId: string;
   let terceiroId: string;
   let templateId: string;
+  const timeline = new FakeTimelinePublisher();
 
   beforeAll(async () => {
     const target = new URL(baseUrl!);
@@ -157,19 +158,38 @@ describe.skipIf(!baseUrl)("inscrição em evento HTTP (TASK-022, Q27)", () => {
     });
 
     it("a inscrição debita, a desistência devolve, e saldo insuficiente é 409 com o número que falta (AC#2, AC#3)", async () => {
-      const { event, tank } = await openPaidEvent("Cobrada", "20");
+      const { event, tank, healer } = await openPaidEvent("Cobrada", "20");
       // Sem Buffunfa nenhuma: recusa, e a mensagem diz quanto falta.
+      timeline.clear();
       const broke = await join(terceiro, event.id, tank.id);
       expect(broke.status).toBe(409);
       expect(broke.body.message).toContain("20 BUF");
       expect(await list(caller, event.id)).toHaveLength(0);
+      // Timeline (TASK-078): cobrança recusada não publica.
+      expect(timeline.entries).toEqual([]);
 
       await giveBuffunfa(membroId, 50n);
       expect((await join(membro, event.id, tank.id)).status).toBe(200);
       expect(await getLedgerBalance(handle.db, membroId, "buffunfa")).toBe(30n);
+      const signupId = (await list(caller, event.id))[0]!.id;
+      expect(timeline.only("economy.entry_fee_charged")).toMatchObject({
+        actor: { kind: "user", userId: membroId },
+        target: { name: "Cobrada", id: event.id },
+        amounts: [{ value: 20n, currency: "buffunfa" }],
+        recordId: signupId,
+      });
+      // Trocar de role não cobra de novo, e não publica cobrança.
+      expect((await join(membro, event.id, healer.id)).status).toBe(200);
+      expect(timeline.ofAction("economy.entry_fee_charged")).toHaveLength(1);
 
       expect((await leave(membro, event.id)).status).toBe(200);
       expect(await getLedgerBalance(handle.db, membroId, "buffunfa")).toBe(50n);
+      expect(timeline.only("economy.entry_fee_refunded")).toMatchObject({
+        actor: { kind: "user", userId: membroId },
+        target: { id: event.id },
+        amounts: [{ value: 20n, currency: "buffunfa" }],
+        details: [{ name: "Motivo", value: "Saiu do evento antes do início: taxa de entrada devolvida." }],
+      });
     });
 
     it("cancelar o evento devolve a taxa a todos os inscritos (AC#4)", async () => {
@@ -180,9 +200,39 @@ describe.skipIf(!baseUrl)("inscrição em evento HTTP (TASK-022, Q27)", () => {
       expect((await join(terceiro, event.id, healer.id)).status).toBe(200);
       expect(await getLedgerBalance(handle.db, outroId, "buffunfa")).toBe(0n);
 
+      timeline.clear();
       expect((await send("post", `/api/events/${event.id}/transitions/cancel`, caller, { reason: "chuva" })).status).toBe(200);
       expect(await getLedgerBalance(handle.db, outroId, "buffunfa")).toBe(15n);
       expect(await getLedgerBalance(handle.db, terceiroId, "buffunfa")).toBe(15n);
+      // Timeline (TASK-078, AC#3): a devolução em lote sai num registro só, com uma linha por pessoa.
+      const refund = timeline.only("economy.entry_fee_refunded");
+      expect(refund).toMatchObject({
+        actor: { kind: "user" },
+        target: { name: "Cancelada", id: event.id },
+        amounts: [{ value: 30n, currency: "buffunfa", label: "Total devolvido" }],
+        recordId: event.id,
+        details: [{ name: "Motivo", value: "Evento cancelado: taxa de entrada devolvida." }],
+      });
+      expect(refund.list?.items).toHaveLength(2);
+      expect(refund.list?.items.every((item) => item.endsWith("15 BUF"))).toBe(true);
+    });
+
+    it("iniciar devolve a taxa de quem ficou na espera, num registro consolidado (TASK-078)", async () => {
+      const { event, tank } = await openPaidEvent("Espera devolvida", "7");
+      await giveBuffunfa(outroId, 7n);
+      await giveBuffunfa(terceiroId, 7n);
+      expect((await join(outro, event.id, tank.id)).status).toBe(200);
+      expect((await join(terceiro, event.id, tank.id)).status).toBe(200);
+      timeline.clear();
+      expect((await send("post", `/api/events/${event.id}/transitions/start`, caller)).status).toBe(200);
+      const refund = timeline.only("economy.entry_fee_refunded");
+      expect(refund).toMatchObject({ amounts: [{ value: 7n, currency: "buffunfa" }], details: [{ name: "Motivo", value: "Evento começou com você ainda na lista de espera: taxa de entrada devolvida." }] });
+      expect(refund.list?.items).toHaveLength(1);
+      // Evento sem taxa nenhuma: iniciar não inventa registro de devolução.
+      const { event: gratis } = await openEvent("Sem taxa");
+      timeline.clear();
+      expect((await send("post", `/api/events/${gratis.id}/transitions/start`, caller)).status).toBe(200);
+      expect(timeline.ofAction("economy.entry_fee_refunded")).toEqual([]);
     });
   });
 
