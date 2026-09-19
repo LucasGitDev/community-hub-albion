@@ -3,7 +3,7 @@ id: doc-005
 title: Decisões v1
 type: specification
 created_date: '2026-09-15 03:22'
-updated_date: '2026-09-18 03:21'
+updated_date: '2026-09-19 03:59'
 ---
 Resultado do grill (R1–R3, 2026-09-15). Referência pra specs e tasks.
 
@@ -270,3 +270,17 @@ erros, não para mostrar à guilda.
 | T12 | **Sem BullMQ.** Ele exige Redis, um serviço novo em produção. Quando a timeline passar a gravar em banco, a fila persistente certa é o **pg-boss**, que guarda os jobs no Postgres já existente, sem infraestrutura nova. |
 | T13 | O **canal é criado pelo admin**; o bot só recebe o ID pela env. Dar ao bot permissão de criar canal só para isso seria abrir uma permissão sem necessidade. |
 | T14 | **Entra no DoD do projeto:** toda operação nova que muda estado publica na timeline depois do commit, com teste que comprova. Sem o teste, o critério vira texto que ninguém cumpre. |
+
+## Grelha de 2026-09-19 — Split pago no jogo
+
+O caller costuma dividir o loot **no próprio jogo**, na hora. Hoje o split credita a carteira e cada
+um teria que pedir saque de uma prata que já recebeu.
+
+| # | Decisão |
+|---|---|
+| SP1 | Ao confirmar o split, cada pessoa marcada como paga recebe o crédito normal **e, no mesmo ato, um saque já liquidado** do mesmo valor. Extrato mostra as duas linhas (`+X` do split, `−X` sacado), saldo líquido zero, nada entra na fila de saques. Nenhum lançamento é alterado: o ledger continua append-only. |
+| SP2 | A escolha é **por pessoa**, num **modal** na confirmação, com **todos marcados por padrão** — o caller ou a staff desmarca quem não recebeu no jogo. Tudo-ou-nada obrigaria desfazer quando uma pessoa ficou sem receber, e o ledger não desfaz. |
+| SP3 | **Taxa e sobra do arredondamento** (que vão para o caller) entram **pagas automaticamente**: foi o caller quem dividiu, a prata já está com ele. |
+| SP4 | Marcar como pago existe **só no ato da confirmação**, junto do crédito. Depois de confirmado, o que sobrou é saldo normal e sai pela fila de saques com aprovação da staff. Impede que alguém marque como "pago" depois, sozinho, uma prata que a pessoa diz não ter recebido. |
+| SP5 | Quem pode: **caller e staff** por enquanto (a permissão `distribute` do split). Vira **permissão própria** quando a F7 separar permissões de papéis — registrada para a F7. |
+| SP6 | O saque automático aparece na **timeline** como "saque pago no jogo", com quem marcou: é prata saindo sem passar pela aprovação da staff, exatamente o que o canal de auditoria existe para mostrar. |
