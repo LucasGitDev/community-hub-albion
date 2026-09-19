@@ -1,5 +1,5 @@
 import { CURRENCIES, type Currency, type LedgerEntryKind, type LedgerReferenceType } from "@albion-hub/shared";
-import { and, asc, desc, eq, inArray, lt, or, sql } from "drizzle-orm";
+import { and, asc, desc, eq, inArray, sql, type SQL } from "drizzle-orm";
 import type { Database } from "./client.js";
 import type { EventTx } from "./events-repo.js";
 import { memberNick } from "./member-nick.js";
@@ -187,6 +187,19 @@ export interface LedgerPage {
   nextCursor: { createdAt: Date; id: string } | null;
 }
 
+/**
+ * Keyset "antes do cursor" comparando com o timestamp **da própria linha do cursor**, lido no banco (TASK-082).
+ *
+ * O cursor carrega `createdAt` como `Date`, e o `Date` do JavaScript só guarda milissegundo, enquanto o
+ * Postgres grava microssegundo. Comparar com o valor truncado deixava de fora toda linha entre o truncado e o
+ * real — no teste, 3 de 5 lançamentos sumiam, e é exatamente o caso do crédito e do saque pago no jogo, que
+ * nascem na mesma transação com timestamp idêntico (TASK-081). A subconsulta pega o par exato, e a comparação
+ * de tupla segue a mesma ordem do `orderBy` (`created_at desc, id desc`).
+ */
+function beforeCursor(cursorId: string): SQL {
+  return sql`(${ledgerEntries.createdAt}, ${ledgerEntries.id}) < (select ${ledgerEntries.createdAt}, ${ledgerEntries.id} from ${ledgerEntries} where ${ledgerEntries.id} = ${cursorId})`;
+}
+
 const MAX_PAGE = 200;
 const DEFAULT_PAGE = 50;
 
@@ -195,7 +208,7 @@ export async function listLedgerEntries(db: Database, userId: string, currency: 
   const limit = Math.min(Math.max(query.limit ?? DEFAULT_PAGE, 1), MAX_PAGE);
   const cursor = query.cursor;
   const before = cursor
-    ? or(lt(ledgerEntries.createdAt, cursor.createdAt), and(eq(ledgerEntries.createdAt, cursor.createdAt), lt(ledgerEntries.id, cursor.id)))
+    ? beforeCursor(cursor.id)
     : undefined;
   const rows = await db
     .select(columns)
@@ -241,7 +254,7 @@ export async function listLedgerEntriesWithAuthor(db: Database, userId: string, 
   const limit = Math.min(Math.max(query.limit ?? DEFAULT_PAGE, 1), MAX_PAGE);
   const cursor = query.cursor;
   const before = cursor
-    ? or(lt(ledgerEntries.createdAt, cursor.createdAt), and(eq(ledgerEntries.createdAt, cursor.createdAt), lt(ledgerEntries.id, cursor.id)))
+    ? beforeCursor(cursor.id)
     : undefined;
   const rows = await db
     .select({ ...columns, authorId: users.id, authorName: memberNick(users) })
