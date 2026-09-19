@@ -1,11 +1,11 @@
 ---
 id: TASK-081
 title: 'Split pago no jogo: marcar como sacado na confirmação'
-status: In Progress
+status: Done
 assignee:
   - '@claude'
 created_date: '2026-09-19 03:59'
-updated_date: '2026-09-19 04:10'
+updated_date: '2026-09-19 04:14'
 labels: []
 milestone: m-12
 dependencies: []
