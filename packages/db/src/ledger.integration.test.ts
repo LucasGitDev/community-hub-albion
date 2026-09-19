@@ -325,6 +325,34 @@ describe.skipIf(!baseUrl)("ledger append-only de prata (TASK-026, Postgres real)
       expect((await listLedgerEntries(handle.db, userId, "silver")).entries).toHaveLength(5);
     });
 
+    it("paginar não pula nem repete lançamento com created_at idêntico ou no mesmo milissegundo (TASK-082)", async () => {
+      const userId = await nextUser();
+      // Postgres grava microssegundo; o Date do JavaScript só guarda milissegundo. Três no mesmo instante
+      // exato (é o que acontece com crédito e saque pago no jogo na mesma transação, TASK-081) e dois
+      // separados só por microssegundos — os dois casos em que o cursor truncado deixava linha para trás.
+      const at = ["2026-01-01 00:00:00.123400+00", "2026-01-01 00:00:00.123400+00", "2026-01-01 00:00:00.123400+00", "2026-01-01 00:00:00.123700+00", "2026-01-01 00:00:00.123900+00"];
+      for (const [i, when] of at.entries()) {
+        await handle.db.insert(schema.ledgerEntries).values({
+          userId, amount: BigInt(i + 1) * 100n, currency: "silver", kind: "adjustment", memo: `t${i + 1}`, createdAt: sql`${when}::timestamptz`,
+        });
+      }
+      const pages = async (list: typeof listLedgerEntries) => {
+        const seen: string[] = [];
+        let cursor: Awaited<ReturnType<typeof listLedgerEntries>>["nextCursor"] = null;
+        do {
+          const page = await list(handle.db, userId, "silver", { limit: 2, cursor });
+          seen.push(...page.entries.map((e) => e.memo!));
+          cursor = page.nextCursor;
+        } while (cursor);
+        return seen;
+      };
+      for (const list of [listLedgerEntries, listLedgerEntriesWithAuthor as typeof listLedgerEntries]) {
+        const seen = await pages(list);
+        expect(seen).toHaveLength(5);
+        expect(new Set(seen).size).toBe(5);
+      }
+    });
+
     it("lista lançamentos de uma origem, do mais antigo ao mais novo", async () => {
       const userId = await nextUser();
       const splitId = "44444444-4444-4444-8444-444444444444";
