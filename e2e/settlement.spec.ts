@@ -166,6 +166,11 @@ test("caller acerta o evento finalizado: dados, taxa, split e confirmação (AC#
   await expect(confirmar.getByText("Lançamento não se apaga nem se edita", { exact: false })).toBeVisible();
   await expect(confirmar.getByText("Total bruto da leva")).toBeVisible();
   await expect(confirmar.getByText("Dividido entre 1 pessoa")).toBeVisible();
+  // TASK-081: vem marcado como pago no jogo; aqui o jogador não recebeu no jogo, então desmarca.
+  const pagoNoJogo = confirmar.getByRole("checkbox", { name: /jogadorAc.* já recebeu no jogo/ });
+  await expect(pagoNoJogo).toBeChecked();
+  await pagoNoJogo.uncheck();
+  await expect(confirmar.getByText("vai para a carteira")).toBeVisible();
   await snap(page, `acerto-confirmacao-${tag()}`);
   await confirmar.getByRole("button", { name: "Confirmar e creditar" }).click();
   await expect(page.getByText("Split confirmado").first()).toBeVisible();
