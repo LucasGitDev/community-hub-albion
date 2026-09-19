@@ -7,6 +7,7 @@ import {
   getLedgerBalance,
   grantRole,
   listLedgerEntriesByReference,
+  listWithdrawals,
   runMigrations,
   schema,
   setEventVoiceChannelId,
@@ -426,6 +427,88 @@ describe.skipIf(!baseUrl)("loot split HTTP (TASK-027)", () => {
       });
     });
 
+    /** Split pago no jogo (TASK-081, SP1 a SP6). */
+    describe("pago no jogo (TASK-081)", () => {
+      const confirmPaid = (cookie: string | null, eventId: string, splitId: string, paidInGameLineIds: unknown) =>
+        send("post", `/api/events/${eventId}/splits/${splitId}/confirm`, cookie, { paidInGameLineIds });
+      const settledOf = async (userId: string, splitId: string) =>
+        (await listWithdrawals(handle.db, { userId })).filter((w) => w.status === "settled" && w.settlementNote?.includes(splitId));
+
+      it("o caller marca o participante: crédito e saque liquidado, saldo da leva zero, nada na fila, e a timeline mostra quem marcou (AC#2, AC#6, AC#8)", async () => {
+        const { event, split } = await drafted("1000000", { type: "percent", value: "1000" });
+        const antes = await getLedgerBalance(handle.db, membroId, "silver");
+        timeline.clear();
+        const res = await confirmPaid(caller, event.id, split.id, [split.lines[0]!.id]);
+        expect(res.status).toBe(200);
+        expect(await getLedgerBalance(handle.db, membroId, "silver")).toBe(antes);
+        const [saque] = await settledOf(membroId, split.id);
+        expect(saque).toMatchObject({ amount: "900000", settledByUserId: callerId, decidedByUserId: callerId });
+        const [taxa] = await settledOf(callerId, split.id);
+        expect(taxa).toMatchObject({ amount: "100000", settledByUserId: callerId });
+        // A fila da staff não vê nenhum dos dois.
+        const fila = await request(app.getHttpServer()).get("/api/withdrawals?status=pending").set("Cookie", staff);
+        expect(fila.status).toBe(200);
+        expect(fila.body.withdrawals.map((w: { id: string }) => w.id)).not.toContain(saque!.id);
+        const aprovados = await request(app.getHttpServer()).get("/api/withdrawals?status=approved").set("Cookie", staff);
+        expect(aprovados.body.withdrawals.map((w: { id: string }) => w.id)).not.toContain(saque!.id);
+
+        const pagos = timeline.ofAction("economy.withdrawal_paid_in_game");
+        expect(pagos).toHaveLength(2);
+        expect(pagos.find((e) => e.recordId === saque!.id)).toMatchObject({
+          actor: { kind: "user", userId: callerId },
+          target: { id: membroId },
+          amounts: [{ value: 900_000n, currency: "silver" }],
+        });
+        expect(pagos.find((e) => e.recordId === taxa!.id)).toMatchObject({ target: { id: callerId }, amounts: [{ value: 100_000n, currency: "silver" }] });
+        // Publicou depois do commit: o saque que a timeline cita já existe no banco.
+        expect(timeline.actions()).toEqual(["economy.loot_split_confirmed", "economy.withdrawal_paid_in_game", "economy.withdrawal_paid_in_game"]);
+      });
+
+      it("a staff também marca, e aparece como quem marcou (SP5)", async () => {
+        const { event, split } = await drafted("1000");
+        timeline.clear();
+        expect((await confirmPaid(staff, event.id, split.id, [split.lines[0]!.id])).status).toBe(200);
+        const staffId = (await listWithdrawals(handle.db, { userId: membroId })).find((w) => w.settlementNote?.includes(split.id))!.settledByUserId;
+        expect(staffId).not.toBe(callerId);
+        expect(timeline.only("economy.withdrawal_paid_in_game")).toMatchObject({ actor: { kind: "user", userId: staffId } });
+      });
+
+      it("desmarcado recebe só o crédito, como hoje (AC#4)", async () => {
+        const { event, split } = await drafted("1000");
+        const antes = await getLedgerBalance(handle.db, membroId, "silver");
+        expect((await confirmPaid(caller, event.id, split.id, [])).status).toBe(200);
+        expect(await getLedgerBalance(handle.db, membroId, "silver")).toBe(antes + 1000n);
+        expect(await settledOf(membroId, split.id)).toEqual([]);
+      });
+
+      it("membro comum e caller de outro evento não confirmam marcando pago; nada nasce (AC#7)", async () => {
+        const { event, split } = await drafted("1000");
+        expect((await confirmPaid(member, event.id, split.id, [split.lines[0]!.id])).status).toBe(403);
+        expect((await confirmPaid(outroCaller, event.id, split.id, [split.lines[0]!.id])).status).toBe(403);
+        expect(await settledOf(membroId, split.id)).toEqual([]);
+        expect(await listLedgerEntriesByReference(handle.db, "loot_split", split.id)).toEqual([]);
+      });
+
+      it("depois de confirmado não existe caminho para marcar como pago (AC#7, SP4)", async () => {
+        const { event, split } = await drafted("1000");
+        expect((await confirmPaid(caller, event.id, split.id, [])).status).toBe(200);
+        timeline.clear();
+        expect((await confirmPaid(caller, event.id, split.id, [split.lines[0]!.id])).status).toBe(200);
+        expect(await settledOf(membroId, split.id)).toEqual([]);
+        expect(timeline.entries).toEqual([]);
+      });
+
+      it("corpo inválido é 400 e linha de outro split é 409, sem lançar nada", async () => {
+        const { event, split } = await drafted("1000");
+        const outro = await drafted("1000");
+        expect((await confirmPaid(caller, event.id, split.id, ["nao-e-uuid"])).status).toBe(400);
+        expect((await confirmPaid(caller, event.id, split.id, [split.lines[0]!.id, split.lines[0]!.id])).status).toBe(400);
+        const res = await confirmPaid(caller, event.id, split.id, [outro.split.lines[0]!.id]);
+        expect([res.status, res.body.message]).toEqual([409, "A lista de participações precisa trazer exatamente as linhas deste split."]);
+        expect(await listLedgerEntriesByReference(handle.db, "loot_split", split.id)).toEqual([]);
+      });
+    });
+
     describe("estorno (Q24)", () => {
       it("estorno sem motivo é 400; com motivo zera os saldos e mantém o histórico", async () => {
         const { event, split } = await drafted("1000000", { type: "percent", value: "1000" });
@@ -472,9 +555,10 @@ describe.skipIf(!baseUrl)("loot split HTTP (TASK-027)", () => {
         expect(entry.list?.items).toHaveLength(2);
         expect(entry.list?.items[0]).toMatch(/900\.000/);
         expect(entry.list?.items[1]).toMatch(/\(taxa e sobra\): 100\.000/);
-        // Segunda confirmação não credita nada, então não publica.
+        // Segunda confirmação não credita nada, então não publica. O outro registro é a taxa paga no jogo (SP3).
+        const antes = timeline.entries.length;
         expect((await confirm(caller, event.id, split.id)).status).toBe(200);
-        expect(timeline.entries).toHaveLength(1);
+        expect(timeline.entries).toHaveLength(antes);
       });
 
       it("estorno publica com o motivo; recusas (soma errada, rascunho sem estorno) não publicam", async () => {

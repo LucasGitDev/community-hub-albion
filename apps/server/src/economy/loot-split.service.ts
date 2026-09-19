@@ -13,6 +13,7 @@ import {
   type ConfirmLootSplitResult,
   type CreateLootSplitResult,
   type DbHandle,
+  type PaidInGameWithdrawal,
   type ReverseLootSplitResult,
   type UpdateLootSplitResult,
 } from "@albion-hub/db";
@@ -123,13 +124,47 @@ export class LootSplitService implements OnModuleInit {
    * Confirma o split e lança no ledger (AC#2, AC#4). Idempotente: a segunda confirmação devolve o
    * mesmo split com `alreadyConfirmed`, sem creditar nada de novo — quem garante isso é a trava da
    * linha do split no Postgres, não o JavaScript.
+   *
+   * **Pago no jogo** (TASK-081, SP1 a SP5): `paidInGameLineIds` são as linhas que quem confirma marcou
+   * como já pagas no jogo; cada uma ganha um saque liquidado do mesmo valor na mesma transação, e a taxa +
+   * sobra do dono entra paga sempre (SP3). Só existe com um ator de sessão — é ele quem assina o saque — e
+   * só neste ato (SP4): não há outro método, rota ou comando que crie saque já liquidado. Quem pode é quem
+   * tem `distribute` no evento (caller dono e staff, SP5); vira permissão própria na F7.
    */
-  async confirm(event: EventDto, splitId: string, actorUserId: string | null): Promise<ConfirmLootSplitResult> {
+  async confirm(event: EventDto, splitId: string, actorUserId: string | null, paidInGameLineIds?: readonly string[]): Promise<ConfirmLootSplitResult> {
     assertEventEditable(event);
-    const result = await confirmLootSplit(this.handle.db, splitId, { actorUserId });
+    const paidInGame = actorUserId && paidInGameLineIds ? { lineIds: paidInGameLineIds, markedBy: actorUserId } : undefined;
+    const result = await confirmLootSplit(this.handle.db, splitId, { actorUserId, ...(paidInGame ? { paidInGame } : {}) });
     // A segunda confirmação não credita nada: publicar de novo mostraria dinheiro que não existiu.
-    if (result.ok && !result.alreadyConfirmed) await this.publishConfirmed(event, result.split, actorUserId);
+    if (result.ok && !result.alreadyConfirmed) {
+      await this.publishConfirmed(event, result.split, actorUserId);
+      await this.publishPaidInGame(event, result.split, result.paidInGame, actorUserId);
+    }
     return result;
+  }
+
+  /**
+   * SP6: **um registro por saque** pago no jogo, com quem marcou. É prata saindo sem a aprovação da staff,
+   * e o canal de auditoria precisa achar cada saque pelo id dele, como acha os aprovados pela fila.
+   */
+  private publishPaidInGame(event: EventDto, split: LootSplitDto, paid: readonly PaidInGameWithdrawal[], actorUserId: string | null): Promise<void> {
+    if (paid.length === 0) return Promise.resolve();
+    return publishAfterCommit(this.timeline, TIMELINE_LOGGER, async () => {
+      const people = await loadTimelinePeople(this.handle.db, [actorUserId, ...paid.map((p) => p.userId)]);
+      return paid.map((p) => ({
+        action: "economy.withdrawal_paid_in_game" as const,
+        summary: `Saque pago no jogo: ${people.name(p.userId)}`,
+        actor: people.actor(actorUserId),
+        target: people.target(p.userId),
+        amounts: [{ value: p.amount, currency: "silver" as const }],
+        recordId: p.withdrawalId,
+        details: [
+          { name: "Origem", value: p.lineId ? `Loot split de ${event.name}` : `Taxa e sobra do loot split de ${event.name}` },
+          { name: "Loot split", value: split.id },
+          { name: "Marcado por", value: people.name(actorUserId) },
+        ],
+      }));
+    });
   }
 
   /** Única correção de um split confirmado (Q24): estorna todos os lançamentos dele, nunca edita. */
