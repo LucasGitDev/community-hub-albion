@@ -1,9 +1,10 @@
 ---
 id: TASK-082
 title: Extrato pula lançamentos ao paginar quando dois caem no mesmo milissegundo
-status: To Do
+status: Done
 assignee: []
 created_date: '2026-09-19 04:25'
+updated_date: '2026-09-19 04:28'
 labels: []
 milestone: m-12
 dependencies: []
