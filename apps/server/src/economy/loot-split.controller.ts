@@ -3,6 +3,7 @@ import {
   asSubject,
   eventFeeUpdateSchema,
   firstIssue,
+  lootSplitConfirmSchema,
   lootSplitCreateSchema,
   lootSplitReversalSchema,
   lootSplitUpdateSchema,
@@ -182,11 +183,13 @@ export class LootSplitController {
   @HttpCode(200)
   @UseGuards(SameOriginGuard)
   @Authorize()
-  async confirm(@Param("eventId") eventId: string, @Param("splitId") splitId: string, @CurrentAuth() auth: Auth): Promise<LootSplitDto> {
+  async confirm(@Param("eventId") eventId: string, @Param("splitId") splitId: string, @Body() body: unknown, @CurrentAuth() auth: Auth): Promise<LootSplitDto> {
     const event = await this.load(eventId);
     this.assertCan(auth, "distribute", event);
     const split = await this.loadSplit(event, splitId);
-    const result = await this.splits.confirm(event, split.id, auth.user.id);
+    // Pago no jogo (TASK-081): só ids de linha vêm do cliente; quem assina o saque é a sessão, nunca o corpo.
+    const { paidInGameLineIds } = parseBody(lootSplitConfirmSchema, body ?? {});
+    const result = await this.splits.confirm(event, split.id, auth.user.id, paidInGameLineIds);
     if (!result.ok) this.refuse(result);
     return result.split;
   }

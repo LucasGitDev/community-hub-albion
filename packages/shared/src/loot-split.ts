@@ -395,3 +395,18 @@ export const lootSplitReversalSchema = z.object({
   reason: z.string().trim().min(3, "Explique o motivo do estorno: é a única explicação que fica no extrato.").max(500, "Motivo longo demais."),
 });
 export type LootSplitReversalInput = z.output<typeof lootSplitReversalSchema>;
+
+/**
+ * Corpo da confirmação (TASK-081, SP1/SP2): as linhas que o caller ou a staff marcou como **pagas no
+ * jogo**. Cada uma ganha, junto do crédito, um saque já liquidado do mesmo valor. Ausente ou vazia =
+ * ninguém foi pago no jogo; a taxa e a sobra do dono entram pagas de qualquer jeito (SP3). É o único
+ * lugar do sistema que marca prata como paga sem a fila da staff, e só vale enquanto o split é rascunho (SP4).
+ */
+export const lootSplitConfirmSchema = z.object({
+  paidInGameLineIds: z
+    .array(z.uuid({ error: "Id de linha inválido." }))
+    .max(1000, "Linhas demais para um split.")
+    .refine((ids) => new Set(ids).size === ids.length, { error: "Uma linha foi marcada como paga duas vezes." })
+    .default([]),
+});
+export type LootSplitConfirmInput = z.output<typeof lootSplitConfirmSchema>;
