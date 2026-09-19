@@ -25,8 +25,9 @@ export const updateSplit = (
     body: JSON.stringify({ ...(body.totalSilver === undefined ? {} : { totalSilver: body.totalSilver.toString() }), ...(body.lines ? { lines: body.lines } : {}) }),
   });
 
-export const confirmSplit = (eventId: string, splitId: string): Promise<LootSplitDto> =>
-  api(`/api/events/${eventId}/splits/${splitId}/confirm`, { method: "POST", body: JSON.stringify({}) });
+/** `paidInGameLineIds`: quem já recebeu a prata no jogo (TASK-081). Cada um ganha crédito e saque liquidado juntos. */
+export const confirmSplit = (eventId: string, splitId: string, paidInGameLineIds: readonly string[]): Promise<LootSplitDto> =>
+  api(`/api/events/${eventId}/splits/${splitId}/confirm`, { method: "POST", body: JSON.stringify({ paidInGameLineIds }) });
 
 /** Taxa do evento: percentual (basis points) ou valor fixo, sem teto (doc-005, "Taxa do split"). */
 export const setEventFee = (eventId: string, fee: EventFeeInput): Promise<EventDto> =>

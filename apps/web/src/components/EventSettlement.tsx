@@ -529,13 +529,19 @@ function DraftEditor({ event, split, open, onChanged }: { event: EventDto; split
     }
   }
 
-  async function confirm() {
+  async function confirm(paidInGameLineIds: string[]) {
     setBusy(true);
     try {
       // Salva antes de confirmar: o que o caller está vendo na tela é o que tem que ser creditado.
       if (dirty) await splitsApi.updateSplit(event.id, split.id, payload());
-      await splitsApi.confirmSplit(event.id, split.id);
-      toast.success("Split confirmado", { description: `A prata caiu na carteira de quem participou. Correção, agora, só por estorno.` });
+      await splitsApi.confirmSplit(event.id, split.id, paidInGameLineIds);
+      const paid = paidInGameLineIds.length;
+      toast.success("Split confirmado", {
+        description:
+          paid > 0
+            ? `${paid === 1 ? "1 pessoa ficou" : `${paid} pessoas ficaram`} registrada${paid === 1 ? "" : "s"} como paga${paid === 1 ? "" : "s"} no jogo. O resto caiu na carteira. Correção, agora, só por estorno.`
+            : "A prata caiu na carteira de quem participou. Correção, agora, só por estorno.",
+      });
       setConfirming(false);
       onChanged();
     } catch (e) {
@@ -608,7 +614,7 @@ function DraftEditor({ event, split, open, onChanged }: { event: EventDto; split
           ownerNick={event.ownerNick}
           busy={busy}
           onClose={() => setConfirming(false)}
-          onConfirm={() => void confirm()}
+          onConfirm={(ids) => void confirm(ids)}
         />
       )}
     </div>
@@ -808,9 +814,22 @@ function ConfirmSplitDialog({
   ownerNick: string | null;
   busy: boolean;
   onClose: () => void;
-  onConfirm: () => void;
+  onConfirm: (paidInGameLineIds: string[]) => void;
 }) {
   const paid = rows.filter((r) => r.amount > 0n);
+  // SP2: todo mundo começa marcado como pago no jogo — o caller costuma dividir na hora. Desmarca quem não recebeu.
+  const payable = paid.filter((r) => r.hasAccount && r.lineId);
+  const [marked, setMarked] = useState<Set<string>>(() => new Set(payable.map((r) => r.lineId!)));
+  const toggle = (lineId: string) =>
+    setMarked((m) => {
+      const next = new Set(m);
+      if (next.has(lineId)) next.delete(lineId);
+      else next.add(lineId);
+      return next;
+    });
+  const inGame = payable.filter((r) => marked.has(r.lineId!)).reduce((sum, r) => sum + r.amount, 0n) + totals.ownerSilver;
+  const toWallet = totals.paid - payable.filter((r) => marked.has(r.lineId!)).reduce((sum, r) => sum + r.amount, 0n);
+
   return (
     <Dialog open onOpenChange={(o) => !o && onClose()}>
       <DialogContent className="max-h-[90dvh] overflow-y-auto sm:max-w-lg">
@@ -839,32 +858,72 @@ function ConfirmSplitDialog({
           <dd className="border-t pt-2">
             <Amount currency="silver" value={totals.paid} className="font-semibold" />
           </dd>
-          <dt className="flex items-center gap-1.5">
-            <Crown className="size-3.5 text-muted-foreground" aria-hidden />
-            {ownerNick ?? "Caller do evento"} recebe
-          </dt>
-          <dd>
-            <Amount currency="silver" value={totals.ownerSilver} className="font-semibold" />
-          </dd>
         </dl>
 
-        <ul className="max-h-56 divide-y overflow-y-auto rounded-xl border text-sm">
-          {paid.map((row) => (
-            <li key={row.key} className="flex items-center justify-between gap-3 px-3 py-2">
-              <span className="min-w-0 truncate">
-                {row.nick} <span className="num text-muted-foreground">{formatShare(row.shareBp)}</span>
-              </span>
-              <Amount currency="silver" value={row.amount} className="font-semibold" />
-            </li>
-          ))}
-          {paid.length === 0 && <li className="px-3 py-2 text-muted-foreground">Ninguém recebe prata nesta leva.</li>}
-        </ul>
+        <fieldset className="space-y-2">
+          <legend className="text-sm font-medium">Quem já recebeu no jogo?</legend>
+          <p className="text-xs text-muted-foreground">
+            Marcado: a prata entra e sai do extrato como já sacada, sem passar pela fila. Desmarque quem não recebeu — fica na carteira para pedir saque. Isso só pode ser
+            marcado agora.
+          </p>
+          <ul className="max-h-56 divide-y overflow-y-auto rounded-xl border text-sm">
+            {paid.map((row) => {
+              const canMark = row.hasAccount && !!row.lineId;
+              const checked = canMark && marked.has(row.lineId!);
+              return (
+                <li key={row.key}>
+                  <label
+                    className={cn(
+                      "flex items-center gap-3 px-3 py-2.5 transition-colors duration-150",
+                      canMark ? "cursor-pointer hover:bg-muted/60 has-focus-visible:bg-muted/60" : "text-muted-foreground",
+                    )}
+                  >
+                    <input
+                      type="checkbox"
+                      className="size-4 shrink-0 accent-primary"
+                      disabled={!canMark || busy}
+                      checked={checked}
+                      onChange={() => toggle(row.lineId!)}
+                      aria-label={`${row.nick} já recebeu no jogo`}
+                    />
+                    <span className="min-w-0 flex-1 truncate">
+                      {row.nick} <span className="num text-muted-foreground">{formatShare(row.shareBp)}</span>
+                      <span className="block text-xs text-muted-foreground">
+                        {!canMark ? "sem conta no painel: não recebe pelo painel" : checked ? "pago no jogo" : "vai para a carteira"}
+                      </span>
+                    </span>
+                    <Amount currency="silver" value={row.amount} className="font-semibold" />
+                  </label>
+                </li>
+              );
+            })}
+            {totals.ownerSilver > 0n && (
+              <li className="flex items-center gap-3 bg-muted/40 px-3 py-2.5">
+                <Crown className="size-4 shrink-0 text-muted-foreground" aria-hidden />
+                <span className="min-w-0 flex-1 truncate">
+                  {ownerNick ?? "Caller do evento"}
+                  <span className="block text-xs text-muted-foreground">taxa e sobra: paga no jogo, automaticamente</span>
+                </span>
+                <Amount currency="silver" value={totals.ownerSilver} className="font-semibold" />
+              </li>
+            )}
+            {paid.length === 0 && <li className="px-3 py-2 text-muted-foreground">Ninguém recebe prata nesta leva.</li>}
+          </ul>
+          <p className="num flex flex-wrap justify-between gap-x-4 text-xs text-muted-foreground">
+            <span>
+              Pago no jogo: <Amount currency="silver" value={inGame} className="font-medium text-foreground" />
+            </span>
+            <span>
+              Para a carteira: <Amount currency="silver" value={toWallet} className="font-medium text-foreground" />
+            </span>
+          </p>
+        </fieldset>
 
         <DialogFooter>
           <Button variant="ghost" onClick={onClose}>
             Voltar
           </Button>
-          <Button autoFocus disabled={busy} onClick={onConfirm}>
+          <Button autoFocus disabled={busy} onClick={() => onConfirm(payable.filter((r) => marked.has(r.lineId!)).map((r) => r.lineId!))}>
             <Coins />
             Confirmar e creditar
           </Button>
