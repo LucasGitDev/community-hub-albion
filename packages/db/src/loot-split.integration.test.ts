@@ -10,6 +10,7 @@ import {
   getEvent,
   getLedgerBalance,
   getLootSplit,
+  getWithdrawalBalance,
   hasConfirmedLootSplit,
   hasDraftLootSplit,
   joinEventRole,
@@ -17,7 +18,10 @@ import {
   listEventPresence,
   listEventRoles,
   listLedgerEntriesByReference,
+  listWithdrawals,
   openVoiceSession,
+  PAID_IN_GAME_MEMO,
+  requestWithdrawal,
   runMigrations,
   reverseLootSplit,
   saveEventTemplate,
@@ -708,6 +712,117 @@ describe.skipIf(!baseUrl)("rascunho de loot split (TASK-027, Postgres real)", ()
         if (!confirmed.ok) throw new Error(JSON.stringify(confirmed));
         const [saldoA, saldoB, saldoOwner] = await balances(a.id, b.id, owner.id);
         expect(saldoA + saldoB + saldoOwner).toBe(total);
+      });
+    });
+
+    describe("split pago no jogo (TASK-081, SP1 a SP4)", () => {
+      /** Saques do usuário, com o lançamento de cada um, lidos direto do banco. */
+      const withdrawalsOf = async (userId: string) => {
+        const rows = await listWithdrawals(handle.db, { userId });
+        const entries = await handle.db.select().from(schema.ledgerEntries).where(eq(schema.ledgerEntries.userId, userId));
+        return rows.map((w) => ({ w, entry: entries.find((e) => e.id === w.ledgerEntryId) }));
+      };
+      const lineOf = (split: { lines: { id: string; userId: string | null }[] }, userId: string) => split.lines.find((l) => l.userId === userId)!.id;
+
+      it("marcado recebe crédito e saque liquidado do mesmo valor, na mesma confirmação; saldo líquido zero (AC#2, AC#3)", async () => {
+        const { owner, a, split } = await twoPeopleEvent({ type: "percent", value: 1000n }, 1_000_000n);
+        const confirmed = await confirmLootSplit(handle.db, split.id, { actorUserId: owner.id, paidInGame: { lineIds: [lineOf(split, a.id)], markedBy: owner.id } });
+        if (!confirmed.ok) throw new Error(JSON.stringify(confirmed));
+        const credit = (await listLedgerEntriesByReference(handle.db, "loot_split", split.id)).find((e) => e.userId === a.id)!;
+        expect(credit).toMatchObject({ kind: "split_payout", amount: 600_030n });
+        const [{ w, entry }] = await withdrawalsOf(a.id);
+        expect(w).toMatchObject({ amount: "600030", status: "settled", decidedByUserId: owner.id, settledByUserId: owner.id });
+        expect(w.settlementNote).toContain(split.id);
+        // O débito é lançamento novo, amarrado ao saque, com o mesmo instante da confirmação.
+        expect(entry).toMatchObject({ amount: -600_030n, kind: "withdrawal", referenceType: "withdrawal", referenceId: w.id, createdBy: owner.id, memo: PAID_IN_GAME_MEMO });
+        expect(w.settledAt).toBe(confirmed.split.confirmedAt);
+        expect(await getLedgerBalance(handle.db, a.id, "silver")).toBe(0n);
+        expect(confirmed.paidInGame.map((p) => [p.userId, p.amount, p.withdrawalId])).toContainEqual([a.id, 600_030n, w.id]);
+      });
+
+      it("desmarcado só recebe o crédito e pede saque normalmente pela fila (AC#4)", async () => {
+        const { owner, a, b, split } = await twoPeopleEvent(NO_FEE, 1_000_000n);
+        const confirmed = await confirmLootSplit(handle.db, split.id, { actorUserId: owner.id, paidInGame: { lineIds: [lineOf(split, a.id)], markedBy: owner.id } });
+        expect(confirmed.ok).toBe(true);
+        expect(await withdrawalsOf(b.id)).toEqual([]);
+        expect(await getWithdrawalBalance(handle.db, b.id)).toMatchObject({ balance: 333_300n, available: 333_300n });
+        const pedido = await requestWithdrawal(handle.db, { userId: b.id, amount: 333_300n });
+        expect(pedido).toMatchObject({ ok: true, withdrawal: { status: "pending" } });
+      });
+
+      it("taxa e sobra do dono entram pagas automaticamente, mesmo com ninguém marcado (AC#5, SP3)", async () => {
+        const { owner, a, b, split } = await twoPeopleEvent({ type: "fixed", value: 7n }, 1_000n);
+        const confirmed = await confirmLootSplit(handle.db, split.id, { actorUserId: owner.id, paidInGame: { lineIds: [], markedBy: owner.id } });
+        if (!confirmed.ok) throw new Error(JSON.stringify(confirmed));
+        const ownerSilver = 7n + BigInt(confirmed.split.residualSilver);
+        const [{ w }] = await withdrawalsOf(owner.id);
+        expect(w).toMatchObject({ amount: ownerSilver.toString(), status: "settled" });
+        expect(confirmed.paidInGame).toEqual([expect.objectContaining({ userId: owner.id, amount: ownerSilver, lineId: null })]);
+        expect(await getLedgerBalance(handle.db, owner.id, "silver")).toBe(0n);
+        expect(await balances(a.id, b.id)).toEqual([662n, 330n]);
+      });
+
+      it("nenhum saque pago no jogo cai na fila da staff (AC#6)", async () => {
+        const { owner, a, b, split } = await twoPeopleEvent({ type: "percent", value: 1000n }, 1_000_000n);
+        await confirmLootSplit(handle.db, split.id, { actorUserId: owner.id, paidInGame: { lineIds: split.lines.map((l) => l.id), markedBy: owner.id } });
+        const fila = await listWithdrawals(handle.db, { status: ["pending", "approved"] });
+        expect(fila.filter((w) => [owner.id, a.id, b.id].includes(w.userId))).toEqual([]);
+        expect((await balances(a.id, b.id, owner.id)).every((v) => v === 0n)).toBe(true);
+      });
+
+      it("sem paidInGame o comportamento é o de antes: nenhum saque nasce", async () => {
+        const { owner, split } = await twoPeopleEvent({ type: "percent", value: 1000n }, 1_000_000n);
+        const confirmed = await confirmLootSplit(handle.db, split.id, { actorUserId: owner.id });
+        expect(confirmed).toMatchObject({ ok: true, paidInGame: [] });
+        expect(await withdrawalsOf(owner.id)).toEqual([]);
+      });
+
+      it("linha de outro split é recusada e nada é lançado (tudo ou nada)", async () => {
+        const { owner, split } = await twoPeopleEvent(NO_FEE, 1_000n);
+        const outro = await twoPeopleEvent(NO_FEE, 1_000n);
+        const result = await confirmLootSplit(handle.db, split.id, { actorUserId: owner.id, paidInGame: { lineIds: [outro.split.lines[0]!.id], markedBy: owner.id } });
+        expect(result).toEqual({ ok: false, reason: "unknown_lines" });
+        expect(await listLedgerEntriesByReference(handle.db, "loot_split", split.id)).toEqual([]);
+        expect((await getLootSplit(handle.db, split.id))!.status).toBe("draft");
+      });
+
+      it("falha no meio desfaz crédito e saque juntos (mesma transação, AC#2)", async () => {
+        const { owner, a, split } = await twoPeopleEvent(NO_FEE, 1_000n);
+        // markedBy inexistente viola a FK de settled_by só no insert do saque, depois dos créditos.
+        const failed = await confirmLootSplit(handle.db, split.id, {
+          actorUserId: owner.id,
+          paidInGame: { lineIds: [lineOf(split, a.id)], markedBy: "00000000-0000-4000-8000-000000000000" },
+        }).then(
+          () => null,
+          (e: unknown) => e,
+        );
+        expect(failed).not.toBeNull();
+        expect(await listLedgerEntriesByReference(handle.db, "loot_split", split.id)).toEqual([]);
+        expect(await withdrawalsOf(a.id)).toEqual([]);
+        expect((await getLootSplit(handle.db, split.id))!.status).toBe("draft");
+      });
+
+      it("depois de confirmado não há como marcar como pago: a reconfirmação ignora a lista (SP4)", async () => {
+        const { owner, a, split } = await twoPeopleEvent(NO_FEE, 1_000n);
+        await confirmLootSplit(handle.db, split.id, { actorUserId: owner.id, paidInGame: { lineIds: [], markedBy: owner.id } });
+        const again = await confirmLootSplit(handle.db, split.id, { actorUserId: owner.id, paidInGame: { lineIds: [lineOf(split, a.id)], markedBy: owner.id } });
+        expect(again).toMatchObject({ ok: true, alreadyConfirmed: true, paidInGame: [] });
+        expect(await withdrawalsOf(a.id)).toEqual([]);
+        expect(await getLedgerBalance(handle.db, a.id, "silver")).toBe(666n);
+      });
+
+      it("duas confirmações SIMULTÂNEAS marcando pago geram crédito e saque uma vez só", async () => {
+        const { owner, a, b, split } = await twoPeopleEvent({ type: "percent", value: 500n }, 1_000_000n);
+        const input = { actorUserId: owner.id, paidInGame: { lineIds: split.lines.map((l) => l.id), markedBy: owner.id } };
+        const results = await Promise.all(Array.from({ length: 10 }, () => confirmLootSplit(handle.db, split.id, input)));
+        expect(results.every((r) => r.ok)).toBe(true);
+        expect(results.filter((r) => r.ok && !r.alreadyConfirmed)).toHaveLength(1);
+        expect(await listLedgerEntriesByReference(handle.db, "loot_split", split.id)).toHaveLength(3);
+        for (const user of [a, b, owner]) {
+          const ws = await withdrawalsOf(user.id);
+          expect(ws).toHaveLength(1);
+          expect(await getLedgerBalance(handle.db, user.id, "silver")).toBe(0n);
+        }
       });
     });
 

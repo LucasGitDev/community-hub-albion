@@ -12,12 +12,13 @@ import {
   type SplitConfirmRefusal,
   type SplitPresence,
 } from "@albion-hub/shared";
+import { randomUUID } from "node:crypto";
 import { and, asc, eq, gte, inArray, isNull, lte, ne, or, sql, type SQL } from "drizzle-orm";
 import type { Database } from "./client.js";
 import type { EventTx } from "./events-repo.js";
 import { listLedgerEntriesByReference, reverseLedgerEntry } from "./ledger-repo.js";
 import { memberNick } from "./member-nick.js";
-import { eventSignups, events, ledgerEntries, lootSplitLines, lootSplits, users, voiceSessions } from "./schema.js";
+import { eventSignups, events, ledgerEntries, lootSplitLines, lootSplits, users, voiceSessions, withdrawals } from "./schema.js";
 import { overlapMs } from "./voice-repo.js";
 
 /**
@@ -413,11 +414,29 @@ export async function updateLootSplitDraft(db: Database, splitId: string, input:
 export interface ConfirmLootSplitInput {
   actorUserId: string | null;
   at?: Date;
+  /**
+   * Split pago no jogo (TASK-081, SP1 a SP5). Ausente = comportamento de antes: só crédito. Presente, cada
+   * linha listada ganha, **na mesma transação**, um saque já liquidado do mesmo valor, e a taxa + sobra do
+   * dono entra paga automaticamente (SP3). `markedBy` é quem marcou: vira `decided_by` e `settled_by` do
+   * saque, então é obrigatório — o banco recusa `settled` sem dono (Q11).
+   */
+  paidInGame?: { lineIds: readonly string[]; markedBy: string };
+}
+
+/** Um saque que nasceu liquidado na confirmação: é o que a timeline publica (SP6). */
+export interface PaidInGameWithdrawal {
+  withdrawalId: string;
+  ledgerEntryId: string;
+  userId: string;
+  amount: bigint;
+  /** Linha do split paga; `null` quando é a taxa + sobra do dono (SP3). */
+  lineId: string | null;
 }
 
 export type ConfirmLootSplitResult =
-  | { ok: true; split: LootSplitDto; alreadyConfirmed: boolean }
+  | { ok: true; split: LootSplitDto; alreadyConfirmed: boolean; paidInGame: PaidInGameWithdrawal[] }
   | { ok: false; reason: "not_found" }
+  | { ok: false; reason: "unknown_lines" }
   | { ok: false; reason: "event_not_editable"; status: EventStatus }
   | { ok: false; reason: "refused"; refusal: SplitConfirmRefusal };
 
@@ -447,10 +466,14 @@ export async function confirmLootSplit(db: Database, splitId: string, input: Con
   const done = await db.transaction(async (tx) => {
     const ctx = await lockSplit(tx, splitId);
     if (!ctx) return { ok: false as const, reason: "not_found" as const };
-    if (ctx.status === "confirmed") return { ok: true as const, alreadyConfirmed: true };
+    // SP4: a segunda confirmação não marca nada como pago — nem se vier com outra lista.
+    if (ctx.status === "confirmed") return { ok: true as const, alreadyConfirmed: true, paidInGame: [] };
     if (ctx.eventStatus !== "finished") return { ok: false as const, reason: "event_not_editable" as const, status: ctx.eventStatus };
 
     const lines = await splitLinesFor(tx, splitId);
+    const paidLineIds = new Set(input.paidInGame?.lineIds ?? []);
+    // Linha de outro split (ou inventada) não é "desmarcada por engano": é pedido errado, e nada é lançado.
+    if ([...paidLineIds].some((id) => !lines.some((line) => line.id === id))) return { ok: false as const, reason: "unknown_lines" as const };
     const checked = checkSplitConfirm(lines, ctx.totalSilver, ctx.fee);
     if (!checked.ok) return { ok: false as const, reason: "refused" as const, refusal: checked.reason };
     const { fee, amounts, residual, ownerSilver } = checked.plan;
@@ -472,14 +495,91 @@ export async function confirmLootSplit(db: Database, splitId: string, input: Con
     if (ownerSilver > 0n) values.push({ userId: ctx.ownerUserId, amount: ownerSilver, kind: "split_fee", ...reference, memo: "Taxa e sobra do loot split" });
     if (values.length > 0) await tx.insert(ledgerEntries).values(values);
 
+    // SP1/SP3: o saque pago no jogo nasce aqui, na transação do crédito — ou os dois existem, ou nenhum.
+    const paid: { userId: string; amount: bigint; lineId: string | null }[] = [];
+    if (input.paidInGame) {
+      for (const [index, line] of lines.entries()) {
+        const amount = amounts[index]!;
+        if (paidLineIds.has(line.id) && line.userId !== null && amount > 0n) paid.push({ userId: line.userId, amount, lineId: line.id });
+      }
+      if (ownerSilver > 0n) paid.push({ userId: ctx.ownerUserId, amount: ownerSilver, lineId: null });
+    }
+    const paidInGame = input.paidInGame ? await settlePaidInGame(tx, splitId, paid, input.paidInGame.markedBy, at) : [];
+
     await tx
       .update(lootSplits)
       .set({ status: "confirmed", feeSilver: fee.feeSilver, residualSilver: residual, confirmedBy: input.actorUserId, confirmedAt: at, updatedAt: at })
       .where(eq(lootSplits.id, splitId));
-    return { ok: true as const, alreadyConfirmed: false };
+    return { ok: true as const, alreadyConfirmed: false, paidInGame };
   });
   if (!done.ok) return done;
-  return { ok: true, split: (await getLootSplit(db, splitId))!, alreadyConfirmed: done.alreadyConfirmed };
+  return { ok: true, split: (await getLootSplit(db, splitId))!, alreadyConfirmed: done.alreadyConfirmed, paidInGame: done.paidInGame };
+}
+
+/** Memo do débito no extrato: diz que a prata já saiu, e por onde (AC#3). */
+export const PAID_IN_GAME_MEMO = "Sacado: pago no jogo na divisão do loot split";
+
+/**
+ * Grava os saques pagos no jogo **já liquidados** (TASK-081, SP1). Não passa pela máquina
+ * `pending → approved → settled`: ela existe para a staff aprovar prata que ainda está no painel, e aqui a
+ * prata já saiu no jogo. O que não muda é o que os CHECKs de `withdrawals` exigem de um `settled`, e a
+ * linha nasce cumprindo todos:
+ * - `ledger_entry_id` preenchido (`withdrawals_ledger_entry_consistent`): o débito é um lançamento **novo**
+ *   `withdrawal`, com `reference_type = 'withdrawal'` apontando para o saque, como na aprovação;
+ * - `decided_by`/`decided_at` juntos e não nulos (`withdrawals_decision_consistent`,
+ *   `withdrawals_decided_when_not_pending`): quem marcou é quem "aprovou";
+ * - `settled_by`/`settled_at`/`settlement_note` (`withdrawals_settlement_consistent`): quem marcou, a hora
+ *   da confirmação e a nota que aponta o split.
+ *
+ * O id do saque é gerado aqui para o lançamento já nascer apontando para ele (o ledger não aceita UPDATE
+ * depois). Sem conferência de saldo: o crédito do mesmo valor acabou de entrar nesta transação, e o saldo
+ * líquido da leva é zero por construção — recusar por saldo negativo anterior (Q24) faria o painel mentir
+ * sobre uma prata que já mudou de mão.
+ */
+async function settlePaidInGame(
+  tx: EventTx,
+  splitId: string,
+  paid: readonly { userId: string; amount: bigint; lineId: string | null }[],
+  markedBy: string,
+  at: Date,
+): Promise<PaidInGameWithdrawal[]> {
+  if (paid.length === 0) return [];
+  const planned = paid.map((p) => ({ ...p, withdrawalId: randomUUID() }));
+  const entries = await tx
+    .insert(ledgerEntries)
+    .values(
+      planned.map((p) => ({
+        userId: p.userId,
+        amount: -p.amount,
+        currency: "silver" as const,
+        kind: "withdrawal" as const,
+        referenceType: "withdrawal" as const,
+        referenceId: p.withdrawalId,
+        createdBy: markedBy,
+        memo: PAID_IN_GAME_MEMO,
+      })),
+    )
+    .returning({ id: ledgerEntries.id, referenceId: ledgerEntries.referenceId });
+  const entryOf = new Map(entries.map((e) => [e.referenceId!, e.id]));
+  const note = `Pago no jogo na divisão do loot split ${splitId}`;
+  await tx.insert(withdrawals).values(
+    planned.map((p) => ({
+      id: p.withdrawalId,
+      userId: p.userId,
+      amount: p.amount,
+      status: "settled" as const,
+      ledgerEntryId: entryOf.get(p.withdrawalId)!,
+      decidedBy: markedBy,
+      decidedAt: at,
+      decisionNote: note,
+      settledBy: markedBy,
+      settledAt: at,
+      settlementNote: note,
+      createdAt: at,
+      updatedAt: at,
+    })),
+  );
+  return planned.map((p) => ({ withdrawalId: p.withdrawalId, ledgerEntryId: entryOf.get(p.withdrawalId)!, userId: p.userId, amount: p.amount, lineId: p.lineId }));
 }
 
 export type ReverseLootSplitResult =

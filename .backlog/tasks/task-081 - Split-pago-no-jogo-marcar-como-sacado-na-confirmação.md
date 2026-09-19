@@ -1,9 +1,11 @@
 ---
 id: TASK-081
 title: 'Split pago no jogo: marcar como sacado na confirmação'
-status: To Do
-assignee: []
+status: In Progress
+assignee:
+  - '@claude'
 created_date: '2026-09-19 03:59'
+updated_date: '2026-09-19 04:01'
 labels: []
 milestone: m-12
 dependencies: []
@@ -46,3 +48,14 @@ Só existe no ato da confirmação: depois, o que ficou é saldo normal e sai pe
 - [ ] #8 Notas e final summary com evidências; commits Conventional atômicos sem co-autor
 - [ ] #9 PR merged na main com quality gate verde; branch e worktree removidos
 <!-- DOD:END -->
+
+## Implementation Plan
+
+<!-- SECTION:PLAN:BEGIN -->
+1. Repo (packages/db/loot-split-repo): confirmLootSplit aceita paidInGame { lineIds, markedBy }. Na MESMA transação, depois dos créditos: para cada linha marcada com conta e prata > 0, e para o split_fee do dono (SP3, automático), gera id do saque no app, insere lançamento kind=withdrawal (-X, reference withdrawal/<id>) e o withdrawals já em settled com ledger_entry_id, decided_by/at, settled_by/at e settlement_note — satisfaz todos os checks existentes sem migration. Line id desconhecido = recusa unknown_lines. Idempotência e trava continuam no lock do split.
+2. Testes de integração: crédito+saque juntos, saldo líquido zero, desmarcado só crédito e pede saque normal, taxa/sobra paga, nada pending/approved (fila), concorrência 2 e 10 confirmações com paidInGame = um conjunto só, rollback total quando falha.
+3. Shared: schema zod do corpo da confirmação (paidInGameLineIds: uuid[] opcional, sem duplicata).
+4. Server: controller lê o corpo; service passa markedBy = ator da sessão (permissão distribute, SP5); publica economy.withdrawal_paid_in_game depois do commit (SP6), com quem marcou; teste com FakeTimelinePublisher. Nenhuma outra rota cria saque settled (SP4).
+5. Web: ConfirmSplitDialog ganha lista de checkboxes (todos marcados), linha fixa da taxa/sobra como paga; confirmSplit envia os ids. e2e do modal (desmarcar um), screenshots 1280/400.
+6. Skills emil-design-eng, security-review, task-done-check; pnpm quality; PR.
+<!-- SECTION:PLAN:END -->
