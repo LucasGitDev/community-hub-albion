@@ -6,11 +6,13 @@ import {
   getWithdrawalBalance,
   getWithdrawalBalances,
   listWithdrawals,
+  openWithdrawalForMember,
   rejectWithdrawal,
   requestWithdrawal,
   settleWithdrawal,
   type DbHandle,
   type DecideWithdrawalOptions,
+  type OpenWithdrawalForMemberResult,
   type RequestWithdrawalResult,
   type WithdrawalBalance,
   type WithdrawalDecisionResult,
@@ -41,6 +43,9 @@ import { loadTimelinePeople, publishAfterCommit, TIMELINE_LOGGER } from "../time
 export type RequestSilverResult = RequestWithdrawalResult | { ok: false; reason: "banned"; banReason: string };
 export type DecideSilverResult = WithdrawalDecisionResult;
 
+/** Abertura pela staff (TASK-083). Banido tem o saldo congelado, então nem pending nem pago no jogo passam. */
+export type OpenForMemberResult = OpenWithdrawalForMemberResult | { ok: false; reason: "banned"; banReason: string };
+
 @Injectable()
 export class WithdrawalService {
   constructor(
@@ -67,6 +72,25 @@ export class WithdrawalService {
     if (ban) return { ok: false, reason: "banned", banReason: ban.banReason };
     const result = await requestWithdrawal(this.handle.db, { userId, amount });
     if (result.ok) await this.publish("economy.withdrawal_requested", result.withdrawal, userId, null);
+    return result;
+  }
+
+  /**
+   * Abre um saque **para outro membro** (TASK-083, SS1–SS4). O `userId` é o alvo e `actorUserId` é quem
+   * age — o controller tira o ator da sessão e nunca do corpo.
+   *
+   * Sem `paidInGame` nasce `pending` e entra na fila como qualquer outro (SS1). Com `paidInGame` nasce
+   * liquidado (SS2). Banido é recusado nos dois casos: o saldo de quem foi banido fica congelado
+   * (TASK-050), e abrir um pendente que nunca poderia ser aprovado só entulharia a fila.
+   */
+  async openForMember(input: { userId: string; actorUserId: string; amount: bigint; reason: string; paidInGame?: boolean }): Promise<OpenForMemberResult> {
+    const ban = await getBanStatus(this.handle.db, input.userId);
+    if (ban) return { ok: false, reason: "banned", banReason: ban.banReason };
+    const result = await openWithdrawalForMember(this.handle.db, input);
+    if (result.ok) {
+      const action = result.withdrawal.status === "settled" ? "economy.withdrawal_opened_paid_in_game" : "economy.withdrawal_opened_by_staff";
+      await this.publish(action, result.withdrawal, input.actorUserId, input.reason.trim());
+    }
     return result;
   }
 
@@ -112,7 +136,7 @@ export class WithdrawalService {
         ...(actorUserId === withdrawal.userId ? {} : { target: owner }),
         amounts: [{ value: BigInt(withdrawal.amount), currency: "silver" as const }],
         recordId: withdrawal.id,
-        ...(note ? { details: [{ name: action === "economy.withdrawal_rejected" ? "Motivo" : "Nota", value: note }] } : {}),
+        ...(note ? { details: [{ name: action === "economy.withdrawal_rejected" || action.startsWith("economy.withdrawal_opened") ? "Motivo" : "Nota", value: note }] } : {}),
       };
     });
   }
@@ -132,6 +156,8 @@ const WITHDRAWAL_SUMMARY: Record<string, string> = {
   "economy.withdrawal_approved": "Saque aprovado",
   "economy.withdrawal_rejected": "Saque recusado",
   "economy.withdrawal_settled": "Saque entregue",
+  "economy.withdrawal_opened_by_staff": "Saque aberto pela staff",
+  "economy.withdrawal_opened_paid_in_game": "Saque aberto pela staff, já pago no jogo",
 };
 
 /** Prata vai para o JSON como string: número de JS não aguenta bigint (Q20). */
