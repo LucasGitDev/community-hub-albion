@@ -5,7 +5,7 @@ status: In Progress
 assignee:
   - '@claude'
 created_date: '2026-09-20 13:15'
-updated_date: '2026-09-20 13:49'
+updated_date: '2026-09-20 14:03'
 labels: []
 milestone: m-12
 dependencies: []
@@ -64,4 +64,6 @@ Entra na fila de saques e na lista de jogadores (SS5). Na lista, a ação vai nu
 
 <!-- SECTION:NOTES:BEGIN -->
 Implementação: coluna opened_by + request_note em withdrawals (CHECK exige motivo), openWithdrawalForMember reusando lockUser + getWithdrawalBalance + checkWithdrawalRequest do pedido normal (SS3); atalho pago no jogo grava settled no desenho do settlePaidInGame da TASK-081 (SS2). Rota POST /api/withdrawals com CASL createFor (staff/admin) e SameOriginGuard; ator sempre da sessão. Timeline: economy.withdrawal_opened_by_staff e _paid_in_game. UI: componente ui/dropdown-menu novo (radix já instalado) e as ações da linha da lista de jogadores viraram menu (SS6); StaffWithdrawDialog serve fila e lista (SS5).
+
+Security review (agent dedicado, diff completo): nenhum achado >=8 de confiança. Conferidos authz/createFor, ator sempre da sessão, SQLi nas queries novas, integridade do ledger na trava, exposição de dados na resposta, CSRF (SameOriginGuard) e XSS. O único ponto levantado fora de escopo (checagem de banimento fora da transação) foi corrigido: a leitura do banimento passou para dentro da transação, com teste.
 <!-- SECTION:NOTES:END -->
