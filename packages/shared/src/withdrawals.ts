@@ -142,6 +142,24 @@ const requiredNote = (label: string) =>
 export const withdrawalRequestSchema = z.object({ amount: silverAmount });
 export type WithdrawalRequestInput = z.output<typeof withdrawalRequestSchema>;
 
+/**
+ * Saque aberto **pela staff para um membro** (TASK-083, SS1–SS4). Aqui o `userId` existe e é o **alvo**:
+ * quem age sai sempre da sessão, nunca do corpo — o controller não lê ator nenhum daqui.
+ *
+ * - `reason` é obrigatório (SS4): um saque que o próprio dono não pediu precisa dizer por que existe;
+ * - `paidInGame` é o atalho de SS2: o saque nasce liquidado em vez de entrar na fila.
+ */
+export const withdrawalStaffOpenSchema = z.object({
+  userId: z.uuid("Escolha o membro do saque."),
+  amount: silverAmount,
+  reason: requiredNote("o motivo do saque: por que a staff está abrindo por esse membro"),
+  paidInGame: z.boolean().optional().default(false),
+});
+export type WithdrawalStaffOpenInput = z.output<typeof withdrawalStaffOpenSchema>;
+
+/** Nota de liquidação de um saque que já nasceu pago no jogo (SS2). Espelha o memo do split da TASK-081. */
+export const staffPaidInGameNote = (reason: string) => `Pago no jogo pela staff. Motivo: ${reason}`;
+
 /** Recusa exige motivo: o membro lê essa frase e é o único retorno que ele tem (AC#3). */
 export const withdrawalRejectSchema = z.object({ note: requiredNote("o motivo da recusa: o membro vê essa mensagem") });
 export type WithdrawalRejectInput = z.output<typeof withdrawalRejectSchema>;
@@ -166,6 +184,13 @@ export interface WithdrawalDto {
   status: WithdrawalStatus;
   /** Lançamento de débito criado na aprovação; null enquanto pending ou se foi recusado. */
   ledgerEntryId: string | null;
+  /**
+   * Staff que abriu o saque no nome do membro (TASK-083). `null` = o próprio dono pediu pelo painel —
+   * é o que a fila usa para mostrar "aberto pela staff" e por quem.
+   */
+  openedByUserId: string | null;
+  /** Motivo escrito por quem abriu o saque pelo membro (SS4). `null` nos saques pedidos pelo próprio dono. */
+  requestNote: string | null;
   decidedByUserId: string | null;
   decidedAt: string | null;
   decisionNote: string | null;

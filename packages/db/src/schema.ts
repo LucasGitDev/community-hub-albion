@@ -607,6 +607,13 @@ export const withdrawals = pgTable(
     status: withdrawalStatusEnum("status").notNull().default("pending"),
     /** Débito lançado na aprovação. `restrict`: o lançamento é append-only e não pode ser apagado. */
     ledgerEntryId: uuid("ledger_entry_id").references(() => ledgerEntries.id, { onDelete: "restrict" }),
+    /**
+     * Staff que abriu o saque **no nome do membro** (TASK-083, SS1). Null = o próprio dono pediu pelo
+     * painel. `set null`: se a conta de quem abriu sumir, o saque do membro continua de pé.
+     */
+    openedBy: uuid("opened_by").references(() => users.id, { onDelete: "set null" }),
+    /** Motivo de quem abriu o saque pelo membro (SS4). Obrigatório quando `opened_by` existe. */
+    requestNote: text("request_note"),
     /** Staff que aprovou ou recusou (AC#3). */
     decidedBy: uuid("decided_by").references(() => users.id, { onDelete: "restrict" }),
     decidedAt: timestamp("decided_at", { withTimezone: true }),
@@ -631,6 +638,8 @@ export const withdrawals = pgTable(
     check("withdrawals_decision_consistent", sql`(${t.decidedBy} is null) = (${t.decidedAt} is null)`),
     check("withdrawals_decided_when_not_pending", sql`(${t.status} = 'pending') = (${t.decidedAt} is null)`),
     check("withdrawals_rejection_note_required", sql`${t.status} <> 'rejected' or (${t.decisionNote} is not null and length(btrim(${t.decisionNote})) > 0)`),
+    // Saque aberto pela staff diz por quê (SS4): sem motivo, o banco recusa a linha.
+    check("withdrawals_opened_by_note_required", sql`${t.openedBy} is null or (${t.requestNote} is not null and length(btrim(${t.requestNote})) > 0)`),
     // Liquidação exige quem + quando + nota, e só existe em `settled` (AC#4, Q11).
     check(
       "withdrawals_settlement_consistent",

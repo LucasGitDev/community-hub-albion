@@ -1,9 +1,11 @@
 ---
 id: TASK-083
 title: Staff abre saque para um membro
-status: To Do
-assignee: []
+status: In Progress
+assignee:
+  - '@claude'
 created_date: '2026-09-20 13:15'
+updated_date: '2026-09-20 13:18'
 labels: []
 milestone: m-12
 dependencies: []
@@ -45,3 +47,15 @@ Entra na fila de saques e na lista de jogadores (SS5). Na lista, a ação vai nu
 - [ ] #8 Notas e final summary com evidências; commits Conventional atômicos sem co-autor
 - [ ] #9 PR merged na main com quality gate verde; branch e worktree removidos
 <!-- DOD:END -->
+
+## Implementation Plan
+
+<!-- SECTION:PLAN:BEGIN -->
+1. shared: DTO ganha openedByUserId/requestNote; withdrawalStaffOpenSchema (userId, amount, reason obrigatório, paidInGame); CASL: ação 'createFor' em Withdrawal para staff (admin já tem manage all).
+2. db: colunas opened_by + request_note em withdrawals, CHECK exigindo motivo quando opened_by não é nulo; migration gerada pelo drizzle (shared buildado antes).
+3. repo: openWithdrawalForMember numa transação — lockUser, getWithdrawalBalance, checkWithdrawalRequest (mesma conta do saque normal, SS3); sem paidInGame nasce pending (SS1); com paidInGame nasce settled no desenho do settlePaidInGame da TASK-081 (lançamento novo de débito + withdrawals cumprindo todos os CHECKs, SS2). Banido é recusado.
+4. service: openForMember + timeline economy.withdrawal_opened_by_staff / _paid_in_game (ator=sessão, alvo, valor, motivo), depois do commit.
+5. controller: POST /withdrawals com Authorize('createFor','Withdrawal') + SameOriginGuard; actor sempre da sessão, userId alvo do corpo.
+6. web: componente ui/dropdown-menu reutilizável (radix-ui já instalado); StaffWithdrawDialog usado na fila de saques e na lista de jogadores (ações da linha viram menu, SS6); fila mostra 'aberto pela staff por X'.
+7. testes: integração do repo (concorrência/teto/settled), http (403 de membro comum, 201 pending, settled), timeline, e2e dos dois lugares, screenshots 1280/400.
+<!-- SECTION:PLAN:END -->
