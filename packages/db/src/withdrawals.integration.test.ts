@@ -339,11 +339,15 @@ describe.skipIf(!baseUrl)("fluxo de saque (TASK-030, Postgres real)", () => {
       const res = await openWithdrawalForMember(handle.db, { userId, actorUserId: staffId, amount: 800_000n, reason: "entreguei em Martlock", paidInGame: true });
       if (!res.ok) throw new Error(`devia passar: ${res.reason}`);
       expect(res.withdrawal).toMatchObject({ status: "settled", openedByUserId: staffId, decidedByUserId: staffId, settledByUserId: staffId });
-      expect(res.withdrawal.settlementNote).toContain("entreguei em Martlock");
+      // A nota de liquidação não repete o motivo (ele mora em requestNote); o memo do ledger repete.
+      expect(res.withdrawal.settlementNote).toBe("Pago no jogo pela staff, no ato da abertura do saque.");
+      expect(res.withdrawal.decisionNote).toBeNull();
+      expect(res.withdrawal.requestNote).toBe("entreguei em Martlock");
       expect(res.balance).toMatchObject({ balance: 0n, reserved: 0n, available: 0n });
       const entries = await listLedgerEntriesByReference(handle.db, "withdrawal", res.withdrawal.id);
       expect(entries).toHaveLength(1);
       expect(entries[0]).toMatchObject({ amount: -800_000n, kind: "withdrawal", createdBy: staffId });
+      expect(entries[0]!.memo).toContain("entreguei em Martlock");
       expect(res.withdrawal.ledgerEntryId).toBe(entries[0]!.id);
       // Não entra na fila: nenhum pending nasceu.
       expect(await listWithdrawals(handle.db, { userId, status: ["pending"] })).toEqual([]);

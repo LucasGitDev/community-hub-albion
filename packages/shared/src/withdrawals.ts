@@ -157,8 +157,14 @@ export const withdrawalStaffOpenSchema = z.object({
 });
 export type WithdrawalStaffOpenInput = z.output<typeof withdrawalStaffOpenSchema>;
 
-/** Nota de liquidação de um saque que já nasceu pago no jogo (SS2). Espelha o memo do split da TASK-081. */
-export const staffPaidInGameNote = (reason: string) => `Pago no jogo pela staff. Motivo: ${reason}`;
+/**
+ * Nota de liquidação de um saque que já nasceu pago no jogo (SS2). **Não repete o motivo**: ele já está
+ * em `requestNote`, e a fila mostraria a mesma frase três vezes na mesma linha.
+ */
+export const STAFF_PAID_IN_GAME_NOTE = "Pago no jogo pela staff, no ato da abertura do saque.";
+
+/** Memo do débito no extrato do membro: aqui o motivo entra, porque o extrato não mostra o pedido. */
+export const staffPaidInGameMemo = (reason: string) => `Sacado: pago no jogo pela staff. ${reason}`;
 
 /** Recusa exige motivo: o membro lê essa frase e é o único retorno que ele tem (AC#3). */
 export const withdrawalRejectSchema = z.object({ note: requiredNote("o motivo da recusa: o membro vê essa mensagem") });
