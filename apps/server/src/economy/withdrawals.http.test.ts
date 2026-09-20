@@ -354,4 +354,97 @@ describe.skipIf(!baseUrl)("saque HTTP (TASK-030, Q11/Q12/Q24/Q25)", () => {
       expect(timeline.entries).toEqual([]);
     });
   });
+
+  describe("staff abre saque para um membro (TASK-083, SS1–SS4)", () => {
+    it("staff abre um pending com motivo e ele aparece na fila marcado como aberto pela staff (AC#1, AC#2)", async () => {
+      const member = await actor(["member"], 1_000_000n);
+      const staff = await actor(["member", "staff"]);
+      const res = await post("/api/withdrawals", staff.cookie, { userId: member.id, amount: "400000", reason: "pediu no Discord" });
+      expect(res.status).toBe(201);
+      expect(res.body).toMatchObject({ userId: member.id, amount: "400000", status: "pending", openedByUserId: staff.id, requestNote: "pediu no Discord" });
+      // Reserva o saldo como qualquer outro pending, sem lançar nada no ledger.
+      const balance = await getWithdrawalBalance(handle.db, member.id);
+      expect(balance).toMatchObject({ balance: 1_000_000n, reserved: 400_000n, available: 600_000n });
+      const queue = await get("/api/withdrawals?status=pending", staff.cookie).expect(200);
+      expect((queue.body as { withdrawals: { id: string; openedByUserId: string | null }[] }).withdrawals.find((w) => w.id === (res.body as { id: string }).id)).toMatchObject({
+        openedByUserId: staff.id,
+      });
+    });
+
+    it("admin também abre (AC#1)", async () => {
+      const member = await actor(["member"], 50_000n);
+      const admin = await actor(["member", "admin"]);
+      await post("/api/withdrawals", admin.cookie, { userId: member.id, amount: "50000", reason: "pediu no jogo" }).expect(201);
+    });
+
+    it("motivo é obrigatório (SS4)", async () => {
+      const member = await actor(["member"], 50_000n);
+      const staff = await actor(["member", "staff"]);
+      await post("/api/withdrawals", staff.cookie, { userId: member.id, amount: "1000" }).expect(400);
+      await post("/api/withdrawals", staff.cookie, { userId: member.id, amount: "1000", reason: "   " }).expect(400);
+    });
+
+    it("valor acima do disponível é recusado pela mesma conta do saque normal (AC#3)", async () => {
+      const member = await actor(["member"], 300_000n);
+      const staff = await actor(["member", "staff"]);
+      // O próprio membro já reservou 200k: sobram 100k, e a conta da staff enxerga a mesma coisa.
+      await post("/api/me/withdrawals", member.cookie, { amount: "200000" }).expect(201);
+      const res = await post("/api/withdrawals", staff.cookie, { userId: member.id, amount: "150000", reason: "pediu no Discord" });
+      expect(res.status).toBe(409);
+      expect((res.body as { message: string }).message).toContain("100.000");
+      await post("/api/withdrawals", staff.cookie, { userId: member.id, amount: "100000", reason: "pediu no Discord" }).expect(201);
+    });
+
+    it("com 'já paguei no jogo' o saque nasce liquidado, com quem marcou, e não entra na fila (AC#4)", async () => {
+      const member = await actor(["member"], 900_000n);
+      const staff = await actor(["member", "staff"]);
+      const res = await post("/api/withdrawals", staff.cookie, { userId: member.id, amount: "900000", reason: "entreguei em Martlock", paidInGame: true });
+      expect(res.status).toBe(201);
+      expect(res.body).toMatchObject({ status: "settled", settledByUserId: staff.id, decidedByUserId: staff.id, openedByUserId: staff.id });
+      expect((res.body as { ledgerEntryId: string | null }).ledgerEntryId).toBeTruthy();
+      // O débito entrou no ledger na mesma transação: saldo zerado e nada reservado.
+      expect(await getLedgerBalance(handle.db, member.id, "silver")).toBe(0n);
+      expect(await getWithdrawalBalance(handle.db, member.id)).toMatchObject({ balance: 0n, reserved: 0n, available: 0n });
+      const queue = await get("/api/withdrawals?status=pending", staff.cookie).expect(200);
+      expect((queue.body as { withdrawals: { id: string }[] }).withdrawals.map((w) => w.id)).not.toContain((res.body as { id: string }).id);
+    });
+
+    it("membro comum não abre saque para ninguém, nem pela API (AC#5)", async () => {
+      const member = await actor(["member"], 500_000n);
+      const outro = await actor(["member"], 500_000n);
+      await post("/api/withdrawals", member.cookie, { userId: outro.id, amount: "1000", reason: "quero" }).expect(403);
+      // Nem para si mesmo por esta rota: o caminho do próprio membro é /me/withdrawals.
+      await post("/api/withdrawals", member.cookie, { userId: member.id, amount: "1000", reason: "quero" }).expect(403);
+      await post("/api/withdrawals", null, { userId: outro.id, amount: "1000", reason: "quero" }).expect(401);
+      expect(await getWithdrawalBalance(handle.db, outro.id)).toMatchObject({ reserved: 0n });
+    });
+
+    it("publica na timeline com quem abriu, o alvo, o valor e o motivo (AC#7)", async () => {
+      const member = await actor(["member"], 700_000n);
+      const staff = await actor(["member", "staff"]);
+      timeline.clear();
+      const res = await post("/api/withdrawals", staff.cookie, { userId: member.id, amount: "300000", reason: "pediu no Discord" }).expect(201);
+      expect(timeline.only("economy.withdrawal_opened_by_staff")).toMatchObject({
+        actor: { kind: "user", userId: staff.id },
+        target: { id: member.id },
+        amounts: [{ value: 300_000n, currency: "silver" }],
+        recordId: (res.body as { id: string }).id,
+        details: [{ name: "Motivo", value: "pediu no Discord" }],
+      });
+
+      timeline.clear();
+      const pago = await post("/api/withdrawals", staff.cookie, { userId: member.id, amount: "400000", reason: "entreguei em Martlock", paidInGame: true }).expect(201);
+      expect(timeline.only("economy.withdrawal_opened_paid_in_game")).toMatchObject({
+        actor: { kind: "user", userId: staff.id },
+        target: { id: member.id },
+        amounts: [{ value: 400_000n, currency: "silver" }],
+        recordId: (pago.body as { id: string }).id,
+        details: [{ name: "Motivo", value: "entreguei em Martlock" }],
+      });
+
+      timeline.clear();
+      await post("/api/withdrawals", staff.cookie, { userId: member.id, amount: "999999999", reason: "não cabe" }).expect(409);
+      expect(timeline.entries).toEqual([]);
+    });
+  });
 });
