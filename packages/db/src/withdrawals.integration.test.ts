@@ -9,6 +9,7 @@ import {
   insertLedgerEntry,
   listLedgerEntriesByReference,
   listWithdrawals,
+  openWithdrawalForMember,
   rejectWithdrawal,
   requestWithdrawal,
   runMigrations,
@@ -299,6 +300,75 @@ describe.skipIf(!baseUrl)("fluxo de saque (TASK-030, Postgres real)", () => {
 
       const pending = await listWithdrawals(handle.db, { userId, status: ["pending"] });
       expect(pending.map((w) => w.id)).toEqual([b.withdrawal.id]);
+    });
+  });
+
+  describe("staff abre saque para o membro (TASK-083, SS1–SS4)", () => {
+    it("nasce pending, marcado com quem abriu e o motivo, e reserva o saldo (SS1)", async () => {
+      const userId = await memberWith(1_000_000n);
+      const res = await openWithdrawalForMember(handle.db, { userId, actorUserId: staffId, amount: 400_000n, reason: "  pediu no Discord  " });
+      if (!res.ok) throw new Error(`devia passar: ${res.reason}`);
+      expect(res.withdrawal).toMatchObject({ status: "pending", openedByUserId: staffId, requestNote: "pediu no Discord", ledgerEntryId: null });
+      expect(res.balance).toMatchObject({ balance: 1_000_000n, reserved: 400_000n, available: 600_000n });
+      // Nada no ledger enquanto é pending (Q25).
+      expect(await getLedgerBalance(handle.db, userId, "silver")).toBe(1_000_000n);
+    });
+
+    it("usa a mesma conta de disponível do pedido normal, com o reservado já descontado (SS3)", async () => {
+      const userId = await memberWith(500_000n);
+      const mine = await requestWithdrawal(handle.db, { userId, amount: 300_000n });
+      expect(mine.ok).toBe(true);
+      const tooMuch = await openWithdrawalForMember(handle.db, { userId, actorUserId: staffId, amount: 200_001n, reason: "pediu no jogo" });
+      expect(tooMuch).toMatchObject({ ok: false, reason: "insufficient", available: 200_000n });
+      const fits = await openWithdrawalForMember(handle.db, { userId, actorUserId: staffId, amount: 200_000n, reason: "pediu no jogo" });
+      expect(fits.ok).toBe(true);
+    });
+
+    it("duas aberturas simultâneas não passam do saldo", async () => {
+      const userId = await memberWith(1_000_000n);
+      const [a, b] = await Promise.all([
+        openWithdrawalForMember(handle.db, { userId, actorUserId: staffId, amount: 600_000n, reason: "pediu no Discord" }),
+        openWithdrawalForMember(handle.db, { userId, actorUserId: staffId, amount: 600_000n, reason: "pediu no Discord" }),
+      ]);
+      expect([a.ok, b.ok].filter(Boolean)).toHaveLength(1);
+      expect(await getWithdrawalBalance(handle.db, userId)).toMatchObject({ reserved: 600_000n, available: 400_000n });
+    });
+
+    it("com 'já paguei no jogo' nasce settled, com o débito no ledger amarrado ao saque (SS2)", async () => {
+      const userId = await memberWith(800_000n);
+      const res = await openWithdrawalForMember(handle.db, { userId, actorUserId: staffId, amount: 800_000n, reason: "entreguei em Martlock", paidInGame: true });
+      if (!res.ok) throw new Error(`devia passar: ${res.reason}`);
+      expect(res.withdrawal).toMatchObject({ status: "settled", openedByUserId: staffId, decidedByUserId: staffId, settledByUserId: staffId });
+      expect(res.withdrawal.settlementNote).toContain("entreguei em Martlock");
+      expect(res.balance).toMatchObject({ balance: 0n, reserved: 0n, available: 0n });
+      const entries = await listLedgerEntriesByReference(handle.db, "withdrawal", res.withdrawal.id);
+      expect(entries).toHaveLength(1);
+      expect(entries[0]).toMatchObject({ amount: -800_000n, kind: "withdrawal", createdBy: staffId });
+      expect(res.withdrawal.ledgerEntryId).toBe(entries[0]!.id);
+      // Não entra na fila: nenhum pending nasceu.
+      expect(await listWithdrawals(handle.db, { userId, status: ["pending"] })).toEqual([]);
+    });
+
+    it("recusa valor não positivo, saldo negativo e usuário que não existe", async () => {
+      const userId = await memberWith(100_000n);
+      expect(await openWithdrawalForMember(handle.db, { userId, actorUserId: staffId, amount: 0n, reason: "x" })).toMatchObject({ ok: false, reason: "not_positive" });
+      expect(await openWithdrawalForMember(handle.db, { userId: "00000000-0000-4000-8000-000000000000", actorUserId: staffId, amount: 1n, reason: "x" })).toMatchObject({
+        ok: false,
+        reason: "unknown_user",
+      });
+      const negativo = await memberWith(-5_000n);
+      expect(await openWithdrawalForMember(handle.db, { userId: negativo, actorUserId: staffId, amount: 1n, reason: "x" })).toMatchObject({ ok: false, reason: "negative_balance" });
+    });
+
+    it("o banco recusa um saque aberto pela staff sem motivo", async () => {
+      const userId = await memberWith(10_000n);
+      const err = await handle.db
+        .insert(schema.withdrawals)
+        .values({ userId, amount: 1_000n, status: "pending", openedBy: staffId })
+        .then(() => null)
+        .catch((e: unknown) => e);
+      // O nome do CHECK vem na causa do erro do driver, não na mensagem do Drizzle.
+      expect(String((err as { cause?: { message?: string } } | null)?.cause?.message ?? err)).toContain("withdrawals_opened_by_note_required");
     });
   });
 });
