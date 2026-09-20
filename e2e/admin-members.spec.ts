@@ -1,5 +1,6 @@
 import { expect, test, type Page } from "@playwright/test";
 import { ORIGIN } from "./session";
+import { actionsTrigger, rowAction } from "./row-actions";
 
 /**
  * Lista de membros do admin (TASK-043). Discord IDs por projeto: desktop e mobile rodam em paralelo no mesmo banco.
@@ -86,7 +87,7 @@ test("admin confere o nick no Albion, edita o membro e escreve nota (AC#1, AC#2,
   await expect(row).toBeVisible();
 
   // AC#2: editar nick e tag muda a linha na hora, sem recarregar a página.
-  await row.getByRole("button", { name: /^Gerenciar / }).click();
+  await rowAction(page, row, "Gerenciar nick, tag e notas");
   const dialog = page.getByRole("dialog");
   await expect(dialog.getByRole("tab", { name: "Editar" })).toBeVisible();
   await snap(page, "admin-membros-editar");
@@ -101,7 +102,7 @@ test("admin confere o nick no Albion, edita o membro e escreve nota (AC#1, AC#2,
   await snap(page, "admin-membros-linha-editada");
 
   // AC#3: a edição vira nota de sistema com autor e data, e a nota escrita à mão entra depois dela.
-  await edited.getByRole("button", { name: /^Gerenciar / }).click();
+  await rowAction(page, edited, "Gerenciar nick, tag e notas");
   await dialog.getByRole("tab", { name: /Notas/ }).click();
   await expect(dialog.getByText(new RegExp(`Editou nick .+ → ${nick}`))).toBeVisible();
   // Corpo único por execução: o banco do e2e não é limpo entre rodadas e a nota nunca é apagada.
@@ -124,9 +125,11 @@ test("admin confere o nick no Albion, edita o membro e escreve nota (AC#1, AC#2,
   // AC#1: a conferência está desligada no e2e (sem ALBION_REGION) e a tela diz isso em PT-BR, sem quebrar.
   await page.getByRole("button", { name: "Fechar" }).first().click();
   await expect(dialog).toBeHidden();
-  await edited.getByRole("button", { name: /^Conferir / }).click();
+  await rowAction(page, edited, "Conferir no Albion");
   await expect(page.getByText("Conferência no Albion desligada", { exact: false })).toBeVisible();
-  await expect(edited.getByRole("button", { name: /^Conferir / })).toBeEnabled();
+  // A conferência não fecha o menu (o resultado chega enquanto ele está aberto); Esc devolve a lista.
+  await page.keyboard.press("Escape");
+  await expect(actionsTrigger(edited)).toBeEnabled();
   await snap(page, "admin-membros-conferir-desligado");
 
   // A coluna de ações não pode empurrar a tabela para fora da tela, nem no celular de 400px.
@@ -140,7 +143,7 @@ test("a janela de gestão é navegável por teclado e fecha com Esc (AC#2, AC#3)
   await page.goto("/admin/membros");
   await page.getByLabel("Buscar por nick ou usuário do Discord").fill(teclado);
   const row = page.getByRole("row").filter({ hasText: `@${teclado}` });
-  await row.getByRole("button", { name: /^Gerenciar / }).click();
+  await rowAction(page, row, "Gerenciar nick, tag e notas");
 
   const dialog = page.getByRole("dialog");
   await expect(dialog).toBeVisible();
@@ -190,7 +193,7 @@ test("staff usa as quatro capacidades da gestão de usuários (TASK-047 AC#1)", 
   await expect(row).toBeVisible();
 
   // Capacidade 2: editar nick e tag de guilda.
-  await row.getByRole("button", { name: /^Gerenciar / }).click();
+  await rowAction(page, row, "Gerenciar nick, tag e notas");
   const dialog = page.getByRole("dialog");
   await expect(dialog.getByRole("tab", { name: "Editar" })).toBeVisible();
   await dialog.getByLabel("Nick no Albion").fill(nick);
@@ -203,7 +206,7 @@ test("staff usa as quatro capacidades da gestão de usuários (TASK-047 AC#1)", 
   await snap(page, "staff-membros-editado");
 
   // Capacidades 3 e 4: escrever nota interna e ler o histórico (incluindo a nota de sistema da edição).
-  await edited.getByRole("button", { name: /^Gerenciar / }).click();
+  await rowAction(page, edited, "Gerenciar nick, tag e notas");
   await dialog.getByRole("tab", { name: /Notas/ }).click();
   await expect(dialog.getByText(new RegExp(`Editou nick .+ → ${nick}`))).toBeVisible();
   const nota = `staff anotou ${Date.now()}`;
@@ -217,7 +220,7 @@ test("staff usa as quatro capacidades da gestão de usuários (TASK-047 AC#1)", 
   await expect(dialog).toBeHidden();
 
   // Capacidade 1: revalidar o nick no Albion (desligado no e2e, mas a rota autoriza e a tela explica).
-  await edited.getByRole("button", { name: /^Conferir / }).click();
+  await rowAction(page, edited, "Conferir no Albion");
   await expect(page.getByText("Conferência no Albion desligada", { exact: false })).toBeVisible();
   await snap(page, "staff-membros-conferir");
 

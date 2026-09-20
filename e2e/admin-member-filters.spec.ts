@@ -185,8 +185,11 @@ test("staff vê os mesmos filtros e as ações que já tinha; o import continua 
   expect(await openAndMatch(page, "Saiu do servidor")).toBe(2);
   await expect(memberRows(page).filter({ hasText: `@${nome("saiu")}` }).getByText("Saiu do servidor")).toBeVisible();
   // A staff continua com as ações da linha que a TASK-047 deu: conferir, gerenciar, extrato e banir.
-  await expect(page.getByRole("button", { name: /^Gerenciar / }).first()).toBeVisible();
-  await expect(page.getByRole("button", { name: /^Ver o extrato de / }).first()).toBeVisible();
+  // As ações da linha vivem no menu desde a TASK-083 (SS6): a staff continua com as mesmas.
+  await page.getByRole("button", { name: /^Ações de / }).first().click();
+  await expect(page.getByRole("menuitem", { name: "Gerenciar nick, tag e notas" })).toBeVisible();
+  await expect(page.getByRole("menuitem", { name: "Ver o extrato" })).toBeVisible();
+  await page.keyboard.press("Escape");
   await snap(page, "filtros-staff-saiu-do-servidor");
 
   expect(await page.evaluate(() => document.documentElement.scrollWidth > window.innerWidth)).toBe(false);
