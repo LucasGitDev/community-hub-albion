@@ -10,6 +10,7 @@ import {
 } from "@albion-hub/shared";
 import { randomUUID } from "node:crypto";
 import { and, desc, eq, inArray, sql } from "drizzle-orm";
+import { alias } from "drizzle-orm/pg-core";
 import type { Database } from "./client.js";
 import { memberNick } from "./member-nick.js";
 import { ledgerEntries, users, withdrawals } from "./schema.js";
@@ -127,7 +128,10 @@ type Row = { [K in keyof typeof columns]: (typeof withdrawals.$inferSelect)[K] }
 
 const iso = (d: Date | null) => (d ? d.toISOString() : null);
 
-const toDto = (row: Row, userNick: string | null = null): WithdrawalDto => ({
+/** Apelido da tabela de usuários para trazer o nome de quem abriu o saque pelo membro (TASK-083). */
+const openers = alias(users, "withdrawal_opener");
+
+const toDto = (row: Row, userNick: string | null = null, openedByNick: string | null = null): WithdrawalDto => ({
   id: row.id,
   userId: row.userId,
   userNick,
@@ -136,6 +140,7 @@ const toDto = (row: Row, userNick: string | null = null): WithdrawalDto => ({
   status: row.status,
   ledgerEntryId: row.ledgerEntryId,
   openedByUserId: row.openedBy,
+  openedByNick,
   requestNote: row.requestNote,
   decidedByUserId: row.decidedBy,
   decidedAt: iso(row.decidedAt),
@@ -270,7 +275,13 @@ export async function openWithdrawalForMember(db: Database, input: OpenWithdrawa
         .returning(columns)) as [Row];
     }
     const after = await getWithdrawalBalance(tx, input.userId);
-    return { ok: true as const, withdrawal: toDto(row), balance: after };
+    // Nome de quem abriu e de quem recebe: a fila mostra os dois (AC#2) sem uma segunda ida ao banco.
+    const [nicks] = await tx
+      .select({ owner: memberNick(users), opener: memberNick(openers) })
+      .from(users)
+      .leftJoin(openers, eq(openers.id, input.actorUserId))
+      .where(eq(users.id, input.userId));
+    return { ok: true as const, withdrawal: toDto(row, nicks?.owner ?? null, nicks?.opener ?? null), balance: after };
   });
 }
 
@@ -391,11 +402,12 @@ export async function settleWithdrawal(db: Database, id: string, options: Decide
 /** Um saque pelo id, com o nick do dono. Quem pode ver é decisão do controller (CASL), não daqui. */
 export async function getWithdrawal(db: Database, id: string): Promise<WithdrawalDto | null> {
   const [row] = await db
-    .select({ ...columns, nick: memberNick(users) })
+    .select({ ...columns, nick: memberNick(users), openerNick: memberNick(openers) })
     .from(withdrawals)
     .innerJoin(users, eq(users.id, withdrawals.userId))
+    .leftJoin(openers, eq(openers.id, withdrawals.openedBy))
     .where(eq(withdrawals.id, id));
-  return row ? toDto(row, row.nick) : null;
+  return row ? toDto(row, row.nick, row.openerNick) : null;
 }
 
 /**
@@ -405,10 +417,11 @@ export async function getWithdrawal(db: Database, id: string): Promise<Withdrawa
 export async function listWithdrawals(db: Database, filters: WithdrawalListQuery = {}): Promise<WithdrawalDto[]> {
   const where = [...(filters.userId ? [eq(withdrawals.userId, filters.userId)] : []), ...(filters.status ? [inArray(withdrawals.status, filters.status)] : [])];
   const rows = await db
-    .select({ ...columns, nick: memberNick(users) })
+    .select({ ...columns, nick: memberNick(users), openerNick: memberNick(openers) })
     .from(withdrawals)
     .innerJoin(users, eq(users.id, withdrawals.userId))
+    .leftJoin(openers, eq(openers.id, withdrawals.openedBy))
     .where(where.length > 0 ? and(...where) : undefined)
     .orderBy(desc(withdrawals.createdAt), desc(withdrawals.id));
-  return rows.map((r) => toDto(r, r.nick));
+  return rows.map((r) => toDto(r, r.nick, r.openerNick));
 }

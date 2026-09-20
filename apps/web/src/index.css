@@ -219,6 +219,18 @@
       transform: translateY(6px) scale(0.97);
     }
   }
+  /* Menu de ações nasce do gatilho (SS6), 150ms: dropdown é ida e volta, não pode custar espera. */
+  .menu-content {
+    transform-origin: var(--radix-dropdown-menu-content-transform-origin);
+    transition:
+      opacity 150ms var(--ease-out),
+      transform 150ms var(--ease-out);
+    @starting-style {
+      opacity: 0;
+      transform: scale(0.96);
+    }
+  }
+
   /* Tooltip nasce do gatilho, rápido (125ms): ajuda, não espetáculo. */
   .tooltip-content {
     transform-origin: var(--radix-tooltip-content-transform-origin);
@@ -236,7 +248,8 @@
   .press:active {
     transform: none;
   }
-  .dialog-panel {
+  .dialog-panel,
+  .menu-content {
     @starting-style {
       transform: none;
     }
