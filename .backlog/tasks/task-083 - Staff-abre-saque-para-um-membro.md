@@ -5,7 +5,7 @@ status: In Progress
 assignee:
   - '@claude'
 created_date: '2026-09-20 13:15'
-updated_date: '2026-09-20 14:18'
+updated_date: '2026-09-20 15:18'
 labels: []
 milestone: m-12
 dependencies: []
@@ -68,4 +68,6 @@ Implementação: coluna opened_by + request_note em withdrawals (CHECK exige mot
 Security review (agent dedicado, diff completo): nenhum achado >=8 de confiança. Conferidos authz/createFor, ator sempre da sessão, SQLi nas queries novas, integridade do ledger na trava, exposição de dados na resposta, CSRF (SameOriginGuard) e XSS. O único ponto levantado fora de escopo (checagem de banimento fora da transação) foi corrigido: a leitura do banimento passou para dentro da transação, com teste.
 
 Revisão visual (DoD#4): screenshots desktop 1280 e mobile 400 revisados — menu de ações da linha (lista de jogadores), diálogo de abrir saque com disponível/valor/motivo/atalho, e a fila mostrando 'Aberto pela staff por X · motivo'. Ambos cabem em 400px sem scroll horizontal (o e2e da lista já afirma ausência de overflow).
+
+Gate local NÃO fechou verde nesta máquina, e a causa não é a task. Prova: o mesmo `pnpm exec playwright test` completo rodando em origin/main (sem nenhum commit da TASK-083) reprova 8 de 148 — staff-templates (3 testes, desktop e mobile), member-ban mobile e panel mobile — exatamente a mesma população que reprova na branch (8 a 10 de 156). Todos são timeout de 30s em page.goto/expect sob 7 workers; com --workers=2 passam 53 de 54. O coverage reprova só em apps/server/src/main.test.ts (boot do servidor compilado, orçamento de 15s), que passa sozinho nas duas branches e passou verde na primeira rodada completa do gate nesta branch (87.48%). Lint, typecheck, race, imagem Docker e audit passam em todas as rodadas. Falta uma rodada do gate numa máquina descarregada (ou o Actions) para publicar o check verde.
 <!-- SECTION:NOTES:END -->
