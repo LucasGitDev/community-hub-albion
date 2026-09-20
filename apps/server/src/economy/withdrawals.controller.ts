@@ -8,6 +8,7 @@ import {
   withdrawalRejectSchema,
   withdrawalRequestSchema,
   withdrawalSettleSchema,
+  withdrawalStaffOpenSchema,
   withdrawalTransitionError,
   type LedgerBalancesDto,
   type WithdrawalBalanceDto,
@@ -47,6 +48,21 @@ function unwrap(result: DecideSilverResult, to: "approved" | "rejected" | "settl
     throw new ConflictException(`Esse membro está banido: o saldo fica congelado e o saque não pode ser aprovado. Motivo do banimento: ${result.banReason}`);
   if (result.reason === "note_required") throw new BadRequestException("Escreva a nota: ela fica no histórico do saque.");
   throw new ConflictException(withdrawalTransitionError(result.from, to));
+}
+
+/**
+ * Recusa da abertura pela staff, na 2ª pessoa certa: `withdrawalRefusalMessage` fala com o dono do saldo
+ * ("Você tem…"), e aqui quem lê é quem abriu pelo outro.
+ */
+function staffRefusalMessage(refusal: { reason: "not_positive" } | { reason: "negative_balance"; balance: bigint } | { reason: "insufficient"; available: bigint }): string {
+  switch (refusal.reason) {
+    case "not_positive":
+      return "Informe um valor de saque maior que zero.";
+    case "negative_balance":
+      return "O saldo desse membro está negativo. Acerte a conta antes de abrir um saque por ele.";
+    case "insufficient":
+      return `Esse membro tem ${new Intl.NumberFormat("pt-BR").format(refusal.available)} de prata disponível. Saques aguardando aprovação já estão descontados daqui.`;
+  }
 }
 
 export interface MyWithdrawalsResponse {
@@ -155,6 +171,31 @@ export class WithdrawalsController {
     if (!withdrawal || !auth.ability.can("read", asSubject("Withdrawal", { userId: withdrawal.userId }))) throw new NotFoundException("Saque não encontrado.");
     res.setHeader("Cache-Control", "no-store");
     return withdrawal;
+  }
+
+  /**
+   * Abre um saque **para um membro** (TASK-083, SS1–SS4): ele pediu no Discord ou no jogo e não usa o
+   * painel.
+   *
+   * Segurança: o `userId` do corpo é só o **alvo**; quem age é `auth.user.id`, sempre. Não existe campo
+   * de ator no schema, então não há o que ignorar. A permissão é `createFor`, que só staff e admin têm —
+   * `create`, que todo membro tem, vale só para o próprio saldo pela rota `/me/withdrawals` (AC#5).
+   */
+  @Post()
+  @UseGuards(SameOriginGuard)
+  @Authorize("createFor", "Withdrawal")
+  async openForMember(@Body() body: unknown, @CurrentAuth() auth: Auth, @Res({ passthrough: true }) res: Response): Promise<WithdrawalDto> {
+    const { userId, amount, reason, paidInGame } = parseBody(withdrawalStaffOpenSchema, body);
+    const result = await this.withdrawals.openForMember({ userId, actorUserId: auth.user.id, amount, reason, paidInGame });
+    if (!result.ok) {
+      if (result.reason === "unknown_user") throw new NotFoundException("Membro não encontrado.");
+      if (result.reason === "banned")
+        throw new ConflictException(`Esse membro está banido: o saldo fica congelado e não dá para abrir saque. Motivo do banimento: ${result.banReason}`);
+      throw new ConflictException(staffRefusalMessage(result));
+    }
+    res.status(201);
+    res.setHeader("Cache-Control", "no-store");
+    return result.withdrawal;
   }
 
   /** Aprova: lança o débito no ledger (AC#3, Q25). Nota é opcional aqui. */
