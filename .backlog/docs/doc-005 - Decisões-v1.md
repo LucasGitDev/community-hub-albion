@@ -3,7 +3,7 @@ id: doc-005
 title: Decisões v1
 type: specification
 created_date: '2026-09-15 03:22'
-updated_date: '2026-09-19 03:59'
+updated_date: '2026-09-20 13:15'
 ---
 Resultado do grill (R1–R3, 2026-09-15). Referência pra specs e tasks.
 
@@ -284,3 +284,16 @@ um teria que pedir saque de uma prata que já recebeu.
 | SP4 | Marcar como pago existe **só no ato da confirmação**, junto do crédito. Depois de confirmado, o que sobrou é saldo normal e sai pela fila de saques com aprovação da staff. Impede que alguém marque como "pago" depois, sozinho, uma prata que a pessoa diz não ter recebido. |
 | SP5 | Quem pode: **caller e staff** por enquanto (a permissão `distribute` do split). Vira **permissão própria** quando a F7 separar permissões de papéis — registrada para a F7. |
 | SP6 | O saque automático aparece na **timeline** como "saque pago no jogo", com quem marcou: é prata saindo sem passar pela aprovação da staff, exatamente o que o canal de auditoria existe para mostrar. |
+
+## Grelha de 2026-09-20 — Saque aberto pela staff
+
+O membro pede no Discord ou no jogo e não usa o painel; a staff precisa abrir o saque por ele.
+
+| # | Decisão |
+|---|---|
+| SS1 | O saque criado pela staff nasce **`pending`**, na fila, como qualquer outro. Nascer aprovado faria de quem cria quem aprova, e some a única conferência que o saque tem. |
+| SS2 | Existe o atalho **"já paguei no jogo"** marcado na criação: nasce liquidado, com quem marcou registrado, mesmo desenho da TASK-081 (SP1). Sem o atalho, registrar algo que já aconteceu custaria criar + aprovar + entregar, e é aí que a staff deixa de registrar. |
+| SS3 | Quem pode: **staff e admin** (quem já trabalha a fila). O valor é limitado ao **disponível** do membro, pelo mesmo cálculo do saque normal (já desconta reservado). Passar disso seria criar prata do nada — para isso existe a rota de manutenção, com token e motivo. |
+| SS4 | **Motivo obrigatório**, gravado no pedido e publicado na timeline: saque que o próprio dono não pediu precisa dizer por que existe. |
+| SS5 | Entra em **dois lugares**: na fila de saques e na lista de jogadores. |
+| SS6 | **Convenção de UI, daqui pra frente:** ação nova de linha entra em **menu de ações** (popup), não em mais um botão solto. Vale para a lista de jogadores e para as próximas telas. |
