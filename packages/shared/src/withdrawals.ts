@@ -189,6 +189,8 @@ export interface WithdrawalDto {
    * é o que a fila usa para mostrar "aberto pela staff" e por quem.
    */
   openedByUserId: string | null;
+  /** Nick de quem abriu pelo membro, quando a lista é da staff (AC#2). */
+  openedByNick: string | null;
   /** Motivo escrito por quem abriu o saque pelo membro (SS4). `null` nos saques pedidos pelo próprio dono. */
   requestNote: string | null;
   decidedByUserId: string | null;

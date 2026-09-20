@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Check, Hourglass, Inbox, PackageCheck, Truck } from "lucide-react";
+import { Check, Hourglass, Inbox, PackageCheck, Plus, Truck } from "lucide-react";
 import { formatAmount, type WithdrawalDto, type WithdrawalStatus } from "@albion-hub/shared";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
@@ -8,6 +8,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Textarea } from "@/components/ui/textarea";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { EmptyState, PageHeader, Amount, StatCard, StatusBadge } from "@/components/display";
+import { StaffWithdrawDialog } from "@/components/StaffWithdrawDialog";
 import { ErrorState } from "@/pages/MyWithdrawals";
 import { cn } from "@/lib/utils";
 import { formatDateTime } from "@/lib/format";
@@ -41,6 +42,9 @@ const sum = (list: QueueItem[]) => list.reduce((s, w) => s + w.amount, 0n);
 export function StaffWithdrawals() {
   const { items, loading, error, refresh, apply } = useWithdrawalQueue();
   const [tab, setTab] = useState<WithdrawalStatus>("pending");
+  // Abrir saque por um membro (TASK-083, SS5): aqui não existe linha de onde tirar o nome, então o
+  // diálogo começa perguntando quem é.
+  const [opening, setOpening] = useState(false);
   const by = (s: WithdrawalStatus) => items.filter((w) => w.status === s);
   const list = by(tab);
   const pending = by("pending");
@@ -49,7 +53,25 @@ export function StaffWithdrawals() {
 
   return (
     <>
-      <PageHeader title="Fila de saques" description="Aprovar debita o saldo do membro na hora. Marque como entregue depois de transferir a prata in-game." />
+      <PageHeader
+        title="Fila de saques"
+        description="Aprovar debita o saldo do membro na hora. Marque como entregue depois de transferir a prata in-game."
+        action={
+          <Button onClick={() => setOpening(true)}>
+            <Plus />
+            Abrir saque por um membro
+          </Button>
+        }
+      />
+
+      <StaffWithdrawDialog
+        open={opening}
+        member={null}
+        onClose={() => setOpening(false)}
+        // O saque novo pode nascer pending (entra na fila) ou já liquidado (vai direto para "Entregues"):
+        // recarregar é mais honesto que adivinhar em qual aba ele caiu.
+        onOpened={() => refresh()}
+      />
 
       <div className="mb-4 grid grid-cols-2 gap-3 lg:grid-cols-3">
         <StatCard
@@ -168,6 +190,12 @@ function StaffRow({ w, onDone, onConflict }: RowProps) {
         </span>
         <div className="min-w-0 space-y-1">
           <p className="truncate font-medium">{nick}</p>
+          {w.openedByUserId && (
+            <p className="text-xs font-medium text-warning">
+              Aberto pela staff{w.openedByNick ? ` por ${w.openedByNick}` : ""}
+              {w.requestNote ? ` · ${w.requestNote}` : ""}
+            </p>
+          )}
           <MemberContext w={w} />
           <WithdrawalTimeline w={w} />
           {w.decisionNote && (

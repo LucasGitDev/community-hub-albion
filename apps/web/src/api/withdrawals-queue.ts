@@ -39,3 +39,15 @@ const decide = (id: string, action: "approve" | "reject" | "settle", note?: stri
 export const approveWithdrawal = (id: string): Promise<WithdrawalDto> => decide(id, "approve");
 export const rejectWithdrawal = (id: string, note: string): Promise<WithdrawalDto> => decide(id, "reject", note);
 export const settleWithdrawal = (id: string, note: string): Promise<WithdrawalDto> => decide(id, "settle", note);
+
+/**
+ * Saque aberto pela staff para um membro (TASK-083, SS1–SS4). O `userId` é o **alvo**; quem abriu sai da
+ * sessão no servidor, nunca daqui. `paidInGame` é o atalho de SS2: o saque nasce liquidado e não entra
+ * na fila.
+ */
+export const openWithdrawalForMember = (input: { userId: string; amount: bigint; reason: string; paidInGame: boolean }): Promise<WithdrawalDto> =>
+  api<WithdrawalDto>("/api/withdrawals", {
+    method: "POST",
+    // Prata vai como string (Q20): number perderia valor acima de 2^53.
+    body: JSON.stringify({ userId: input.userId, amount: input.amount.toString(), reason: input.reason, paidInGame: input.paidInGame }),
+  });

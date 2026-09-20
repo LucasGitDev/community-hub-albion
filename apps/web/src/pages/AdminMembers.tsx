@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
-import { Ban, Check, CircleDashed, CloudOff, Download, Loader2, LogOut, Receipt, RefreshCw, Search, ShieldCheck, SlidersHorizontal, TriangleAlert, UserPlus, UserRoundX, Users } from "lucide-react";
+import { Ban, Banknote, Check, CircleDashed, CloudOff, Download, Loader2, LogOut, MoreHorizontal, Receipt, RefreshCw, Search, ShieldCheck, SlidersHorizontal, TriangleAlert, UserPlus, UserRoundX, Users } from "lucide-react";
 import { toast } from "sonner";
 import {
   asSubject,
@@ -21,12 +21,14 @@ import { MemberBanDialog } from "@/components/MemberBanDialog";
 import { MemberLedgerDialog } from "@/components/MemberLedgerDialog";
 import { MemberManageDialog } from "@/components/MemberManageDialog";
 import { MemberReferralsDialog } from "@/components/MemberReferralsDialog";
+import { StaffWithdrawDialog } from "@/components/StaffWithdrawDialog";
 import { EmptyState, PageHeader, Panel, Pill, StatCard, type Tone } from "@/components/display";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { Input } from "@/components/ui/input";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
+import { TooltipProvider } from "@/components/ui/tooltip";
 import { formatDateTime } from "@/lib/format";
 import { cn } from "@/lib/utils";
 
@@ -71,10 +73,13 @@ export function AdminMembers() {
   const [banning, setBanning] = useState<string | null>(null);
   const [statement, setStatement] = useState<string | null>(null);
   const [referrals, setReferrals] = useState<string | null>(null);
+  const [withdrawing, setWithdrawing] = useState<string | null>(null);
   const { user, ability } = useCurrentUser();
   // Conferir o nick, editar nick/tag e as notas: admin e staff (TASK-047, G3).
   const canManage = ability.can("update", "MemberProfile");
   const canBan = ability.can("ban", "Ban");
+  // Abrir saque no nome de outro (TASK-083, SS3): staff e admin. Membro comum não vê nem consegue.
+  const canOpenWithdrawal = ability.can("createFor", "Withdrawal");
   // Importar do Discord continua exigindo `manage`/`all` na API: o botão fica escondido para a staff em
   // vez de aparecer e devolver 403 no clique.
   const canImport = ability.can("manage", "all");
@@ -285,6 +290,8 @@ export function AdminMembers() {
                   onBan={() => setBanning(m.id)}
                   onStatement={() => setStatement(m.id)}
                   onReferrals={() => setReferrals(m.id)}
+                  canOpenWithdrawal={canOpenWithdrawal}
+                  onWithdraw={() => setWithdrawing(m.id)}
                 />
               ))}
             </TableBody>
@@ -343,6 +350,16 @@ export function AdminMembers() {
         onClose={() => setReferrals(null)}
       />
 
+      <StaffWithdrawDialog
+        open={withdrawing !== null}
+        member={(() => {
+          const m = members.find((x) => x.id === withdrawing);
+          return m ? { id: m.id, name: m.gameNick || m.displayName || m.discordUsername } : null;
+        })()}
+        onClose={() => setWithdrawing(null)}
+        onOpened={() => setWithdrawing(null)}
+      />
+
       <MemberManageDialog
         member={members.find((m) => m.id === managing) ?? null}
         onClose={() => setManaging(null)}
@@ -391,6 +408,9 @@ interface RowActions {
   onBan: () => void;
   onStatement: () => void;
   onReferrals: () => void;
+  /** Abrir saque pelo membro (TASK-083, SS3): só quem tem `createFor` em Withdrawal. */
+  canOpenWithdrawal: boolean;
+  onWithdraw: () => void;
 }
 
 function MemberRow({ member, ...actions }: { member: AdminMember } & RowActions) {
@@ -455,10 +475,26 @@ function MemberRow({ member, ...actions }: { member: AdminMember } & RowActions)
 }
 
 /**
- * Ações da linha (AC#1/AC#2/AC#3). Botões de ícone com rótulo acessível e dica: a coluna precisa caber em
- * 400px de largura, e nome de ação por extenso em toda linha rouba o espaço do que o admin veio ler.
+ * Ações da linha, num **menu** (TASK-083, SS6). Antes eram quatro botões de ícone lado a lado, cada um
+ * explicado só por tooltip; com o saque seriam cinco, e em 400px a coluna já era a mais apertada da
+ * tela. O menu troca cinco ícones mudos por uma lista com o nome da ação escrito — e é a convenção que
+ * as próximas telas seguem.
  */
-function MemberActions({ member, isSelf, canManage, canBan, canReadLedger, canReadReferrals, onChecked, onManage, onBan, onStatement, onReferrals }: { member: AdminMember } & RowActions) {
+function MemberActions({
+  member,
+  isSelf,
+  canManage,
+  canBan,
+  canReadLedger,
+  canReadReferrals,
+  canOpenWithdrawal,
+  onChecked,
+  onManage,
+  onBan,
+  onStatement,
+  onReferrals,
+  onWithdraw,
+}: { member: AdminMember } & RowActions) {
   const [checking, setChecking] = useState(false);
   const name = member.gameNick || member.discordUsername;
 
@@ -484,77 +520,74 @@ function MemberActions({ member, isSelf, canManage, canBan, canReadLedger, canRe
     }
   }
 
+  const nothing = !canManage && !canReadLedger && !canReadReferrals && !canOpenWithdrawal && (!canBan || isSelf);
+  if (nothing) return <div className="flex justify-end text-xs text-muted-foreground">—</div>;
+
   return (
-    <div className="flex justify-end gap-1">
-      {canManage && (
-        <>
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <Button
-                variant="outline"
-                size="icon"
-                className="press"
+    <div className="flex justify-end">
+      <DropdownMenu>
+        <DropdownMenuTrigger asChild>
+          <Button variant="outline" size="icon" className="press" aria-label={`Ações de ${name}`}>
+            {checking ? <Loader2 className="animate-spin" /> : <MoreHorizontal />}
+          </Button>
+        </DropdownMenuTrigger>
+        <DropdownMenuContent>
+          <DropdownMenuLabel className="truncate">{name}</DropdownMenuLabel>
+          {canManage && (
+            <>
+              <DropdownMenuItem
                 disabled={checking || !member.gameNick}
-                aria-label={`Conferir ${name} no Albion`}
-                onClick={() => void check()}
+                // `preventDefault` segura o menu aberto enquanto a chamada corre: fechar e só depois
+                // avisar por toast tira do admin a noção de que ele apertou alguma coisa.
+                onSelect={(e) => {
+                  e.preventDefault();
+                  void check();
+                }}
               >
                 {checking ? <Loader2 className="animate-spin" /> : <RefreshCw />}
-              </Button>
-            </TooltipTrigger>
-            <TooltipContent>{member.gameNick ? "Conferir o nick na API do Albion agora" : "Sem nick registrado: não há o que conferir"}</TooltipContent>
-          </Tooltip>
-
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <Button variant="outline" size="icon" className="press" aria-label={`Gerenciar ${name}`} onClick={onManage}>
+                {member.gameNick ? "Conferir no Albion" : "Sem nick para conferir"}
+              </DropdownMenuItem>
+              <DropdownMenuItem onSelect={onManage}>
                 <SlidersHorizontal />
-              </Button>
-            </TooltipTrigger>
-            <TooltipContent>Editar nick e tag, ler e escrever notas</TooltipContent>
-          </Tooltip>
-        </>
-      )}
+                Gerenciar nick, tag e notas
+              </DropdownMenuItem>
+            </>
+          )}
 
-      {/* Extrato vem antes de banir: é a ação que a staff mais usa aqui e a única que não muda nada. */}
-      {canReadLedger && (
-        <Tooltip>
-          <TooltipTrigger asChild>
-            <Button variant="outline" size="icon" className="press" aria-label={`Ver o extrato de ${name}`} onClick={onStatement}>
+          {/* Extrato vem antes do resto: é a ação que a staff mais usa aqui e a única que não muda nada. */}
+          {canReadLedger && (
+            <DropdownMenuItem onSelect={onStatement}>
               <Receipt />
-            </Button>
-          </TooltipTrigger>
-          <TooltipContent>Ver o extrato: saldo, reservado e de onde veio cada prata</TooltipContent>
-        </Tooltip>
-      )}
+              Ver o extrato
+            </DropdownMenuItem>
+          )}
 
-      {canReadReferrals && (
-        <Tooltip>
-          <TooltipTrigger asChild>
-            <Button variant="outline" size="icon" className="press" aria-label={`Ver as indicações de ${name}`} onClick={onReferrals}>
+          {canOpenWithdrawal && (
+            <DropdownMenuItem onSelect={onWithdraw}>
+              <Banknote />
+              Abrir saque por ele
+            </DropdownMenuItem>
+          )}
+
+          {canReadReferrals && (
+            <DropdownMenuItem onSelect={onReferrals}>
               <UserPlus />
-            </Button>
-          </TooltipTrigger>
-          <TooltipContent>Ver as indicações: quem trouxe essa pessoa e quem ela trouxe</TooltipContent>
-        </Tooltip>
-      )}
+              Ver as indicações
+            </DropdownMenuItem>
+          )}
 
-      {/* Banir a si mesmo é sempre engano: o botão não aparece na própria linha, e a API recusa de qualquer jeito. */}
-      {canBan && !isSelf && (
-        <Tooltip>
-          <TooltipTrigger asChild>
-            <Button
-              variant={member.ban ? "outline" : "destructive"}
-              size="icon"
-              className="press"
-              aria-label={member.ban ? `Desbanir ${name}` : `Banir ${name}`}
-              onClick={onBan}
-            >
-              {member.ban ? <ShieldCheck /> : <Ban />}
-            </Button>
-          </TooltipTrigger>
-          <TooltipContent>{member.ban ? "Desbanir: devolve o acesso ao painel, a eventos e ao saque" : "Banir: corta o acesso na hora e congela o saldo"}</TooltipContent>
-        </Tooltip>
-      )}
+          {/* Banir a si mesmo é sempre engano: o item não aparece na própria linha, e a API recusa de qualquer jeito. */}
+          {canBan && !isSelf && (
+            <>
+              <DropdownMenuSeparator />
+              <DropdownMenuItem variant={member.ban ? "default" : "destructive"} onSelect={onBan}>
+                {member.ban ? <ShieldCheck /> : <Ban />}
+                {member.ban ? "Desbanir" : "Banir"}
+              </DropdownMenuItem>
+            </>
+          )}
+        </DropdownMenuContent>
+      </DropdownMenu>
     </div>
   );
 }
