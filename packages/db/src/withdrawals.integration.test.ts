@@ -2,6 +2,7 @@ import { eq, sql } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import {
   approveWithdrawal,
+  banUser,
   createDb,
   getLedgerBalance,
   getWithdrawal,
@@ -362,6 +363,18 @@ describe.skipIf(!baseUrl)("fluxo de saque (TASK-030, Postgres real)", () => {
       });
       const negativo = await memberWith(-5_000n);
       expect(await openWithdrawalForMember(handle.db, { userId: negativo, actorUserId: staffId, amount: 1n, reason: "x" })).toMatchObject({ ok: false, reason: "negative_balance" });
+    });
+
+    it("saldo de banido é congelado: a recusa vem de dentro da transação (TASK-050)", async () => {
+      const userId = await memberWith(600_000n);
+      const ban = await banUser(handle.db, { userId, actorId: staffId, reason: "roubou o loot do split" });
+      expect(ban.ok).toBe(true);
+      expect(await openWithdrawalForMember(handle.db, { userId, actorUserId: staffId, amount: 1_000n, reason: "pediu no Discord" })).toMatchObject({ ok: false, reason: "banned" });
+      // Nem o atalho: é justamente nele que a prata sairia de verdade.
+      expect(
+        await openWithdrawalForMember(handle.db, { userId, actorUserId: staffId, amount: 1_000n, reason: "paguei", paidInGame: true }),
+      ).toMatchObject({ ok: false, reason: "banned" });
+      expect(await getLedgerBalance(handle.db, userId, "silver")).toBe(600_000n);
     });
 
     it("o banco recusa um saque aberto pela staff sem motivo", async () => {
