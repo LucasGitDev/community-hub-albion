@@ -2,7 +2,8 @@ import {
   canTransitionWithdrawal,
   checkWithdrawalRequest,
   RESERVING_WITHDRAWAL_STATUSES,
-  staffPaidInGameNote,
+  staffPaidInGameMemo,
+  STAFF_PAID_IN_GAME_NOTE,
   type WithdrawalDto,
   type WithdrawalListQuery,
   type WithdrawalRefusal,
@@ -238,7 +239,7 @@ export async function openWithdrawalForMember(db: Database, input: OpenWithdrawa
         .returning(columns)) as [Row];
     } else {
       const withdrawalId = randomUUID();
-      const note = staffPaidInGameNote(reason);
+      const memo = staffPaidInGameMemo(reason);
       const [entry] = await tx
         .insert(ledgerEntries)
         .values({
@@ -250,7 +251,7 @@ export async function openWithdrawalForMember(db: Database, input: OpenWithdrawa
           referenceType: "withdrawal",
           referenceId: withdrawalId,
           createdBy: input.actorUserId,
-          memo: note,
+          memo,
         })
         .returning({ id: ledgerEntries.id });
       [row] = (await tx
@@ -265,10 +266,12 @@ export async function openWithdrawalForMember(db: Database, input: OpenWithdrawa
           requestNote: reason,
           decidedBy: input.actorUserId,
           decidedAt: at,
-          decisionNote: note,
+          // Sem nota de decisão: quem abriu está em `opened_by` e o porquê em `request_note`. Repetir a
+          // mesma frase em três colunas só faria a fila mostrar o mesmo texto três vezes.
+          decisionNote: null,
           settledBy: input.actorUserId,
           settledAt: at,
-          settlementNote: note,
+          settlementNote: STAFF_PAID_IN_GAME_NOTE,
           createdAt: at,
           updatedAt: at,
         })
