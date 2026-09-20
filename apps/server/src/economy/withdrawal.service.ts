@@ -44,7 +44,7 @@ export type RequestSilverResult = RequestWithdrawalResult | { ok: false; reason:
 export type DecideSilverResult = WithdrawalDecisionResult;
 
 /** Abertura pela staff (TASK-083). Banido tem o saldo congelado, então nem pending nem pago no jogo passam. */
-export type OpenForMemberResult = OpenWithdrawalForMemberResult | { ok: false; reason: "banned"; banReason: string };
+export type OpenForMemberResult = OpenWithdrawalForMemberResult;
 
 @Injectable()
 export class WithdrawalService {
@@ -80,12 +80,10 @@ export class WithdrawalService {
    * age — o controller tira o ator da sessão e nunca do corpo.
    *
    * Sem `paidInGame` nasce `pending` e entra na fila como qualquer outro (SS1). Com `paidInGame` nasce
-   * liquidado (SS2). Banido é recusado nos dois casos: o saldo de quem foi banido fica congelado
-   * (TASK-050), e abrir um pendente que nunca poderia ser aprovado só entulharia a fila.
+   * liquidado (SS2). Banido é recusado nos dois casos, **dentro da transação** do repo: o saldo de quem
+   * foi banido fica congelado (TASK-050), e no atalho "pago no jogo" a prata sairia de verdade.
    */
   async openForMember(input: { userId: string; actorUserId: string; amount: bigint; reason: string; paidInGame?: boolean }): Promise<OpenForMemberResult> {
-    const ban = await getBanStatus(this.handle.db, input.userId);
-    if (ban) return { ok: false, reason: "banned", banReason: ban.banReason };
     const result = await openWithdrawalForMember(this.handle.db, input);
     if (result.ok) {
       const action = result.withdrawal.status === "settled" ? "economy.withdrawal_opened_paid_in_game" : "economy.withdrawal_opened_by_staff";

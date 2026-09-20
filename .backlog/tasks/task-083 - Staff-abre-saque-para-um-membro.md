@@ -5,7 +5,7 @@ status: In Progress
 assignee:
   - '@claude'
 created_date: '2026-09-20 13:15'
-updated_date: '2026-09-20 13:18'
+updated_date: '2026-09-20 13:49'
 labels: []
 milestone: m-12
 dependencies: []
@@ -59,3 +59,9 @@ Entra na fila de saques e na lista de jogadores (SS5). Na lista, a ação vai nu
 6. web: componente ui/dropdown-menu reutilizável (radix-ui já instalado); StaffWithdrawDialog usado na fila de saques e na lista de jogadores (ações da linha viram menu, SS6); fila mostra 'aberto pela staff por X'.
 7. testes: integração do repo (concorrência/teto/settled), http (403 de membro comum, 201 pending, settled), timeline, e2e dos dois lugares, screenshots 1280/400.
 <!-- SECTION:PLAN:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+Implementação: coluna opened_by + request_note em withdrawals (CHECK exige motivo), openWithdrawalForMember reusando lockUser + getWithdrawalBalance + checkWithdrawalRequest do pedido normal (SS3); atalho pago no jogo grava settled no desenho do settlePaidInGame da TASK-081 (SS2). Rota POST /api/withdrawals com CASL createFor (staff/admin) e SameOriginGuard; ator sempre da sessão. Timeline: economy.withdrawal_opened_by_staff e _paid_in_game. UI: componente ui/dropdown-menu novo (radix já instalado) e as ações da linha da lista de jogadores viraram menu (SS6); StaffWithdrawDialog serve fila e lista (SS5).
+<!-- SECTION:NOTES:END -->

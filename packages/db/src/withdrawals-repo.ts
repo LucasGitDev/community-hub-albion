@@ -201,6 +201,8 @@ export interface OpenWithdrawalForMemberInput {
 export type OpenWithdrawalForMemberResult =
   | { ok: true; withdrawal: WithdrawalDto; balance: WithdrawalBalance }
   | { ok: false; reason: "unknown_user" }
+  /** Dono banido: saldo congelado (TASK-050). Lido dentro da transação, com a linha já travada. */
+  | { ok: false; reason: "banned"; banReason: string }
   | ({ ok: false } & WithdrawalRefusal);
 
 /**
@@ -227,6 +229,14 @@ export async function openWithdrawalForMember(db: Database, input: OpenWithdrawa
   const reason = input.reason.trim();
   return db.transaction(async (tx) => {
     if (!(await lockUser(tx, input.userId))) return { ok: false as const, reason: "unknown_user" as const };
+    /**
+     * Saldo de banido é congelado (TASK-050), e a leitura mora **dentro** da transação, com a linha do
+     * usuário já travada — mesma escolha de `approveWithdrawal`. Conferir antes, fora daqui, deixaria a
+     * janela em que um banimento entra entre a checagem e o débito do atalho "pago no jogo", e aí a
+     * prata sairia mesmo assim.
+     */
+    const [owner] = await tx.select({ bannedAt: users.bannedAt, banReason: users.banReason }).from(users).where(eq(users.id, input.userId));
+    if (owner?.bannedAt) return { ok: false as const, reason: "banned" as const, banReason: owner.banReason ?? "" };
     const balance = await getWithdrawalBalance(tx, input.userId);
     const refusal = checkWithdrawalRequest(input.amount, balance.balance, balance.reserved);
     if (refusal) return { ok: false as const, ...refusal };
