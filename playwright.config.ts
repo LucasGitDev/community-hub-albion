@@ -13,6 +13,10 @@ export default defineConfig({
   fullyParallel: true,
   forbidOnly: !!process.env.CI,
   retries: process.env.CI ? 1 : 0,
+  // Paralelismo do e2e. Sem a variável, o padrão do Playwright (metade dos núcleos) — nada muda no CI.
+  // `E2E_WORKERS=2` existe para rodar o gate numa máquina disputada: com o cliente do jogo aberto e load
+  // acima de 10, specs sem relação nenhuma com a mudança estouram os 30s e o gate reprova por ambiente.
+  ...(process.env.E2E_WORKERS ? { workers: Number(process.env.E2E_WORKERS) } : {}),
   reporter: [["list"], ["json", { outputFile: ".quality/playwright.json" }], ["html", { open: "never" }]],
   use: {
     baseURL: ORIGIN,
