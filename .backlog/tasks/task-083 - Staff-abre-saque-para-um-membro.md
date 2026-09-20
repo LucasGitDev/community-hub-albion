@@ -1,11 +1,11 @@
 ---
 id: TASK-083
 title: Staff abre saque para um membro
-status: In Progress
+status: Done
 assignee:
   - '@claude'
 created_date: '2026-09-20 13:15'
-updated_date: '2026-09-20 15:18'
+updated_date: '2026-09-20 16:18'
 labels: []
 milestone: m-12
 dependencies: []
