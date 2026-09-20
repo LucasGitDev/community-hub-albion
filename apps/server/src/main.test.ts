@@ -29,7 +29,7 @@ describe("boot do servidor compilado", () => {
     expect(result.stderr).toContain("GUILD_ID: obrigatória");
     // Timeout explícito: subir o bundle do Nest leva ~6 s em máquina carregada (mais ainda sob cobertura),
     // e o padrão de 5 s do vitest transformava isso em flake.
-  }, 30_000);
+  }, 90_000);
 
   it("GUILD_ID inválido sai com código 1 sem vazar o token", () => {
     const token = "vazamento-proibido";
@@ -37,7 +37,7 @@ describe("boot do servidor compilado", () => {
     expect(result.status).toBe(1);
     expect(result.stderr).toContain("GUILD_ID: formato inválido");
     expect(`${result.stdout}${result.stderr}`).not.toContain(token);
-  }, 30_000);
+  }, 90_000);
 
   // TASK-004: mesmo processo serve SPA na raiz (com fallback de rota) e API em /api.
   it("serve a SPA em / e em rotas client-side, mantendo /api na API", async () => {
@@ -77,10 +77,15 @@ describe("boot do servidor compilado", () => {
     } finally {
       child.kill();
     }
-  }, 30_000);
+  }, 90_000);
 });
 
-async function waitForHttp(url: string, timeoutMs = 15_000) {
+/**
+ * Espera o servidor compilado responder. O orçamento é folgado de propósito: o boot leva ~3s numa máquina
+ * livre, mas passa dos 15s quando o gate roda com o cliente do jogo aberto (load acima de 10) — e aí o
+ * teste reprovava o gate inteiro por carga, não por defeito. Esperar mais só custa tempo quando já falhou.
+ */
+async function waitForHttp(url: string, timeoutMs = 60_000) {
   const deadline = Date.now() + timeoutMs;
   while (Date.now() < deadline) {
     try {
