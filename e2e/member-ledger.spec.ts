@@ -1,5 +1,6 @@
 import { expect, test, type Page } from "@playwright/test";
 import { discordId, login, ORIGIN, snap } from "./session";
+import { rowAction } from "./row-actions";
 
 /**
  * Extrato de um jogador lido pela staff a partir da lista de membros (TASK-051, G10).
@@ -52,7 +53,7 @@ test("staff abre o extrato de um jogador pela lista de membros e lê saldo, orig
   await page.getByLabel("Buscar por nick ou usuário do Discord").fill(nick);
   await expect(page.getByRole("cell", { name: nick, exact: false }).first()).toBeVisible();
 
-  await page.getByRole("button", { name: `Ver o extrato de ${nick}` }).click();
+  await rowAction(page, page.getByRole("row").filter({ hasText: nick }), "Ver o extrato");
   const dialog = page.getByRole("dialog", { name: `Extrato de ${nick}` });
   await expect(dialog).toBeVisible();
 
@@ -78,7 +79,7 @@ test("paginação: carrega mais lançamentos sem repetir nem trocar os que já e
   await login(page, "513", "staff-pagina", { roles: ["member", "staff"], gameNick: nickFor("513") });
   await page.goto("/admin/membros");
   await page.getByLabel("Buscar por nick ou usuário do Discord").fill(nick);
-  await page.getByRole("button", { name: `Ver o extrato de ${nick}` }).click();
+  await rowAction(page, page.getByRole("row").filter({ hasText: nick }), "Ver o extrato");
 
   const dialog = page.getByRole("dialog", { name: `Extrato de ${nick}` });
   await expect(dialog.getByText("25 lançamentos carregados")).toBeVisible();
@@ -97,7 +98,7 @@ test("extrato vazio é um estado explicado, não um erro nem uma tabela em branc
 
   await page.goto("/admin/membros");
   await page.getByLabel("Buscar por nick ou usuário do Discord").fill(nick);
-  await page.getByRole("button", { name: `Ver o extrato de ${nick}` }).click();
+  await rowAction(page, page.getByRole("row").filter({ hasText: nick }), "Ver o extrato");
 
   const dialog = page.getByRole("dialog", { name: `Extrato de ${nick}` });
   await expect(dialog.getByText("Nenhum lançamento ainda.")).toBeVisible();

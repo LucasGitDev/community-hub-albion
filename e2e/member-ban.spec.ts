@@ -1,5 +1,6 @@
 import { expect, test, type Page } from "@playwright/test";
 import { login, ORIGIN, snap } from "./session";
+import { expectRowActionCount, rowAction } from "./row-actions";
 
 /**
  * Banimento de jogador no painel (TASK-050).
@@ -37,7 +38,7 @@ test("admin bane com motivo, a linha fica marcada e o acesso do banido cai na ho
   await expect(row).toBeVisible();
   await snap(page, "ban-lista-antes");
 
-  await row.getByRole("button", { name: /^Banir / }).click();
+  await rowAction(page, row, "Banir");
   const dialog = page.getByRole("dialog");
   await expect(dialog.getByRole("heading", { name: /^Banir / })).toBeVisible();
 
@@ -96,7 +97,7 @@ test("banido perde o acesso ao painel, a evento e a saque, e o saldo continua l�
   await page.goto("/admin/membros");
   await page.getByLabel("Buscar por nick ou usuário do Discord").fill(u("ban2-alvo"));
   const row = page.getByRole("row").filter({ hasText: `@${u("ban2-alvo")}` });
-  await row.getByRole("button", { name: /^Banir / }).click();
+  await rowAction(page, row, "Banir");
   const dialog = page.getByRole("dialog");
   await dialog.getByLabel("Motivo do banimento").fill("vendeu prata da tesouraria fora do jogo");
   await dialog.getByRole("button", { name: /^Banir / }).click();
@@ -122,7 +123,7 @@ test("banido perde o acesso ao painel, a evento e a saque, e o saldo continua l�
   await page.getByLabel("Buscar por nick ou usuário do Discord").fill(u("ban2-alvo"));
   const banida = page.getByRole("row").filter({ hasText: `@${u("ban2-alvo")}` });
   await expect(banida.getByText("Banido", { exact: true })).toBeVisible();
-  await banida.getByRole("button", { name: /^Desbanir / }).click();
+  await rowAction(page, banida, "Desbanir");
   await expect(dialog.getByRole("heading", { name: /^Desbanir / })).toBeVisible();
   await expect(dialog.getByText("vendeu prata da tesouraria fora do jogo")).toBeVisible();
   await snap(page, "ban-desbanir-dialogo");
@@ -143,7 +144,7 @@ test("ninguém bane a si mesmo: a ação não aparece na própria linha e a API 
   await page.getByLabel("Buscar por nick ou usuário do Discord").fill(u("ban-eu"));
   const row = page.getByRole("row").filter({ hasText: `@${u("ban-eu")}` });
   await expect(row).toBeVisible();
-  await expect(row.getByRole("button", { name: /^Banir / })).toHaveCount(0);
+  await expectRowActionCount(page, row, "Banir", 0);
   await snap(page, "ban-propria-linha-sem-acao");
 
   const res = await page.request.post(`/api/admin/members/${eu.user.id}/ban`, { data: { reason: "engano de clique" }, headers: { Origin: ORIGIN } });
@@ -163,15 +164,15 @@ test("staff bane pela mesma tela, sem ganhar as ações de admin (AC#1, AC#2)", 
   await page.getByLabel("Buscar por nick ou usuário do Discord").fill(u("ban-staff-alvo"));
   const row = page.getByRole("row").filter({ hasText: `@${u("ban-staff-alvo")}` });
   // Gerenciar a ficha do membro passou a ser da staff na TASK-047 (G3); o que continua fora é papel.
-  await expect(row.getByRole("button", { name: /^Gerenciar / })).toHaveCount(1);
+  await expectRowActionCount(page, row, "Gerenciar nick, tag e notas", 1);
   await expect(page.getByRole("link", { name: "Papéis", exact: true })).toHaveCount(0);
   // E a staff não vê a ação em quem ela não pode banir: outro staff ou um admin.
   await page.getByLabel("Buscar por nick ou usuário do Discord").fill(u("ban-staffer"));
-  await expect(page.getByRole("row").filter({ hasText: `@${u("ban-staffer")}` }).getByRole("button", { name: /^Banir / })).toHaveCount(0);
+  await expectRowActionCount(page, page.getByRole("row").filter({ hasText: `@${u("ban-staffer")}` }), "Banir", 0);
   await page.getByLabel("Buscar por nick ou usuário do Discord").fill(u("ban-staff-alvo"));
   await snap(page, "ban-visao-staff");
 
-  await row.getByRole("button", { name: /^Banir / }).click();
+  await rowAction(page, row, "Banir");
   const dialog = page.getByRole("dialog");
   await dialog.getByLabel("Motivo do banimento").fill("não apareceu em três eventos seguidos");
   await dialog.getByRole("button", { name: /^Banir / }).click();
@@ -194,7 +195,7 @@ test("a janela de banimento é navegável por teclado e fecha com Esc (AC#13)", 
   await como(page, "51", u("ban-teclado"), ["admin"]);
   await page.goto("/admin/membros");
   await page.getByLabel("Buscar por nick ou usuário do Discord").fill(u("ban-teclado-alvo"));
-  await page.getByRole("row").filter({ hasText: `@${u("ban-teclado-alvo")}` }).getByRole("button", { name: /^Banir / }).click();
+  await rowAction(page, page.getByRole("row").filter({ hasText: `@${u("ban-teclado-alvo")}` }), "Banir");
 
   const dialog = page.getByRole("dialog");
   await expect(dialog).toBeVisible();
