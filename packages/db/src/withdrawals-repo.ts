@@ -2,11 +2,13 @@ import {
   canTransitionWithdrawal,
   checkWithdrawalRequest,
   RESERVING_WITHDRAWAL_STATUSES,
+  staffPaidInGameNote,
   type WithdrawalDto,
   type WithdrawalListQuery,
   type WithdrawalRefusal,
   type WithdrawalStatus,
 } from "@albion-hub/shared";
+import { randomUUID } from "node:crypto";
 import { and, desc, eq, inArray, sql } from "drizzle-orm";
 import type { Database } from "./client.js";
 import { memberNick } from "./member-nick.js";
@@ -109,6 +111,8 @@ const columns = {
   amount: withdrawals.amount,
   status: withdrawals.status,
   ledgerEntryId: withdrawals.ledgerEntryId,
+  openedBy: withdrawals.openedBy,
+  requestNote: withdrawals.requestNote,
   decidedBy: withdrawals.decidedBy,
   decidedAt: withdrawals.decidedAt,
   decisionNote: withdrawals.decisionNote,
@@ -131,6 +135,8 @@ const toDto = (row: Row, userNick: string | null = null): WithdrawalDto => ({
   amount: row.amount.toString(),
   status: row.status,
   ledgerEntryId: row.ledgerEntryId,
+  openedByUserId: row.openedBy,
+  requestNote: row.requestNote,
   decidedByUserId: row.decidedBy,
   decidedAt: iso(row.decidedAt),
   decisionNote: row.decisionNote,
@@ -170,6 +176,101 @@ export async function requestWithdrawal(db: Database, input: RequestWithdrawalIn
     const [row] = await tx.insert(withdrawals).values({ userId: input.userId, amount: input.amount, status: "pending" }).returning(columns);
     const after = await getWithdrawalBalance(tx, input.userId);
     return { ok: true as const, withdrawal: toDto(row!), balance: after };
+  });
+}
+
+export interface OpenWithdrawalForMemberInput {
+  /** Dono do saque: o **alvo**, que vem da rota. */
+  userId: string;
+  /** Quem abriu: sempre da sessão da staff, nunca do corpo (SS3). */
+  actorUserId: string;
+  amount: bigint;
+  /** Motivo obrigatório (SS4): fica no pedido e vai para a timeline. */
+  reason: string;
+  /** Atalho de SS2: o saque nasce liquidado e não entra na fila. */
+  paidInGame?: boolean;
+  at?: Date;
+}
+
+export type OpenWithdrawalForMemberResult =
+  | { ok: true; withdrawal: WithdrawalDto; balance: WithdrawalBalance }
+  | { ok: false; reason: "unknown_user" }
+  | ({ ok: false } & WithdrawalRefusal);
+
+/**
+ * Saque aberto pela staff para um membro (TASK-083, SS1–SS4). O membro pediu no Discord ou no jogo e não
+ * usa o painel.
+ *
+ * A conta do teto é **a mesma** de `requestWithdrawal`: `lockUser` → `getWithdrawalBalance` dentro da
+ * transação → `checkWithdrawalRequest` (SS3). Não existe uma segunda versão da verdade sobre quanto o
+ * membro pode sacar, e duas aberturas simultâneas continuam serializadas pela linha do usuário.
+ *
+ * Sem `paidInGame` a linha nasce `pending`, igual a qualquer outro pedido (SS1) — só com `opened_by` e
+ * `request_note` preenchidos.
+ *
+ * Com `paidInGame` a prata **já saiu no jogo**, então o saque nasce `settled` no mesmo desenho do
+ * `settlePaidInGame` do loot split (TASK-081, SP1): o id é gerado aqui para o lançamento de débito já
+ * nascer apontando para o saque, e a linha cumpre todos os CHECKs de um `settled` — `ledger_entry_id`
+ * preenchido, `decided_by`/`decided_at` (quem marcou é quem "aprovou") e `settled_by`/`settled_at`/
+ * `settlement_note`. Tudo na mesma transação: nunca existe débito órfão nem saque liquidado sem
+ * lançamento. A diferença para o split é que lá o crédito do mesmo valor entrava na mesma transação e não
+ * havia teto a conferir; aqui a prata é saldo antigo, então o teto vale igual ao do `pending`.
+ */
+export async function openWithdrawalForMember(db: Database, input: OpenWithdrawalForMemberInput): Promise<OpenWithdrawalForMemberResult> {
+  const at = input.at ?? new Date();
+  const reason = input.reason.trim();
+  return db.transaction(async (tx) => {
+    if (!(await lockUser(tx, input.userId))) return { ok: false as const, reason: "unknown_user" as const };
+    const balance = await getWithdrawalBalance(tx, input.userId);
+    const refusal = checkWithdrawalRequest(input.amount, balance.balance, balance.reserved);
+    if (refusal) return { ok: false as const, ...refusal };
+
+    let row: Row;
+    if (!input.paidInGame) {
+      [row] = (await tx
+        .insert(withdrawals)
+        .values({ userId: input.userId, amount: input.amount, status: "pending", openedBy: input.actorUserId, requestNote: reason, createdAt: at, updatedAt: at })
+        .returning(columns)) as [Row];
+    } else {
+      const withdrawalId = randomUUID();
+      const note = staffPaidInGameNote(reason);
+      const [entry] = await tx
+        .insert(ledgerEntries)
+        .values({
+          userId: input.userId,
+          amount: -input.amount,
+          // Saque é só de prata (F6-6).
+          currency: "silver",
+          kind: "withdrawal",
+          referenceType: "withdrawal",
+          referenceId: withdrawalId,
+          createdBy: input.actorUserId,
+          memo: note,
+        })
+        .returning({ id: ledgerEntries.id });
+      [row] = (await tx
+        .insert(withdrawals)
+        .values({
+          id: withdrawalId,
+          userId: input.userId,
+          amount: input.amount,
+          status: "settled",
+          ledgerEntryId: entry!.id,
+          openedBy: input.actorUserId,
+          requestNote: reason,
+          decidedBy: input.actorUserId,
+          decidedAt: at,
+          decisionNote: note,
+          settledBy: input.actorUserId,
+          settledAt: at,
+          settlementNote: note,
+          createdAt: at,
+          updatedAt: at,
+        })
+        .returning(columns)) as [Row];
+    }
+    const after = await getWithdrawalBalance(tx, input.userId);
+    return { ok: true as const, withdrawal: toDto(row), balance: after };
   });
 }
 

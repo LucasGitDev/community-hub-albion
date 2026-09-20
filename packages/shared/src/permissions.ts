@@ -27,7 +27,13 @@ export type Action =
   /** Entregar o pedido da loja (`shop:fulfill`, F6-25). A entrega em si é a TASK-060. */
   | "fulfill"
   /** Estornar os lançamentos de uma indicação paga por engano (TASK-074). Estorno, nunca edição. */
-  | "reverse";
+  | "reverse"
+  /**
+   * Abrir um saque **no nome de outro membro** (TASK-083, SS3). Separado de `create` de propósito:
+   * `create` todo membro tem, e é sobre o próprio saldo. `createFor` é a staff mexendo no saldo alheio,
+   * então precisa ser uma permissão que o membro comum não tem de jeito nenhum.
+   */
+  | "createFor";
 
 /** Campos de dono por tipo de recurso (condições das regras). */
 interface SubjectFields {
@@ -103,6 +109,9 @@ export function defineAbilityFor(user: AbilityUser): AppAbility {
     can("manage", ["Event", "EventTemplate", "LootSplit", "MemberRequest"]);
     can("read", ["Wallet", "Withdrawal"]);
     can(["approve", "reject", "settle"], "Withdrawal");
+    // Abrir saque para um membro que pediu no Discord ou no jogo (TASK-083, SS3): staff e admin, os
+    // mesmos que já trabalham a fila.
+    can("createFor", "Withdrawal");
     // Banir e desbanir jogador (TASK-050). Provisório na staff até a revisão de papéis (TASK-052).
     can("ban", "Ban");
     // Gestão de usuários (TASK-047, G3): achar e revalidar o nick, editar nick/tag, ler e escrever notas.
