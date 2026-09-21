@@ -809,12 +809,21 @@ function SettlementTable({
                   {!row.signedUp && <Pill tone="warning">apareceu sem inscrição</Pill>}
                   {!row.hasAccount && <Pill tone="neutral">sem conta no painel</Pill>}
                 </span>
-                <span className="num block text-xs text-muted-foreground sm:hidden">
-                  {row.presenceMs > 0 ? `${formatPresence(row.presenceMs)} na call` : "não entrou na call"}
+                <span className="num block text-xs text-muted-foreground">
+                  <span className="block sm:hidden">{row.presenceMs > 0 ? `${formatPresence(row.presenceMs)} na call` : "não entrou na call"}</span>
+                  {/* A medição só é dita quando **discorda** do número digitado: repetir "medido 100%"
+                      embaixo de um 100% seria ruído em toda linha. Fica aqui, e não na coluna da
+                      presença, porque em 400px aquela coluna já divide o espaço com a prata. */}
+                  {row.measuredPresenceBp !== null && row.measuredPresenceBp !== row.presenceBp && (
+                    <span className="inline-flex items-center gap-1">
+                      <Timer className="size-3" aria-hidden />
+                      medido {formatShare(row.measuredPresenceBp)}
+                    </span>
+                  )}
                 </span>
               </TableCell>
               <TableCell className="num hidden text-right text-muted-foreground sm:table-cell">{formatPresence(row.presenceMs)}</TableCell>
-              <TableCell className="text-right align-top">
+              <TableCell className="px-1 text-right align-top sm:px-3">
                 {onPresenceChange ? (
                   <PresenceInput nick={row.nick} row={row} onChange={(bp) => onPresenceChange(row.key, bp)} />
                 ) : (
@@ -825,7 +834,12 @@ function SettlementTable({
                 <Amount currency="silver" value={row.amount} className={cn("font-semibold", row.amount === 0n && "text-muted-foreground")} />
                 {/* O terceiro número não ganha coluna: ele **explica** a prata, e a coluna extra
                     empurraria o valor para fora da tela em 400px. */}
-                <span className="num block text-xs text-muted-foreground">{row.shareBp > 0 ? `${formatShare(row.shareBp)} da divisão` : "não recebe"}</span>
+                {/* "da divisão" só entra onde cabe: em 400px essas três palavras empurravam a prata
+                    para fora do card, e é a prata que se confere. */}
+                <span className="num block text-xs text-muted-foreground">
+                  {row.shareBp > 0 ? formatShare(row.shareBp) : "não recebe"}
+                  {row.shareBp > 0 && <span className="hidden sm:inline"> da divisão</span>}
+                </span>
               </TableCell>
             </TableRow>
           ))}
@@ -886,31 +900,22 @@ function SettlementTable({
 function PresenceInput({ nick, row, onChange }: { nick: string; row: SettlementRow; onChange: (presenceBp: number) => void }) {
   const [text, setText] = useState(() => (row.presenceBp / 100).toString().replace(".", ","));
   const parsed = parsePercentBp(text || "0");
-  const edited = row.measuredPresenceBp !== null && row.measuredPresenceBp !== row.presenceBp;
 
   return (
-    <span className="inline-flex flex-col items-end gap-0.5">
-      <span className="inline-flex items-center gap-1">
-        <Input
-          aria-label={`Presença de ${nick} em porcentagem`}
-          inputMode="decimal"
-          value={text}
-          aria-invalid={parsed === null}
-          onChange={(e) => {
-            setText(e.target.value);
-            const bp = parsePercentBp(e.target.value || "0");
-            if (bp !== null) onChange(bp);
-          }}
-          className="num h-8 w-20 text-right"
-        />
-        <span className="text-sm text-muted-foreground">%</span>
-      </span>
-      {edited && (
-        <span className="num inline-flex items-center gap-1 pr-5 text-xs text-muted-foreground">
-          <Timer className="size-3" aria-hidden />
-          medido {formatShare(row.measuredPresenceBp!)}
-        </span>
-      )}
+    <span className="inline-flex items-center gap-1">
+      <Input
+        aria-label={`Presença de ${nick} em porcentagem`}
+        inputMode="decimal"
+        value={text}
+        aria-invalid={parsed === null}
+        onChange={(e) => {
+          setText(e.target.value);
+          const bp = parsePercentBp(e.target.value || "0");
+          if (bp !== null) onChange(bp);
+        }}
+        className="num h-8 w-14 px-2 text-right sm:w-20 sm:px-3"
+      />
+      <span className="text-sm text-muted-foreground">%</span>
     </span>
   );
 }

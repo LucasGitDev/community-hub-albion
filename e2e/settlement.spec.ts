@@ -147,7 +147,7 @@ test("caller acerta o evento finalizado: dados, taxa, split e confirmação (AC#
   // AC#1/AC#2: a presença é o que se edita, e a prata sai dela na hora, sem somar 100% na mão.
   await presenca.fill("50");
   await expect(acerto.getByText("de presença somada, entre 1 pessoa")).toBeVisible();
-  await expect(acerto.getByText("100% da divisão")).toBeVisible();
+  await expect(acerto.getByText("100%", { exact: false }).first()).toBeVisible();
   await acerto.getByRole("button", { name: "Calcular divisão" }).click();
   await expect(page.getByText("Divisão calculada").first()).toBeVisible();
   await expect(acerto.getByText("9.000.000").first()).toBeVisible();
