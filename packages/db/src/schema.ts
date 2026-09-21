@@ -474,6 +474,13 @@ export const eventSignups = pgTable(
      * `restrict`: o lançamento é a prova do que foi cobrado e não some por causa da inscrição.
      */
     feeEntryId: uuid("fee_entry_id").references((): AnyPgColumn => ledgerEntries.id, { onDelete: "restrict" }),
+    /**
+     * A partir de quando a presença desta pessoa conta (TASK-086, PE8). Null é o caso normal: quem se
+     * inscreveu antes do evento começar conta desde o início da call. Quem foi aceito **no meio** leva
+     * aqui o instante do aceite, e a medição corta a sessão de voz nele — o denominador continua sendo
+     * a janela inteira da call, então quem entrou faltando 20% termina com 20%.
+     */
+    presenceFrom: timestamp("presence_from", { withTimezone: true }),
     createdAt: createdAt(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
   },

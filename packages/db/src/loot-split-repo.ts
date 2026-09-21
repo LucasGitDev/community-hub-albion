@@ -113,6 +113,23 @@ export async function listEventPresence(db: Database | EventTx, eventId: string)
     return created;
   };
 
+  // As inscrições vêm **antes** das sessões: quem foi aceito no meio (TASK-086, PE8) traz o instante
+  // do aceite, e a medição precisa dele para cortar a sessão de voz dessa pessoa.
+  const signups = await db
+    .select({ discordId: users.discordId, userId: users.id, nick: memberNick(users), roleName: eventSignups.roleName, presenceFrom: eventSignups.presenceFrom })
+    .from(eventSignups)
+    .innerJoin(users, eq(users.id, eventSignups.userId))
+    .where(and(eq(eventSignups.eventId, eventId), inArray(eventSignups.status, [...ACTIVE_EVENT_SIGNUP_STATUSES])));
+  const presenceFromOf = new Map<string, Date>();
+  for (const signup of signups) {
+    const candidate = put(signup.discordId);
+    candidate.signedUp = true;
+    candidate.userId = signup.userId;
+    candidate.nick = signup.nick;
+    candidate.roleName = signup.roleName;
+    if (signup.presenceFrom) presenceFromOf.set(signup.discordId, signup.presenceFrom);
+  }
+
   const { startedAt, finishedAt, channelId } = event;
   if (startedAt && finishedAt && channelId) {
     const sessions = await db
@@ -126,20 +143,14 @@ export async function listEventPresence(db: Database | EventTx, eventId: string)
           or(isNull(voiceSessions.endedAt), gte(voiceSessions.endedAt, startedAt)),
         ),
       );
-    for (const session of sessions) put(session.discordUserId).presenceMs += overlapMs(session, startedAt, finishedAt);
-  }
-
-  const signups = await db
-    .select({ discordId: users.discordId, userId: users.id, nick: memberNick(users), roleName: eventSignups.roleName })
-    .from(eventSignups)
-    .innerJoin(users, eq(users.id, eventSignups.userId))
-    .where(and(eq(eventSignups.eventId, eventId), inArray(eventSignups.status, [...ACTIVE_EVENT_SIGNUP_STATUSES])));
-  for (const signup of signups) {
-    const candidate = put(signup.discordId);
-    candidate.signedUp = true;
-    candidate.userId = signup.userId;
-    candidate.nick = signup.nick;
-    candidate.roleName = signup.roleName;
+    for (const session of sessions) {
+      // PE8: a presença de quem foi aceito no meio começa **no aceite**, não em quando ele entrou na
+      // call. Não é uma segunda medição — é a mesma `overlapMs`, com o começo da janela empurrado só
+      // para essa pessoa. O denominador segue sendo a call inteira, então aceitar faltando 20% do
+      // evento dá no máximo 20% de presença, e o caller ainda pode subir na mão por cima (PE1).
+      const opensAt = presenceFromOf.get(session.discordUserId) ?? startedAt;
+      put(session.discordUserId).presenceMs += overlapMs(session, opensAt > startedAt ? opensAt : startedAt, finishedAt);
+    }
   }
 
   // Presente sem inscrição ainda pode ter conta no painel: resolve para a TASK-028 poder creditar
