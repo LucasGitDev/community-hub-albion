@@ -31,8 +31,9 @@ import { FakeTimelinePublisher } from "../timeline/fake-timeline.publisher.js";
 
 const timeline = new FakeTimelinePublisher();
 
-/** Relógio do intervalo de 5 minutos do chamado (TASK-087); cada teste empurra o tempo que precisa. */
-let clock = new Date("2026-09-21T20:00:00Z");
+/** Relógio do chamado (TASK-087). Aqui ele é fixo: cada teste usa um evento novo, e o intervalo de 5
+ * minutos é por evento — quem exercita o intervalo é o teste do menu da call. */
+const clock = new Date("2026-09-21T20:00:00Z");
 
 const baseUrl = process.env.TEST_DATABASE_URL ?? process.env.DATABASE_URL;
 if (!baseUrl && process.env.CI) throw new Error("CI sem TEST_DATABASE_URL: testes do canal de voz do evento não podem ser pulados");

@@ -4,20 +4,28 @@ import {
   EVENT_CALL_FINISH_BUTTON,
   EVENT_CALL_LOCK_BUTTON,
   EVENT_CALL_REPLIES,
+  EVENT_CALL_SUMMON_BUTTON,
   EVENT_CALL_UNLOCK_BUTTON,
   eventCallFinishButtonId,
   eventCallLockButtonId,
   eventCallMenuView,
+  eventCallSummonButtonId,
   eventCallUnlockButtonId,
 } from "./event-call-menu.js";
 
 const EVENT = { id: "11111111-2222-3333-4444-555555555555", name: "ZvZ das 21h" };
 
 describe("menu de gestão da call (TASK-085, PE9 a PE11)", () => {
-  it("tem os três botões do menu, e nenhum de iniciar ou fechar inscrição (PE9)", () => {
+  it("tem as quatro ações do menu, e nenhuma de iniciar ou fechar inscrição (PE9 + TASK-087)", () => {
     const view = eventCallMenuView(EVENT);
-    expect(view.buttons.map((b) => b.customId)).toEqual([eventCallLockButtonId(EVENT.id), eventCallUnlockButtonId(EVENT.id), eventCallFinishButtonId(EVENT.id)]);
-    expect(view.buttons.map((b) => b.label)).toEqual(["Fechar a call", "Abrir a call", "Finalizar o evento"]);
+    expect(view.buttons.map((b) => b.customId)).toEqual([
+      eventCallSummonButtonId(EVENT.id),
+      eventCallLockButtonId(EVENT.id),
+      eventCallUnlockButtonId(EVENT.id),
+      eventCallFinishButtonId(EVENT.id),
+    ]);
+    // Chamar quem falta vem primeiro: é a ação que o caller repete enquanto a call enche (PE16).
+    expect(view.buttons.map((b) => b.label)).toEqual(["Chamar quem falta", "Fechar a call", "Abrir a call", "Finalizar o evento"]);
     expect(view.title).toContain(EVENT.name);
   });
 
@@ -25,6 +33,8 @@ describe("menu de gestão da call (TASK-085, PE9 a PE11)", () => {
     expect(EVENT_CALL_FINISH_BUTTON).toBe("evento/call/finalizar/:eventId");
     expect(EVENT_CALL_LOCK_BUTTON).toBe("evento/call/fechar/:eventId");
     expect(EVENT_CALL_UNLOCK_BUTTON).toBe("evento/call/abrir/:eventId");
+    expect(EVENT_CALL_SUMMON_BUTTON).toBe("evento/call/chamar/:eventId");
+    expect(eventCallSummonButtonId(EVENT.id)).toBe(`evento/call/chamar/${EVENT.id}`);
     expect(eventCallFinishButtonId(EVENT.id)).toBe(`evento/call/finalizar/${EVENT.id}`);
   });
 
