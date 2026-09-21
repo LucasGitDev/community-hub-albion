@@ -227,14 +227,16 @@ export async function setEventPresence(db: Database, eventId: string, input: Set
           set: { presenceBp: sql`excluded.presence_bp`, updatedBy: input.actorUserId, updatedAt: sql`now()` },
         });
 
-    const [draft] = await tx
+    // **Todos** os rascunhos, não só o primeiro: a tela abre um de cada vez, mas a API permite N levas
+    // (Q23), e um rascunho esquecido com a presença velha confirmaria uma divisão que ninguém escolheu.
+    const drafts = await tx
       .select({ id: lootSplits.id })
       .from(lootSplits)
       .where(and(eq(lootSplits.eventId, eventId), eq(lootSplits.status, "draft")))
-      .for("update")
-      .limit(1);
-    if (draft) await resyncDraftFromPresence(tx, draft.id, eventId);
-    return { ok: true as const, draftSplitId: draft?.id ?? null };
+      .orderBy(asc(lootSplits.createdAt), asc(lootSplits.id))
+      .for("update");
+    for (const draft of drafts) await resyncDraftFromPresence(tx, draft.id, eventId);
+    return { ok: true as const, draftSplitId: drafts[0]?.id ?? null };
   });
   if (!done.ok) return done;
   return { ok: true, present: await listEventPresence(db, eventId), draftSplitId: done.draftSplitId };
