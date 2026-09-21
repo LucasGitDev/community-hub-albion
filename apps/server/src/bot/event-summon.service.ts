@@ -38,8 +38,11 @@ export const SUMMON_CLOCK = Symbol("SUMMON_CLOCK");
  * 5. privado um a um; quem o Discord recusar (DM fechada) entra na **única** menção do chat da call (PE14);
  * 6. timeline com quem acionou e quantos foram avisados (AC#8), depois do envio e sem nunca derrubar nada.
  *
- * Quem falha no envio **continua com o intervalo consumido**: ele recebeu a menção, que é o aviso que a
- * PE14 promete, e um segundo clique não pode virar uma segunda menção da mesma pessoa no mesmo chat.
+ * Quem falha no envio **continua com o intervalo consumido**: no caso normal ele recebeu a menção, que
+ * é o aviso que a PE14 promete, e um segundo clique não pode virar uma segunda menção da mesma pessoa
+ * no mesmo chat. Quando nem a menção sai (bot sem permissão de escrever na call), essa pessoa fica 5
+ * minutos sem ser chamada de novo — é o preço de não arriscar privado repetido, e o log diz o que
+ * falhou para o operador arrumar a permissão.
  */
 @Injectable()
 export class EventSummonService implements EventSummoner {
