@@ -39,7 +39,7 @@ function fakeCallVoice() {
   const posted: { channelId: string; title: string }[] = [];
   /** `null` = sem sobrescrita (call aberta). */
   let lock: { allowed: string[] } | null = null;
-  const fail = { lock: false };
+  const fail = { lock: false, refuse: new Set<string>() };
   let seq = 0;
 
   const gateway: EventVoiceGateway = {
@@ -65,7 +65,10 @@ function fakeCallVoice() {
     },
     async setChannelConnectLock(_channelId, locked, allowDiscordIds) {
       if (fail.lock) throw Object.assign(new Error("sem permissão"), { code: 50013 });
-      lock = locked ? { allowed: [...allowDiscordIds] } : null;
+      // `refuse` simula o Discord recusando um inscrito (saiu do servidor): ele não entra na liberação.
+      const allowed = [...allowDiscordIds].filter((id) => !fail.refuse.has(id));
+      lock = locked ? { allowed } : null;
+      return { failed: allowDiscordIds.length - allowed.length };
     },
   };
 
@@ -74,6 +77,7 @@ function fakeCallVoice() {
     posted,
     fail,
     lockState: () => lock,
+    refuseFor: (discordId: string) => fail.refuse.add(discordId),
     connect: (channelId: string, ...discordIds: string[]) => {
       for (const id of discordIds) connected.get(channelId)!.add(id);
     },
@@ -85,6 +89,7 @@ function fakeCallVoice() {
       posted.length = 0;
       lock = null;
       fail.lock = false;
+      fail.refuse.clear();
       timeline.clear();
     },
   };
@@ -279,6 +284,22 @@ describe.skipIf(!baseUrl)("menu de gestão da call (TASK-085, Postgres real + Di
     expect((await reload(event)).status).toBe("running");
     expect(discord.membersOf(channelId)).toEqual([inside.discordId]);
     expect(timeline.entries).toEqual([]);
+  });
+
+  it("inscrito recusado pelo Discord não aborta os outros: a call fecha e o aviso vai para quem clicou", async () => {
+    const { event, inside } = await runningEvent("Fechar com inscrito recusado");
+    discord.refuseFor(inside.discordId);
+
+    const click = fakeClick(ownerDiscordId);
+    await menu.onLock([click], event.id);
+
+    expect(answer(click)).toContain("o Discord recusou 1 inscrito");
+    // A porta fechou mesmo assim; a timeline conta quantos ficaram liberados e quantos foram recusados.
+    expect(discord.lockState()).not.toBeNull();
+    expect(timeline.only("event.call_locked").details).toEqual([
+      { name: "Inscritos liberados", value: "0" },
+      { name: "Recusados pelo Discord", value: "1" },
+    ]);
   });
 
   it("evento já finalizado: o menu recusa com o motivo e não publica nada", async () => {

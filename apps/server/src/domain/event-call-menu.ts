@@ -74,6 +74,8 @@ export const EVENT_CALL_REPLIES = {
   noChannel: "Esse evento não tem mais canal de voz. Nada foi feito.",
   locked: "Call fechada: quem não está inscrito não consegue mais entrar. Quem já estava dentro continua aí.",
   unlocked: "Call aberta: qualquer um pode entrar de novo.",
+  someRefused: (count: number) =>
+    `Atenção: o Discord recusou ${count} ${count === 1 ? "inscrito" : "inscritos"} (provavelmente saíram do servidor). Confira a lista de permissões do canal.`,
   lockFailed: "Não consegui mudar a permissão do canal (o bot pode não ter permissão, ou o canal foi apagado na mão). O evento segue normal.",
   finished: (name: string) => `Evento **${name}** finalizado. Estou devolvendo a galera para Aguardando Evento e apagando o canal.`,
   failed: "Não consegui fazer isso agora. Tente de novo em instantes ou use o painel.",
