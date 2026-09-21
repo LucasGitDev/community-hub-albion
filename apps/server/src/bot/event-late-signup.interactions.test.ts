@@ -27,6 +27,8 @@ const WAITING = "623456789012345679";
 function fakeVoice() {
   const connected = new Map<string, Set<string>>([[WAITING, new Set()]]);
   const posted: { channelId: string; view: EmbedView }[] = [];
+  const directMessages: { discordId: string; view: EmbedView }[] = [];
+  const mentions: { channelId: string; discordIds: string[]; content: string }[] = [];
   let seq = 0;
 
   const gateway: EventVoiceGateway = {
@@ -53,11 +55,21 @@ function fakeVoice() {
     async setChannelConnectLock() {
       return { failed: 0 };
     },
+    // TASK-087: o chamado no privado não é exercido por estes testes, mas o gateway é um contrato só —
+    // guardar o que foi chamado evita que um envio acidental daqui passe despercebido.
+    async sendDirectMessage(discordId, view) {
+      directMessages.push({ discordId, view });
+    },
+    async mentionInChannel(channelId, discordIds, content) {
+      mentions.push({ channelId, discordIds: [...discordIds], content });
+    },
   };
 
   return {
     gateway,
     posted,
+    directMessages,
+    mentions,
     /** Perguntas publicadas (o menu da TASK-085 também cai aqui, e é filtrado pelo título). */
     questions: () => posted.filter((p) => p.view.title.startsWith("Entrou na call sem inscrição")),
     connect: (channelId: string, ...discordIds: string[]) => {
