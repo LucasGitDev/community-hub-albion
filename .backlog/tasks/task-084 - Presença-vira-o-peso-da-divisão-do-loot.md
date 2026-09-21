@@ -1,11 +1,11 @@
 ---
 id: TASK-084
 title: Presença vira o peso da divisão do loot
-status: In Progress
+status: Done
 assignee:
   - '@claude'
 created_date: '2026-09-21 12:57'
-updated_date: '2026-09-21 13:43'
+updated_date: '2026-09-21 13:47'
 labels: []
 milestone: m-12
 dependencies: []
