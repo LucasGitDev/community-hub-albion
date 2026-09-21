@@ -491,6 +491,33 @@ export const eventSignups = pgTable(
   ],
 );
 
+/**
+ * Último chamado no privado por pessoa e por evento (TASK-087, PE15). Existe só para o **intervalo de
+ * 5 minutos**: dois callers clicando, ou um clicando várias vezes, não podem virar privado repetido —
+ * é assim que a pessoa bloqueia o bot.
+ *
+ * Mora no banco, e não em memória, de propósito: um `Map` no processo perde o intervalo em todo
+ * deploy e em todo restart, e o primeiro clique depois de subir mandaria privado para quem acabou de
+ * receber um. A linha é pequena e some junto com o evento (`cascade`), então não vira lixo.
+ *
+ * Uma linha por (evento, pessoa), atualizada no lugar: aqui não há histórico a preservar — a única
+ * pergunta é "faz menos de 5 minutos que chamei essa pessoa neste evento?".
+ */
+export const eventSummons = pgTable(
+  "event_summons",
+  {
+    eventId: uuid("event_id")
+      .notNull()
+      .references(() => events.id, { onDelete: "cascade" }),
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    /** Quando o chamado saiu. O `claim` compara com `now() - intervalo` dentro do próprio UPDATE. */
+    lastSentAt: timestamp("last_sent_at", { withTimezone: true }).notNull(),
+  },
+  (t) => [primaryKey({ columns: [t.eventId, t.userId] })],
+);
+
 export const ledgerEntryKindEnum = pgEnum("ledger_entry_kind", LEDGER_ENTRY_KINDS);
 export const ledgerReferenceTypeEnum = pgEnum("ledger_reference_type", LEDGER_REFERENCE_TYPES);
 

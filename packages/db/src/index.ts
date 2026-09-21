@@ -120,6 +120,7 @@ export {
   type TransferEventOwnerResult,
 } from "./events-repo.js";
 export { refundEntryFee, refundEventEntryFees } from "./entry-fee-repo.js";
+export { claimEventSummons, findEventSummon } from "./event-summons-repo.js";
 export {
   findEventRoleSlot,
   joinEventRole,
