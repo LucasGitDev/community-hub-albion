@@ -5,7 +5,7 @@ status: In Progress
 assignee:
   - '@claude'
 created_date: '2026-09-21 12:57'
-updated_date: '2026-09-21 13:36'
+updated_date: '2026-09-21 13:43'
 labels: []
 milestone: m-12
 dependencies: []
@@ -100,6 +100,8 @@ Security review (skill security-review, subagent): **nenhum achado com confianç
 **Skills**: `emil-design-eng` (tela do acerto), `security-review` (sem achado com confiança >= 8), `marclou-review` (sem 🔴), `task-done-check`.
 
 **Revisão visual**: screenshots do `presence-weight.spec.ts` em 1280 e 400 lidos pelo agent. O primeiro corte em 400px mostrou a prata e a fatia derivada cortadas na borda do card; corrigido no commit fde9ca4 (medição sai para debaixo do nome, campo encolhe, "da divisão" só a partir do sm) e reconferido.
+
+Rebase sobre a main depois da TASK-085: o commit de correção da spec da loja foi **descartado** (`git rebase --skip`) porque a 085 subiu a mesma correção (`cc3f8e3`). Gate rodado de novo sobre a árvore rebaseada e check `summary` republicado em 849768d. PR #117, mergeable.
 <!-- SECTION:NOTES:END -->
 
 ## Final Summary
