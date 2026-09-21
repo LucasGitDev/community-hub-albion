@@ -2,6 +2,7 @@ import {
   entryFeeLabel,
   entryFeeSchema,
   eventCreateSchema,
+  eventSummonSummary,
   EVENT_CANCEL_REASON_MAX,
   EVENT_TEMPLATE_NAME_MAX,
   firstIssue,
@@ -11,7 +12,7 @@ import {
   type EventTemplateDto,
   type EventTransition,
 } from "@albion-hub/shared";
-import { Archive, CalendarPlus, CircleDot, Coins, Crown, DoorOpen, Flag, ListOrdered, Lock, Play, Users, X } from "lucide-react";
+import { Archive, CalendarPlus, CircleDot, Coins, Crown, DoorOpen, Flag, ListOrdered, Lock, Megaphone, Play, Users, X } from "lucide-react";
 import { useCallback, useEffect, useId, useState } from "react";
 import { toast } from "sonner";
 import * as api from "@/api/events";
@@ -32,6 +33,7 @@ import { useCurrentUser } from "@/auth/AuthProvider";
 import {
   availableTransitions,
   canManageRoster,
+  canSummonAbsentees,
   canSetEntryFee,
   canTransferOwner,
   eventFill,
@@ -324,6 +326,24 @@ function EventDetail({
   const [tab, setTab] = useState(event.status === "finished" ? "settlement" : "roster");
   const [hasDraft, setHasDraft] = useState(false);
   const onDraftChange = useCallback((draft: boolean) => setHasDraft(draft), []);
+  /** Chamado de quem não entrou na call (TASK-087, AC#4). */
+  const canSummon = canSummonAbsentees(event, ability);
+  const [summoning, setSummoning] = useState(false);
+
+  /**
+   * O botão fica travado enquanto o chamado corre: mandar privado para a lista inteira leva segundos,
+   * e clicar de novo no meio é exatamente o privado repetido que o intervalo de 5 minutos evita.
+   */
+  async function summon() {
+    setSummoning(true);
+    try {
+      toast.success(eventSummonSummary(await api.summonEventAbsentees(event.id)));
+    } catch (e) {
+      toast.error(errorText(e, "Não foi possível chamar quem falta."));
+    } finally {
+      setSummoning(false);
+    }
+  }
 
   const refreshAll = () => {
     roster.refresh();
@@ -387,8 +407,21 @@ function EventDetail({
           <p className="text-sm text-muted-foreground">Evento finalizado. Quem conduz ainda acerta a taxa e os splits, e arquiva quando terminar.</p>
         )}
         {hasDraft && actions.includes("archive") && <DraftBlocksArchiveNote />}
-        {actions.length > 0 ? (
+        {actions.length > 0 || canSummon ? (
           <div className="flex flex-wrap gap-2">
+            {/* Primeiro da fila durante o evento: é a ação que o caller repete enquanto a call enche. */}
+            {canSummon && (
+              <Button
+                variant="outline"
+                size="sm"
+                disabled={busy || summoning}
+                title="Manda privado para cada inscrito confirmado que não está na call. Quem está na lista de espera não recebe, e ninguém é chamado duas vezes em 5 minutos."
+                onClick={() => void summon()}
+              >
+                <Megaphone />
+                {summoning ? "Chamando…" : "Chamar quem falta"}
+              </Button>
+            )}
             {actions.map((action) => {
               const meta = TRANSITION_META[action];
               const Icon = meta.icon;
