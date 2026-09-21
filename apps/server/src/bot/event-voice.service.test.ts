@@ -53,7 +53,7 @@ function fakeVoice() {
   const created: { id: string; name: string }[] = [];
   const deleted: string[] = [];
   let seq = 0;
-  const fail = { create: false, move: new Set<string>(), delete: false, list: false, post: false, dm: new Set<string>() };
+  const fail = { create: false, move: new Set<string>(), delete: false, list: false, post: false, dm: new Set<string>(), mention: false };
   const posted: { channelId: string; title: string }[] = [];
   /** Privados e menções do chamado de quem não entrou na call (TASK-087). */
   const dms: { discordId: string; title: string }[] = [];
@@ -90,6 +90,7 @@ function fakeVoice() {
       dms.push({ discordId, title: view.title });
     },
     async mentionInChannel(channelId, discordIds, content) {
+      if (fail.mention) throw Object.assign(new Error("sem permissão de escrever"), { code: 50013 });
       mentions.push({ channelId, discordIds: [...discordIds], content });
     },
     async moveMember(discordId, toChannelId) {
@@ -122,6 +123,10 @@ function fakeVoice() {
       created.length = 0;
       deleted.length = 0;
       posted.length = 0;
+      dms.length = 0;
+      mentions.length = 0;
+      fail.dm.clear();
+      fail.mention = false;
       fail.post = false;
       fail.create = false;
       fail.delete = false;
@@ -289,6 +294,77 @@ describe.skipIf(!baseUrl)("canal de voz do evento (TASK-024, Postgres real + Dis
     const channelId = discord.created[0]!.id;
     expect(discord.membersOf(channelId)).toEqual([tank.discordId]);
     expect((await reload(event)).status).toBe("running");
+  });
+
+  /** Chamado de quem confirmou e não entrou na call, no início do evento (TASK-087, PE12 a PE14). */
+  it("AC#1/AC#2: o start move a sala de espera e chama no privado só o confirmado que ficou de fora", async () => {
+    const { event, tank, healer, waiting } = await openEvent("Chamado no início");
+    timeline.clear();
+    // O Tank está em Aguardando Evento (vai ser arrastado); o Healer confirmado está em outro canal;
+    // quem está na lista de espera também está em Aguardando Evento.
+    discord.connect(WAITING, tank.discordId, waiting.discordId);
+    discord.connect(OTHER_CHANNEL, healer.discordId);
+
+    expect((await events.transition(event.id, "start", owner)).ok).toBe(true);
+    const channelId = discord.created.at(-1)!.id;
+
+    // Quem foi arrastado já está dentro e não recebe privado; a espera não recebe nunca (PE13).
+    expect(discord.membersOf(channelId)).toEqual([tank.discordId]);
+    expect(discord.dms.map((d) => d.discordId)).toEqual([healer.discordId]);
+    expect(discord.dms[0]!.title).toContain("Chamado no início");
+    expect(discord.mentions).toEqual([]);
+
+    // AC#8: a linha do chamado sai com quem iniciou o evento e a conta do que foi feito.
+    const entry = timeline.only("event.call_summoned");
+    expect(entry).toMatchObject({ recordId: event.id, actor: { kind: "user", userId: owner } });
+    expect(entry.details).toEqual([
+      { name: "Avisados no privado", value: "1" },
+      { name: "Mencionados na call", value: "0" },
+      { name: "Dentro do intervalo de 5 min", value: "0" },
+      { name: "Confirmados fora da call", value: "1" },
+    ]);
+  });
+
+  it("AC#3/AC#7: privado fechado no start vira menção na call e o evento começa do mesmo jeito", async () => {
+    const { event, tank, healer } = await openEvent("Privado fechado no início");
+    timeline.clear();
+    discord.connect(OTHER_CHANNEL, tank.discordId, healer.discordId);
+    discord.fail.dm.add(tank.discordId);
+    discord.fail.dm.add(healer.discordId);
+
+    expect((await events.transition(event.id, "start", owner)).ok).toBe(true);
+    const channelId = discord.created.at(-1)!.id;
+
+    expect((await reload(event)).status).toBe("running");
+    expect(discord.dms).toEqual([]);
+    expect(discord.mentions).toHaveLength(1);
+    expect(discord.mentions[0]!.channelId).toBe(channelId);
+    expect(discord.mentions[0]!.discordIds.sort()).toEqual([tank.discordId, healer.discordId].sort());
+  });
+
+  it("AC#7: o Discord recusando privado e menção não derruba o início do evento", async () => {
+    const { event, tank, healer } = await openEvent("Chamado inteiro falhando");
+    timeline.clear();
+    discord.connect(WAITING, tank.discordId);
+    discord.connect(OTHER_CHANNEL, healer.discordId);
+    discord.fail.dm.add(healer.discordId);
+    discord.fail.mention = true;
+
+    expect((await events.transition(event.id, "start", owner)).ok).toBe(true);
+
+    // O evento começou, o canal existe e quem estava na sala de espera foi movido: o chamado é extra.
+    const after = await reload(event);
+    expect(after.status).toBe("running");
+    expect(after.voiceChannelId).toBe(discord.created.at(-1)!.id);
+    expect(discord.membersOf(after.voiceChannelId!)).toEqual([tank.discordId]);
+    expect(discord.mentions).toEqual([]);
+    // Mesmo sem conseguir avisar ninguém, a timeline registra a tentativa com a conta real.
+    expect(timeline.only("event.call_summoned").details).toEqual([
+      { name: "Avisados no privado", value: "0" },
+      { name: "Mencionados na call", value: "0" },
+      { name: "Dentro do intervalo de 5 min", value: "0" },
+      { name: "Confirmados fora da call", value: "1" },
+    ]);
   });
 
   it("finish devolve todo mundo do canal (inclusive quem entrou sem inscrição) e apaga o canal (AC#2/AC#3)", async () => {
