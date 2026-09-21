@@ -77,10 +77,11 @@ test("confirmar com todos pagos no jogo: crédito e saque no extrato, saldo zero
   await expect(painel.getByRole("tab", { name: "Acerto" })).toHaveAttribute("data-state", "active");
   const acerto = painel.getByRole("region", { name: "Loot split" });
   await acerto.getByLabel("Total arrecadado na leva").fill("5.000.000");
+  // Sem bot no e2e não há call medida: a presença nasce em 0 e o caller dá a dele (TASK-084).
+  await acerto.getByLabel(/^Presença de .* em porcentagem$/).first().fill("100");
   await acerto.getByRole("button", { name: "Calcular divisão" }).click();
   await expect(page.getByText("Divisão calculada").first()).toBeVisible();
-  await acerto.getByLabel(/^Participação de .* em porcentagem$/).first().fill("100");
-  await expect(acerto.getByText("a divisão fecha")).toBeVisible();
+  await expect(acerto.getByText("de presença somada, entre 1 pessoa")).toBeVisible();
   await acerto.getByRole("button", { name: "Confirmar e creditar" }).click();
 
   // AC#1: modal com todos marcados; dá para desmarcar e marcar de novo.

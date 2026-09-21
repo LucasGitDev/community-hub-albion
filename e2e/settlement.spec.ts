@@ -38,7 +38,7 @@ const selectEvent = (page: Page, eventName: string) =>
 
 /**
  * Fluxo inteiro num teste só, de propósito: o acerto **é** uma sequência, e cada passo depende do
- * anterior (sem inscrito não há presença, sem presença não há divisão, sem 100% não há crédito).
+ * anterior (sem inscrito não há presença, sem presença não há divisão — TASK-084, AC#7).
  */
 test("caller acerta o evento finalizado: dados, taxa, split e confirmação (AC#1 a #11)", async ({ page }) => {
   test.setTimeout(180_000);
@@ -134,31 +134,34 @@ test("caller acerta o evento finalizado: dados, taxa, split e confirmação (AC#
   await expect(taxa.getByText("De 10.000.000, retém 1.000.000 (10%) para", { exact: false })).toBeVisible();
   await expect(taxa.getByText("sobram 9.000.000 para dividir", { exact: false })).toBeVisible();
   await snap(page, `acerto-taxa-${tag()}`);
+  /*
+   * Ninguém ficou na call neste ambiente (o bot está desligado no e2e), então a presença medida nasce
+   * em 0% para todo mundo — e sem presença não há divisão (TASK-084, AC#7). É o caso que o rodapé
+   * existe para mostrar, e o gesto seguinte é o que a TASK-084 pede: dar presença.
+   */
+  const presenca = acerto.getByLabel(/^Presença de .* em porcentagem$/).first();
+  await expect(acerto.getByText("ninguém com presença", { exact: false })).toBeVisible();
+  await expect(acerto.getByRole("button", { name: "Calcular divisão" })).toBeDisabled();
+  await snap(page, `acerto-sem-presenca-${tag()}`);
+
+  // AC#1/AC#2: a presença é o que se edita, e a prata sai dela na hora, sem somar 100% na mão.
+  await presenca.fill("50");
+  await expect(acerto.getByText("de presença somada, entre 1 pessoa")).toBeVisible();
+  await expect(acerto.getByText("100% da divisão")).toBeVisible();
   await acerto.getByRole("button", { name: "Calcular divisão" }).click();
   await expect(page.getByText("Divisão calculada").first()).toBeVisible();
-
-  /*
-   * Ninguém ficou na call neste ambiente (o bot está desligado no e2e), então o rateio por tempo
-   * nasce em 0% — é exatamente o caso que o rodapé existe para mostrar, e o que o caller ajusta à mão.
-   */
-  await expect(acerto.getByText("faltam 100%", { exact: true })).toBeVisible();
-  await expect(acerto.getByRole("button", { name: "Confirmar e creditar" })).toBeDisabled();
+  await expect(acerto.getByText("9.000.000").first()).toBeVisible();
   await snap(page, `acerto-rascunho-${tag()}`);
-
-  // AC#5: a soma acompanha a edição e diz o quanto falta, em tempo real.
-  await acerto.getByLabel(/^Participação de .* em porcentagem$/).first().fill("97");
-  await expect(acerto.getByText("faltam 3%", { exact: true })).toBeVisible();
-  await expect(acerto.getByRole("button", { name: "Confirmar e creditar" })).toBeDisabled();
-  await snap(page, `acerto-soma-incompleta-${tag()}`);
 
   // AC#10: com rascunho aberto, arquivar fica bloqueado e explicado.
   await expect(painel.getByText("Há um loot split em rascunho", { exact: false })).toBeVisible();
   await expect(painel.getByRole("button", { name: "Arquivar evento" })).toBeDisabled();
 
-  // AC#5/AC#11: com 100% o rodapé fecha e a prata aparece formatada em PT-BR.
-  await acerto.getByLabel(/^Participação de .* em porcentagem$/).first().fill("100");
-  await expect(acerto.getByText("a divisão fecha")).toBeVisible();
-  await expect(acerto.getByText("9.000.000").first()).toBeVisible();
+  // AC#3: a medição da call aparece ao lado da presença editada, e o rodapé acompanha cada tecla.
+  await acerto.getByLabel(/^Presença de .* em porcentagem$/).first().fill("100");
+  await expect(acerto.getByText("medido 0%").first()).toBeVisible();
+  await expect(acerto.getByText("100%", { exact: true }).first()).toBeVisible();
+  await snap(page, `acerto-presenca-editada-${tag()}`);
   await acerto.getByRole("button", { name: "Confirmar e creditar" }).click();
 
   // AC#7: o diálogo mostra o antes-e-depois e avisa que vira lançamento imutável.
@@ -178,7 +181,12 @@ test("caller acerta o evento finalizado: dados, taxa, split e confirmação (AC#
   // AC#9: confirmado vira somente leitura, com o caminho do estorno escrito.
   await expect(acerto.getByText("Leva 1 confirmada")).toBeVisible();
   await expect(acerto.getByText("a staff estorna os lançamentos", { exact: false })).toBeVisible();
-  await expect(acerto.getByLabel(/^Participação de .* em porcentagem$/)).toHaveCount(0);
+  /*
+   * A leva confirmada não tem mais campo nenhum: ela é registro. O único campo de presença que sobra
+   * na tela é o da **próxima** leva, porque a presença é do evento e segue editável (PE4).
+   */
+  await expect(acerto.getByLabel(/^Presença de .* em porcentagem$/)).toHaveCount(1);
+  await expect(acerto.getByText("Leva 1: o que cada um recebeu")).toBeAttached();
   await snap(page, `acerto-confirmado-${tag()}`);
 
   /* A prata foi creditada de verdade, e não só desenhada: o split voltou confirmado pela API... */
