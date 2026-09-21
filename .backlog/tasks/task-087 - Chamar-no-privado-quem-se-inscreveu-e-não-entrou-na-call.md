@@ -5,7 +5,7 @@ status: In Progress
 assignee:
   - '@claude'
 created_date: '2026-09-21 13:02'
-updated_date: '2026-09-21 14:55'
+updated_date: '2026-09-21 14:56'
 labels: []
 milestone: m-12
 dependencies:
@@ -97,6 +97,8 @@ Ambiente: o Postgres compartilhado do gate (localgate-postgres-1) chegou a 99% d
 | #6 | event-call.interactions.test.ts "AC#6: chamar de novo antes de 5 minutos não manda privado repetido" (4m59s não manda, 5m00 manda) + packages/db/src/event-summons.integration.test.ts (5 casos, Postgres real, inclusive dois cliques simultâneos) |
 | #7 | event-voice.service.test.ts "AC#7: o Discord recusando privado e menção não derruba o início do evento" |
 | #8 | event-call.interactions.test.ts "AC#8: o chamado publica na timeline com quem acionou e quantos foram avisados" + asserções de timeline no teste do start |
+
+Security review (diff da branch, subagent dedicado): nenhum achado HIGH/MEDIUM. Superfícies conferidas: authz/CSRF do endpoint novo (SameOriginGuard + Authorize + assertCan com condição de dono, igual aos irmãos), ator sempre da sessão (o endpoint não lê corpo) e re-checado dentro do serviço, botão do Discord (custom_id só carrega o eventId, validado e recarregado; identidade vem de interaction.user.id), injeção de menção (allowedMentions com users explícito neutraliza @everyone em nome de evento), SQL (drizzle parametrizado, sem sql.raw), exposição de dados (resposta é só a contagem), e o caminho do start que pula CASL (só alcançável pelo hook da transição já autorizada).
 <!-- SECTION:NOTES:END -->
 
 ## Final Summary
