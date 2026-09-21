@@ -18,8 +18,9 @@ import type { EmbedView } from "./embed-view.js";
  * bot, e um contador em memória esqueceria tudo no primeiro restart.
  */
 
-/** 5 minutos por pessoa e por evento (PE15). */
-export const EVENT_SUMMON_COOLDOWN_MS = 5 * 60_000;
+// O intervalo, a conta do chamado e a frase do resultado moram em @albion-hub/shared: o painel mostra
+// exatamente a mesma frase que o menu da call responde no Discord.
+export { EVENT_SUMMON_COOLDOWN_MS, eventSummonSummary, type SummonOutcome } from "@albion-hub/shared";
 
 /** Inscrito do evento, reduzido ao que a seleção do chamado precisa. */
 export interface SummonCandidate {
@@ -82,32 +83,6 @@ export function eventSummonDmView(event: { name: string }, callLink: string | nu
 export function eventSummonMentionText(event: { name: string }, discordIds: readonly string[]): string {
   const mentions = discordIds.map((id) => `<@${id}>`).join(" ");
   return `${mentions} — **${event.name}** começou e vocês estão confirmados. Não consegui chamar no privado (DM fechada para quem não é amigo), então fica o toque por aqui: entrem na call.`;
-}
-
-/** Resultado de um chamado, do jeito que as duas portas e a timeline leem. */
-export interface SummonOutcome {
-  /** Avisados no privado. */
-  notified: number;
-  /** Privado fechado: entraram na menção do chat da call. */
-  mentioned: number;
-  /** Fora do intervalo de 5 minutos: já tinham sido chamados há pouco (PE15). */
-  skipped: number;
-  /** Confirmados fora da call no momento do clique. */
-  targets: number;
-}
-
-const people = (count: number, one: string, many: string) => `${count} ${count === 1 ? one : many}`;
-
-/** Frase única do resultado, usada no efêmero do menu da call e no toast do painel. */
-export function eventSummonSummary(outcome: SummonOutcome): string {
-  if (outcome.targets === 0) return "Todo mundo que está confirmado já está na call. Ninguém foi chamado.";
-  if (outcome.notified === 0 && outcome.mentioned === 0) {
-    return `Ninguém foi chamado agora: ${people(outcome.skipped, "pessoa foi avisada", "pessoas foram avisadas")} há menos de 5 minutos.`;
-  }
-  const parts = [`Chamei ${people(outcome.notified, "pessoa no privado", "pessoas no privado")}.`];
-  if (outcome.mentioned > 0) parts.push(`${people(outcome.mentioned, "está", "estão")} com o privado fechado e ${outcome.mentioned === 1 ? "foi mencionada" : "foram mencionadas"} no chat da call.`);
-  if (outcome.skipped > 0) parts.push(`${people(outcome.skipped, "pessoa já tinha sido chamada", "pessoas já tinham sido chamadas")} há menos de 5 minutos.`);
-  return parts.join(" ");
 }
 
 /** Recusas do chamado, iguais nas duas portas (PT-BR). */
