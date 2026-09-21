@@ -14,6 +14,13 @@ export const DEFAULT_LATE_SIGNUP_BATCH_MS = 3_000;
 /** Quantas perguntas o bot lembra. Passou disso, a mais antiga expira e o clique diz que não vale mais. */
 const MAX_TICKETS = 200;
 
+/**
+ * De quantos eventos o bot lembra "quem já foi perguntado". O processo vive semanas e eventos nascem
+ * todo dia: sem teto, essa memória só cresce. O evento mais antigo sai primeiro, e o pior que acontece
+ * é alguém de um evento velho ser perguntado de novo.
+ */
+const MAX_REMEMBERED_EVENTS = 50;
+
 /** Uma pergunta publicada, do jeito que os botões dela precisam consultar depois. */
 export interface LateSignupTicket {
   id: string;
@@ -89,7 +96,14 @@ export class EventLateSignupService {
   markHandled(eventId: string, discordUserId: string): void {
     const set = this.handled.get(eventId) ?? new Set<string>();
     set.add(discordUserId);
+    // Reinsere para o evento voltar ao fim da ordem: o que sai é o que não recebe gente há mais tempo.
+    this.handled.delete(eventId);
     this.handled.set(eventId, set);
+    while (this.handled.size > MAX_REMEMBERED_EVENTS) {
+      const oldest = this.handled.keys().next();
+      if (oldest.done) break;
+      this.handled.delete(oldest.value);
+    }
   }
 
   private schedule(): void {

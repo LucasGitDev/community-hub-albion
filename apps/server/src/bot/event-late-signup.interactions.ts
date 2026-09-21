@@ -140,7 +140,7 @@ export class EventLateSignupInteractions {
       if (result.reason === "already_signed_up") return EVENT_LATE_REPLIES.alreadySignedUp(person.displayName);
       if (result.reason === "unknown_role") return EVENT_LATE_REPLIES.unknownRole;
       if (result.reason === "not_running") return EVENT_LATE_REPLIES.notRunning(result.status);
-      if (result.reason === "insufficient_funds") return EVENT_LATE_REPLIES.insufficientFunds(person.displayName, result.fee, result.balance);
+      if (result.reason === "insufficient_funds") return EVENT_LATE_REPLIES.insufficientFunds(person.displayName, result.fee);
       if (result.reason === "role_full") {
         const free = await listEventFreeRoleSlots(this.handle.db, ticket.eventId);
         // Encheu enquanto ele decidia: oferece de novo o que sobrou, em vez de mandar clicar tudo outra vez.
