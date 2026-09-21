@@ -3,7 +3,7 @@ id: doc-005
 title: Decisões v1
 type: specification
 created_date: '2026-09-15 03:22'
-updated_date: '2026-09-21 13:02'
+updated_date: '2026-09-21 15:06'
 ---
 Resultado do grill (R1–R3, 2026-09-15). Referência pra specs e tasks.
 
@@ -325,3 +325,5 @@ fazer conta na mão. O que ele sabe é **quanto cada um participou**.
 | PE14 | Privado fechado (o Discord bloqueia DM de quem não é amigo) **cai para menção no chat da call**, com a lista de quem não pôde ser avisado. Falha silenciosa faria o caller achar que chamou. |
 | PE15 | O mesmo chamado é acionável **pelo menu do evento no painel** e **pelo menu da call no Discord**, com **intervalo de 5 minutos por pessoa**: dois callers clicando (ou um clicando várias vezes) viram privado repetido, e é assim que a pessoa bloqueia o bot. |
 | PE16 | Isso **substitui** o "chamar os ausentes" da PE9, que era menção no chat: a ação passa a ser privado com resumo no chat da call. |
+
+| PE17 | Aceitar alguém no meio **cobra a taxa de entrada** dele normalmente (decisão do usuário, 2026-09-21). É a única cobrança do sistema iniciada por outra pessoa, e Buffunfa não tem saque — o conserto de um engano é `/api/maintenance/buffunfa`. Quem aceita precisa saber que o evento tem taxa; a recusa por saldo insuficiente **não mostra o saldo do alvo** a quem clicou (achado do security review da TASK-086). |
