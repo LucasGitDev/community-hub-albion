@@ -406,7 +406,7 @@ export async function listEventFreeRoleSlots(db: Database, eventId: string): Pro
 }
 
 export type AddLateEventSignupResult =
-  | ({ ok: true; charged: bigint | null } & EventSignupChange)
+  | ({ ok: true; charged: bigint | null; presenceFrom: Date } & EventSignupChange)
   | { ok: false; reason: "not_found" | "unknown_role" | "already_signed_up" | "role_full" }
   | { ok: false; reason: "not_running"; status: EventStatus }
   | { ok: false; reason: "insufficient_funds"; fee: bigint; balance: bigint };
@@ -464,6 +464,6 @@ export async function addLateEventSignup(
       presenceFrom: at,
       at,
     });
-    return { ok: true as const, signup: await reload(tx, signup.id), promoted: null, charged };
+    return { ok: true as const, signup: await reload(tx, signup.id), promoted: null, charged, presenceFrom: at };
   });
 }
