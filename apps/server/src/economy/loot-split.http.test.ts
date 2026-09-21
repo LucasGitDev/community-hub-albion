@@ -516,7 +516,7 @@ describe.skipIf(!baseUrl)("loot split HTTP (TASK-027)", () => {
         expect(res.status).toBe(200);
         expect(res.body.present[0]).toMatchObject({ discordUserId: membroDiscordId, presenceBp: 5000, measuredPresenceBp: 10_000 });
         // Sozinho na lista, ele continua com 100% da divisão: o que muda é o peso, não a fatia.
-        const relido = await send("get", `/api/events/${event.id}/splits/${split.id}`, caller, {});
+        const relido = await http().get(`/api/events/${event.id}/splits/${split.id}`).set("Cookie", caller);
         expect((relido.body as LootSplitDto).lines[0]).toMatchObject({ presenceBp: 5000, shareBp: 10_000, amount: "1000000" });
       });
 
@@ -563,9 +563,9 @@ describe.skipIf(!baseUrl)("loot split HTTP (TASK-027)", () => {
       it("leva confirmada não muda quando a presença é editada depois (PE4, AC#4)", async () => {
         const { event, split } = await drafted("1000000");
         expect((await confirm(caller, event.id, split.id)).status).toBe(200);
-        const antes = (await send("get", `/api/events/${event.id}/splits/${split.id}`, caller, {})).body as LootSplitDto;
+        const antes = (await http().get(`/api/events/${event.id}/splits/${split.id}`).set("Cookie", caller)).body as LootSplitDto;
         expect((await presence(caller, event.id, { entries: [{ discordUserId: membroDiscordId, presenceBp: 1000 }] })).status).toBe(200);
-        const depois = (await send("get", `/api/events/${event.id}/splits/${split.id}`, caller, {})).body as LootSplitDto;
+        const depois = (await http().get(`/api/events/${event.id}/splits/${split.id}`).set("Cookie", caller)).body as LootSplitDto;
         expect(depois.lines).toEqual(antes.lines);
       });
     });
