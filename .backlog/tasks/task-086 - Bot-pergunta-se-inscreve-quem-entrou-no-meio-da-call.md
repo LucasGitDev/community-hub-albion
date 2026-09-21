@@ -1,11 +1,11 @@
 ---
 id: TASK-086
 title: Bot pergunta se inscreve quem entrou no meio da call
-status: In Progress
+status: Done
 assignee:
   - '@agent'
 created_date: '2026-09-21 12:57'
-updated_date: '2026-09-21 14:53'
+updated_date: '2026-09-21 17:27'
 labels: []
 milestone: m-12
 dependencies:
