@@ -5,7 +5,7 @@ status: In Progress
 assignee:
   - '@claude'
 created_date: '2026-09-21 12:57'
-updated_date: '2026-09-21 13:00'
+updated_date: '2026-09-21 13:23'
 labels: []
 milestone: m-12
 dependencies: []
@@ -59,3 +59,9 @@ A presença é dado **do evento** (PE4), não da leva: uma leva confirmada não 
 6. web: tabela do acerto mostra os dois números (presença editável + prata derivada, PE2), em prévia e em rascunho; rodapé troca 'soma 100%' por 'soma das presenças'; e2e do fluxo; screenshots 1280 e 400.
 7. Gate completo, security-review, task-done-check, PR.
 <!-- SECTION:PLAN:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+Security review (skill security-review, subagent): **nenhum achado com confiança >= 8**. Conferidos: autorização da rota nova (`SameOriginGuard` + `@Authorize()` + `assertCan(distribute)` sobre o `ownerUserId`, igual às rotas irmãs — `member` leva 403); ids do cliente (só snowflake com regex, nenhum `userId` de painel; override de snowflake que não esteve na call nem se inscreveu é **inerte**, porque `listEventPresence` monta a lista de `voice_sessions`+`event_signups` e o override só é mesclado em candidato existente); SQL injection (os únicos `sql`` ` são literais `excluded.presence_bp` e `now()`, tudo mais é bind do drizzle); conta do dinheiro (soma das fatias + taxa + sobra = total exato, nunca negativo, sem estouro); migration que desliga a trigger append-only (o `ENABLE` está no mesmo arquivo, `ALTER TABLE ... DISABLE TRIGGER` é transacional no Postgres e a migration roda em transação, então não há como ficar desligada; o UPDATE toca só a coluna nova); imutabilidade (`setEventPresence` só alcança split `draft`, com o evento travado, e a trigger continua de rede).
+<!-- SECTION:NOTES:END -->

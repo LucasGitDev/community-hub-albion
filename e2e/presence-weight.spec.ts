@@ -36,7 +36,7 @@ test("a presença é o peso: o caller edita presença e lê a prata que sai dela
   const templateName = `Presenca ${run}`;
   const eventName = `Evento presenca ${run}`;
 
-  await login(page, "76000000000000001", "staffPe", ["staff"]);
+  await login(page, "78000000000000001", "staffPe", ["staff"]);
   const roles = (await (await page.request.get("/api/event-roles")).json()) as { roles: { id: string; name: string }[] };
   const tank = roles.roles.find((r) => r.name === "Tank")!;
   expect(
@@ -48,7 +48,7 @@ test("a presença é o peso: o caller edita presença e lê a prata que sai dela
     ).status(),
   ).toBe(201);
 
-  await login(page, "76000000000000002", "callerPe", ["caller"]);
+  await login(page, "78000000000000002", "callerPe", ["caller"]);
   await page.goto("/staff/eventos");
   await page.getByRole("button", { name: "Criar evento", exact: true }).first().click();
   const novo = page.getByRole("dialog");
@@ -63,8 +63,8 @@ test("a presença é o peso: o caller edita presença e lê a prata que sai dela
 
   // Dois inscritos: é entre eles que a presença vai decidir a divisão.
   for (const [base, nick, vagas] of [
-    ["76000000000000003", "jogadorUmPe", "0 de 2"],
-    ["76000000000000004", "jogadorDoisPe", "1 de 2"],
+    ["78000000000000003", "jogadorUmPe", "0 de 2"],
+    ["78000000000000004", "jogadorDoisPe", "1 de 2"],
   ] as const) {
     await login(page, base, nick);
     await page.goto("/eventos");
@@ -72,7 +72,7 @@ test("a presença é o peso: o caller edita presença e lê a prata que sai dela
     await expect(page.getByText("Vaga garantida em Tank")).toBeVisible();
   }
 
-  await login(page, "76000000000000002", "callerPe", ["caller"]);
+  await login(page, "78000000000000002", "callerPe", ["caller"]);
   await page.goto("/staff/eventos");
   await selectEvent(page, eventName);
   const painel = page.getByRole("region", { name: eventName });
