@@ -10,6 +10,7 @@ import {
   insertLedgerEntry,
   joinEventRole,
   listEventFreeRoleSlots,
+  listLedgerEntriesByReference,
   listEventPresence,
   listEventRoles,
   openVoiceSession,
@@ -257,6 +258,9 @@ describe.skipIf(!baseUrl)("inscrição no meio da call (TASK-086, Postgres real)
       if (!paid.ok) throw new Error(paid.reason);
       expect(paid.charged).toBe(40n);
       expect(await getLedgerBalance(handle.db, rich.id, "buffunfa")).toBe(60n);
+      // Quem paga não é quem mandou cobrar: o extrato do jogador tem que dizer sozinho quem aceitou.
+      const fee = (await listLedgerEntriesByReference(handle.db, "event", id)).find((e) => e.userId === rich.id);
+      expect(fee).toMatchObject({ kind: "entry_fee", createdBy: owner, amount: -40n });
 
       const refused = await addLateEventSignup(handle.db, { eventId: id, userId: broke.id, slotId: healer.id, actorUserId: owner });
       expect(refused).toMatchObject({ ok: false, reason: "insufficient_funds", fee: 40n, balance: 10n });

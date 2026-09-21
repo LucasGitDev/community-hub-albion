@@ -78,6 +78,13 @@ describe("copy das recusas", () => {
     expect(EVENT_LATE_REPLIES.ignored(3)).toContain("3 pessoas");
   });
 
+  it("a recusa por saldo diz a taxa e não o saldo do outro", () => {
+    // Quem clica é o caller, e qualquer caller cria evento: dizer o saldo daria um jeito de espiá-lo.
+    const reply = EVENT_LATE_REPLIES.insufficientFunds("Ana", 50n);
+    expect(reply).toContain("50");
+    expect(reply).not.toMatch(/tem \d/);
+  });
+
   it("o aceite avisa que a presença começa agora", () => {
     expect(EVENT_LATE_REPLIES.added("Ana", "Tank")).toContain("começa agora");
   });

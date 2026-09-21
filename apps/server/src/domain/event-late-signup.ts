@@ -99,8 +99,12 @@ export const EVENT_LATE_REPLIES = {
   roleFull: (role: string) => `A vaga de **${role}** encheu enquanto você decidia. Escolha outra role.`,
   alreadySignedUp: (name: string) => `${name} já está na lista do evento. Nada foi feito.`,
   unknownRole: "Essa role não é mais do evento. Peça a pergunta de novo.",
-  insufficientFunds: (name: string, fee: bigint, balance: bigint) =>
-    `${name} não tem Buffunfa para a taxa de entrada (precisa de ${formatAmount(fee, "buffunfa")}, tem ${formatAmount(balance, "buffunfa")}). Ninguém foi inscrito.`,
+  /**
+   * Sem o saldo do alvo: quem clica é o caller, e `create Event` é do papel `caller` — dizer o número
+   * daria a qualquer caller um jeito de descobrir o saldo de quem entrou na call dele. A taxa, que é
+   * pública, basta para o caller entender a recusa.
+   */
+  insufficientFunds: (name: string, fee: bigint) => `${name} não tem Buffunfa para a taxa de entrada (${formatAmount(fee, "buffunfa")}). Ninguém foi inscrito.`,
   added: (name: string, role: string) => `**${name}** entrou no evento como **${role}**. A presença dele começa agora.`,
   charged: (name: string, fee: bigint) => `Taxa de entrada cobrada de ${name}: ${formatAmount(fee, "buffunfa")}.`,
   ignored: (count: number) => (count === 1 ? "Pergunta encerrada: ninguém foi inscrito." : `Pergunta encerrada para as ${count} pessoas: ninguém foi inscrito.`),

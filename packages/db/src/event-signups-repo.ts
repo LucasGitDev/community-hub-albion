@@ -448,6 +448,9 @@ export async function addLateEventSignup(
         amount: event.entryFee,
         kind: "entry_fee",
         reference: { type: "event", id: input.eventId },
+        // Diferente do `joinEventRole`, quem paga não é quem mandou cobrar: o extrato do jogador
+        // precisa dizer sozinho quem aceitou a inscrição dele no meio da call.
+        createdBy: input.actorUserId,
         memo: `Taxa de entrada: ${event.name}`,
       });
       if (!paid.ok) return { ok: false as const, reason: "insufficient_funds" as const, fee: event.entryFee, balance: paid.reason === "insufficient_funds" ? paid.balance : 0n };
