@@ -5,7 +5,7 @@ status: In Progress
 assignee:
   - '@agent'
 created_date: '2026-09-21 12:57'
-updated_date: '2026-09-21 14:47'
+updated_date: '2026-09-21 14:53'
 labels: []
 milestone: m-12
 dependencies:
@@ -41,7 +41,7 @@ Sem resposta, nada acontece: silêncio não vira inscrição (PE7). A contagem d
 - [x] #3 Skills aplicáveis do doc-003 invocadas e listadas nas notas
 - [ ] #4 UI alterada: fluxo coberto por e2e e screenshots desktop 1280 e mobile 400 revisados pelo agent
 - [x] #5 Comportamento confere com decisões do doc-005 (Qs citadas) e nada fora do escopo da task
-- [ ] #6 Toca auth, ledger, prata ou saque: security-review sem achado crítico
+- [x] #6 Toca auth, ledger, prata ou saque: security-review sem achado crítico
 - [x] #7 Operação nova que muda estado publica na timeline depois do commit (ator, alvo, valor, ID), com teste que comprova; falha ao publicar nunca derruba a operação
 - [x] #8 Notas e final summary com evidências; commits Conventional atômicos sem co-autor
 - [ ] #9 PR merged na main com quality gate verde; branch e worktree removidos
@@ -112,4 +112,38 @@ alguém pelo motivo errado.
 Skills de UI/design do doc-003 **não se aplicam**: a task não toca o painel web — a interface nova é
 embed e botão do Discord, montados por função pura em `domain/event-late-signup.ts` e cobertos por
 teste unitário de copy e de rótulo. Por isso o DoD#4 (screenshots 1280/400) fica sem marcar.
+
+## security-review (DoD#6)
+
+**Nenhum achado crítico.** A autorização foi conferida: o ator vem de `interaction.user.id` → usuário
+do painel → papéis → CASL sobre o evento recarregado do banco, nunca do custom id; o alvo vem do
+ticket em memória, então id forjado não casa com ticket nenhum; `slotId` forjado é validado por
+`findSlot(tx, eventId, slotId)` dentro da transação, então não dá para usar vaga de outro evento.
+A cobrança e a vaga são a mesma transação (`lockEvent` → `spendCurrencyTx` → `insertSignup`), só
+INSERT no ledger, valores em bigint.
+
+Três achados não-críticos foram **corrigidos** no commit `fix(bot): fecha achados do security review`:
+1. **Vazamento de saldo alheio** (importante): a recusa por falta de Buffunfa mostrava o saldo exato
+   do alvo para quem clicou. Como `create Event` é do papel `caller`, qualquer caller poderia criar
+   um evento e descobrir o saldo de quem entrasse na call. Agora a mensagem diz só a taxa, que é
+   pública. Teste: 'a recusa por saldo diz a taxa e não o saldo do outro'.
+2. **Memória sem teto** (importante): `handled` (quem já foi perguntado, por evento) crescia pela vida
+   do processo. Ganhou teto de 50 eventos com descarte do mais antigo; o pior caso é alguém de um
+   evento velho ser perguntado de novo.
+3. **Autor da cobrança** (sugestão): o lançamento de `entry_fee` não gravava quem mandou cobrar. Aqui,
+   diferente do `joinEventRole`, quem paga não é quem age — agora vai `createdBy: actorUserId`, com
+   teste conferindo `createdBy` no extrato.
+
+**Para o usuário decidir (não mudei):** o aceite **debita a taxa de entrada em Buffunfa de um terceiro**
+que só entrou no canal de voz, sem confirmação dele. É a leitura direta da PE7 (o caller decide quem
+entra), e a inscrição normal também cobra — mas é a única cobrança do sistema iniciada por outro
+usuário, e Buffunfa não tem saque, então o conserto só existe por `/api/maintenance/buffunfa`. Se isso
+não for o desejado, o aceite precisaria pedir confirmação do alvo quando `entryFee > 0` — é mudança de
+decisão do doc-005, fora do escopo desta task.
 <!-- SECTION:NOTES:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+Quem entra na call de um evento em andamento sem estar inscrito vira uma pergunta no chat de texto do próprio canal de voz, com Inscrever e Ignorar (PE7). Inscrever abre as roles com vaga e só então inscreve; sem vaga, recusa explícita. Ignorar encerra o lote. Sem resposta, nada acontece. A presença de quem é aceito conta a partir do aceite (PE8) via event_signups.presence_from, lido pela mesma medição de sempre com o início da janela empurrado só para essa pessoa — o denominador continua sendo a call inteira. Contra enxurrada de perguntas: lote de 3 s com até 4 pessoas por mensagem, memória por evento de quem já foi perguntado ou ignorado, e conferência de quem ainda está na call na hora de publicar. Verificado com 12 testes de integração no Postgres (presença a partir do aceite, taxa, role cheia), 16 testes do bot com Discord falso (pergunta, aceite, ignorar, recusa por permissão, custom id forjado, timeline) e 10 unitários da regra pura; quality gate verde (coverage de branch 87.49%, e2e 158 ok) e security-review sem achado crítico.
+<!-- SECTION:FINAL_SUMMARY:END -->
