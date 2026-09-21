@@ -1,4 +1,4 @@
-import type { EventCreateInput, EventDto, EventMemberDto, EventSignupDto, EventStatus, EventTransition } from "@albion-hub/shared";
+import type { EventCreateInput, EventDto, EventMemberDto, EventSignupDto, EventStatus, EventTransition, SummonOutcome } from "@albion-hub/shared";
 import type { EventBoard } from "@/lib/events";
 import { api } from "./http";
 
@@ -18,6 +18,12 @@ export const createEvent = (body: Omit<EventCreateInput, "startsAt" | "signupsCl
 /** `reason` só é guardado no cancelamento (TASK-025); as outras transições ignoram o corpo. */
 export const transitionEvent = (eventId: string, transition: EventTransition, reason?: string): Promise<EventDto> =>
   api(`/api/events/${eventId}/transitions/${transition}`, { method: "POST", body: JSON.stringify({ reason: reason || null }) });
+
+/**
+ * Chama no privado quem confirmou e não está na call (TASK-087, PE15). Mesma ação do menu da call no
+ * Discord; o servidor é quem decide quem recebe e respeita o intervalo de 5 minutos por pessoa.
+ */
+export const summonEventAbsentees = (eventId: string): Promise<SummonOutcome> => api(`/api/events/${eventId}/summon`, { method: "POST" });
 
 /** Correção dos dados do evento no acerto (TASK-029, AC#2). Arquivado recusa com 409 do servidor. */
 export const updateEvent = (eventId: string, body: { name: string; description: string | null }): Promise<EventDto> =>

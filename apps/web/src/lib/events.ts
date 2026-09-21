@@ -125,6 +125,14 @@ export const canManageRoster = (event: EventDto, ability: AppAbility): boolean =
   (event.status === "open" || event.status === "closed") && ability.can("update", asSubject("Event", { ownerId: event.ownerUserId }));
 
 /**
+ * Chamar quem não entrou na call é `update Event` (owner ou staff), e **só com o evento em andamento**
+ * (TASK-087, PE15): antes de começar não existe call para onde chamar, e depois de acabar o chamado
+ * seria um privado sobre um evento que já terminou. A API refaz a checagem e devolve 403/409.
+ */
+export const canSummonAbsentees = (event: EventDto, ability: AppAbility): boolean =>
+  event.status === "running" && ability.can("update", asSubject("Event", { ownerId: event.ownerUserId }));
+
+/**
  * Mexer na taxa de entrada é `update Event` (owner ou staff) **enquanto as inscrições estão abertas**
  * (TASK-058, `entryFeeEditable`). Depois disso a lista já foi cobrada, e um preço novo valeria para
  * quem pagou o antigo. A API refaz a mesma checagem e devolve 409.
