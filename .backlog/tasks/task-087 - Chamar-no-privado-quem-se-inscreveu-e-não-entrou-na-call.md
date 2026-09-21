@@ -1,11 +1,11 @@
 ---
 id: TASK-087
 title: Chamar no privado quem se inscreveu e não entrou na call
-status: In Progress
+status: Done
 assignee:
   - '@claude'
 created_date: '2026-09-21 13:02'
-updated_date: '2026-09-21 14:59'
+updated_date: '2026-09-21 15:03'
 labels: []
 milestone: m-12
 dependencies:
