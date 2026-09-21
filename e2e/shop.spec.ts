@@ -13,7 +13,14 @@ import { login, snap, ORIGIN } from "./session";
  * item de outro teste.
  */
 const RUN = String(Date.now());
-const tag = (name: string) => `${name} ${RUN}${test.info().project.name === "mobile" ? "m" : "d"}`;
+/**
+ * Contador por processo: dois testes do mesmo arquivo pedem "Criação de evento" e, rodando no **mesmo
+ * worker**, compartilham o `RUN` — sem o número o nome sairia igual nos dois e o locator do card
+ * casaria com dois itens (`strict mode violation`). O número entra no fim para o nome de um item nunca
+ * ser prefixo do nome de outro, já que `hasText` casa por trecho.
+ */
+let seq = 0;
+const tag = (name: string) => `${name} ${RUN}${test.info().project.name === "mobile" ? "m" : "d"}${++seq}`;
 
 /** Cadastra um item pela API, como a staff faria pela tela; devolve o nome completo. */
 async function publish(page: Page, item: { name: string; description?: string; price: string; stock?: number | null }): Promise<string> {
