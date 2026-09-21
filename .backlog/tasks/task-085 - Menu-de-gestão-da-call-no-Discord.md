@@ -4,6 +4,7 @@ title: Menu de gestão da call no Discord
 status: To Do
 assignee: []
 created_date: '2026-09-21 12:57'
+updated_date: '2026-09-21 13:02'
 labels: []
 milestone: m-12
 dependencies: []
@@ -28,9 +29,8 @@ Fechar a call é tirar a permissão de entrar de quem não está inscrito, deixa
 - [ ] #2 Finalizar o evento pelo menu faz o mesmo que finalizar pelo painel, passando pelo mesmo serviço
 - [ ] #3 Fechar a call impede a entrada de quem não está inscrito e não remove ninguém que já está dentro
 - [ ] #4 Abrir a call desfaz o fechamento
-- [ ] #5 Chamar os ausentes menciona quem se inscreveu e não está na call
-- [ ] #6 Quem não é caller do evento nem staff recebe recusa ao clicar, e nada é executado
-- [ ] #7 Cada ação do menu publica na timeline com quem clicou
+- [ ] #5 Quem não é caller do evento nem staff recebe recusa ao clicar, e nada é executado
+- [ ] #6 Cada ação do menu publica na timeline com quem clicou
 <!-- AC:END -->
 
 ## Definition of Done
@@ -45,3 +45,9 @@ Fechar a call é tirar a permissão de entrar de quem não está inscrito, deixa
 - [ ] #8 Notas e final summary com evidências; commits Conventional atômicos sem co-autor
 - [ ] #9 PR merged na main com quality gate verde; branch e worktree removidos
 <!-- DOD:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+Escopo reduzido em 2026-09-21: 'chamar os ausentes' saiu do menu e virou a TASK-087 (privado para cada confirmado ausente, com queda para menção, intervalo de 5 min e gatilho também no painel — PE12 a PE16). O menu fica com finalizar o evento, fechar a call e abrir a call.
+<!-- SECTION:NOTES:END -->
