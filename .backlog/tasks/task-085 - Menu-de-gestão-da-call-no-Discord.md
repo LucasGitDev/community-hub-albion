@@ -1,11 +1,11 @@
 ---
 id: TASK-085
 title: Menu de gestão da call no Discord
-status: In Progress
+status: Done
 assignee:
   - '@claude'
 created_date: '2026-09-21 12:57'
-updated_date: '2026-09-21 13:19'
+updated_date: '2026-09-21 13:22'
 labels: []
 milestone: m-12
 dependencies: []
