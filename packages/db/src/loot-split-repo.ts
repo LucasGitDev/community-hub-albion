@@ -3,7 +3,10 @@ import {
   calculateSplitDraft,
   checkSplitConfirm,
   distributeByShare,
+  effectivePresenceBp,
   feeBreakdown,
+  measuredPresenceBp,
+  sharesFromPresence,
   type EventFee,
   type EventStatus,
   type LootSplitDto,
@@ -18,7 +21,7 @@ import type { Database } from "./client.js";
 import type { EventTx } from "./events-repo.js";
 import { listLedgerEntriesByReference, reverseLedgerEntry } from "./ledger-repo.js";
 import { memberNick } from "./member-nick.js";
-import { eventSignups, events, ledgerEntries, lootSplitLines, lootSplits, users, voiceSessions, withdrawals } from "./schema.js";
+import { eventPresenceOverrides, eventSignups, events, ledgerEntries, lootSplitLines, lootSplits, users, voiceSessions, withdrawals } from "./schema.js";
 import { overlapMs } from "./voice-repo.js";
 
 /**
@@ -36,6 +39,8 @@ interface Candidate extends SplitPresence {
   userId: string | null;
   nick: string | null;
   roleName: string | null;
+  /** Medição crua da call, sem a edição do caller: é o que explica de onde a presença veio (PE3). */
+  measuredPresenceBp: number;
 }
 
 /**
@@ -103,7 +108,7 @@ export async function listEventPresence(db: Database | EventTx, eventId: string)
   const put = (discordUserId: string): Candidate => {
     const found = byDiscordId.get(discordUserId);
     if (found) return found;
-    const created: Candidate = { discordUserId, presenceMs: 0, signedUp: false, userId: null, nick: null, roleName: null };
+      const created: Candidate = { discordUserId, presenceMs: 0, signedUp: false, presenceBp: 0, measuredPresenceBp: 0, userId: null, nick: null, roleName: null };
     byDiscordId.set(discordUserId, created);
     return created;
   };
@@ -152,8 +157,119 @@ export async function listEventPresence(db: Database | EventTx, eventId: string)
     }
   }
 
-  // Ordem estável e útil: mais presente primeiro, empate pelo snowflake.
-  return [...byDiscordId.values()].sort((a, b) => b.presenceMs - a.presenceMs || (a.discordUserId < b.discordUserId ? -1 : 1));
+  // A presença que vale (PE3): a medida sobre a janela da call, ou a que o caller editou por cima.
+  const [windowMs, overrides] = await Promise.all([eventCallWindowMs(db, eventId), listEventPresenceOverrides(db, eventId)]);
+  for (const candidate of byDiscordId.values()) {
+    candidate.measuredPresenceBp = measuredPresenceBp(candidate.presenceMs, windowMs);
+    candidate.presenceBp = effectivePresenceBp(candidate, windowMs, overrides.get(candidate.discordUserId));
+  }
+
+  // Ordem estável e útil: maior presença primeiro, empate pelo tempo medido e depois pelo snowflake.
+  return [...byDiscordId.values()].sort(
+    (a, b) => b.presenceBp - a.presenceBp || b.presenceMs - a.presenceMs || (a.discordUserId < b.discordUserId ? -1 : 1),
+  );
+}
+
+/* ------------------------------------------- presença editada (TASK-084) */
+
+/**
+ * O que o caller mudou na presença deste evento, por snowflake (PE1, PE4).
+ *
+ * Só as exceções: quem não está aqui fica com a medição da call, e é assim que PE3 se sustenta sem
+ * precisar copiar a lista de presença para dentro do evento na hora do finish.
+ */
+export async function listEventPresenceOverrides(db: Database | EventTx, eventId: string): Promise<Map<string, number>> {
+  const rows = await db
+    .select({ discordUserId: eventPresenceOverrides.discordUserId, presenceBp: eventPresenceOverrides.presenceBp })
+    .from(eventPresenceOverrides)
+    .where(eq(eventPresenceOverrides.eventId, eventId));
+  return new Map(rows.map((r) => [r.discordUserId, r.presenceBp]));
+}
+
+export interface SetEventPresenceInput {
+  entries: readonly { discordUserId: string; presenceBp: number }[];
+  actorUserId: string | null;
+}
+
+export type SetEventPresenceResult =
+  | { ok: true; present: Candidate[]; draftSplitId: string | null }
+  | { ok: false; reason: "not_found" }
+  | { ok: false; reason: "event_not_editable"; status: EventStatus };
+
+/**
+ * Edita a presença do evento e re-sincroniza o rascunho aberto (PE1, PE2, PE4).
+ *
+ * Duas coisas acontecem na **mesma** transação, e é a transação que faz a promessa da PE4 valer:
+ * 1. a presença nova é gravada no **evento** (upsert por snowflake) — parcial, porque cada presença é
+ *    um número sobre uma pessoa e não uma fatia de um bolo fechado;
+ * 2. o split em **rascunho**, se houver, é recalculado inteiro a partir dela: participação e prata.
+ *
+ * A leva já **confirmada** não é tocada — nem aqui, nem em lugar nenhum: ela guarda a presença que
+ * usou em `loot_split_lines.presence_bp`, e as triggers append-only recusariam o UPDATE de qualquer
+ * jeito. Editar a presença depois de confirmar vale para as **próximas** levas, e é exatamente o que
+ * a PE4 pede.
+ *
+ * O evento é travado antes de qualquer leitura (a mesma ordem evento→split de todo caminho de escrita
+ * daqui), e evento fora de `finished` recusa: o acerto acontece no `finished` (Q26).
+ */
+export async function setEventPresence(db: Database, eventId: string, input: SetEventPresenceInput): Promise<SetEventPresenceResult> {
+  const done = await db.transaction(async (tx) => {
+    const [event] = await tx.select({ status: events.status }).from(events).where(eq(events.id, eventId)).for("update");
+    if (!event) return { ok: false as const, reason: "not_found" as const };
+    if (event.status !== "finished") return { ok: false as const, reason: "event_not_editable" as const, status: event.status };
+
+    if (input.entries.length > 0)
+      await tx
+        .insert(eventPresenceOverrides)
+        .values(input.entries.map((e) => ({ eventId, discordUserId: e.discordUserId, presenceBp: e.presenceBp, updatedBy: input.actorUserId })))
+        .onConflictDoUpdate({
+          target: [eventPresenceOverrides.eventId, eventPresenceOverrides.discordUserId],
+          set: { presenceBp: sql`excluded.presence_bp`, updatedBy: input.actorUserId, updatedAt: sql`now()` },
+        });
+
+    const [draft] = await tx
+      .select({ id: lootSplits.id })
+      .from(lootSplits)
+      .where(and(eq(lootSplits.eventId, eventId), eq(lootSplits.status, "draft")))
+      .for("update")
+      .limit(1);
+    if (draft) await resyncDraftFromPresence(tx, draft.id, eventId);
+    return { ok: true as const, draftSplitId: draft?.id ?? null };
+  });
+  if (!done.ok) return done;
+  return { ok: true, present: await listEventPresence(db, eventId), draftSplitId: done.draftSplitId };
+}
+
+/**
+ * Reescreve participação e prata do rascunho a partir da presença de agora (PE2).
+ *
+ * Não recria linhas: quem está no rascunho é quem estava na call ou inscrito quando ele nasceu, e a
+ * presença editada só muda o peso de cada um. A prata sai da **mesma** `distributeByShare` da
+ * confirmação, então o número que a tela relê é o número que o ledger vai creditar.
+ */
+async function resyncDraftFromPresence(tx: EventTx, splitId: string, eventId: string): Promise<void> {
+  const [split] = await tx
+    .select({ totalSilver: lootSplits.totalSilver, feeType: lootSplits.feeType, feeValue: lootSplits.feeValue })
+    .from(lootSplits)
+    .where(eq(lootSplits.id, splitId));
+  if (!split) return;
+  const present = await listEventPresence(tx, eventId);
+  const presenceOf = new Map(present.map((p) => [p.discordUserId, p.presenceBp]));
+  const lines = await tx
+    .select({ id: lootSplitLines.id, discordUserId: lootSplitLines.discordUserId })
+    .from(lootSplitLines)
+    .where(eq(lootSplitLines.splitId, splitId))
+    .orderBy(asc(lootSplitLines.id));
+  const weights = lines.map((line) => ({ key: line.discordUserId, presenceBp: presenceOf.get(line.discordUserId) ?? 0 }));
+  const shares = sharesFromPresence(weights);
+  const { distributable } = feeBreakdown(split.totalSilver, { type: split.feeType, value: split.feeValue });
+  const { amounts, residual } = distributeByShare(shares, distributable);
+  for (const [index, line] of lines.entries())
+    await tx
+      .update(lootSplitLines)
+      .set({ presenceBp: weights[index]!.presenceBp, shareBp: shares[index]!, amountSilver: amounts[index]! })
+      .where(eq(lootSplitLines.id, line.id));
+  await tx.update(lootSplits).set({ residualSilver: residual, updatedAt: new Date() }).where(eq(lootSplits.id, splitId));
 }
 
 export interface CreateLootSplitInput {
@@ -213,6 +329,7 @@ export async function createLootSplit(db: Database, input: CreateLootSplitInput)
           signedUp: line.signedUp,
           roleName: line.roleName,
           presenceMs: line.presenceMs,
+          presenceBp: line.presenceBp,
           shareBp: line.shareBp,
           amountSilver: line.amount,
         })),
@@ -236,6 +353,7 @@ async function loadSplits(db: Database, where: SQL): Promise<LootSplitDto[]> {
       signedUp: lootSplitLines.signedUp,
       roleName: lootSplitLines.roleName,
       presenceMs: lootSplitLines.presenceMs,
+      presenceBp: lootSplitLines.presenceBp,
       shareBp: lootSplitLines.shareBp,
       amountSilver: lootSplitLines.amountSilver,
     })
@@ -263,7 +381,7 @@ async function loadSplits(db: Database, where: SQL): Promise<LootSplitDto[]> {
     lines: lines
       .filter((line) => line.splitId === split.id)
       .map(
-        ({ id, discordUserId, userId, nick, signedUp, roleName, presenceMs, shareBp, amountSilver }): LootSplitLineDto => ({
+        ({ id, discordUserId, userId, nick, signedUp, roleName, presenceMs, presenceBp, shareBp, amountSilver }): LootSplitLineDto => ({
           id,
           discordUserId,
           userId,
@@ -271,12 +389,13 @@ async function loadSplits(db: Database, where: SQL): Promise<LootSplitDto[]> {
           signedUp,
           roleName,
           presenceMs,
+          presenceBp,
           shareBp,
           amount: amountSilver.toString(),
         }),
       )
-      // Maior participação primeiro; quem ficou com 0% (não inscrito, Q7) cai para o fim da lista.
-      .sort((a, b) => b.shareBp - a.shareBp || b.presenceMs - a.presenceMs || (a.discordUserId < b.discordUserId ? -1 : 1)),
+      // Maior participação primeiro; quem ficou com 0% (presença zero, PE6) cai para o fim da lista.
+      .sort((a, b) => b.shareBp - a.shareBp || b.presenceBp - a.presenceBp || (a.discordUserId < b.discordUserId ? -1 : 1)),
   }));
 }
 
@@ -344,38 +463,39 @@ async function lockSplit(tx: EventTx, splitId: string): Promise<SplitContext | n
 /** Linhas do split na ordem estável de sempre, com o que a conferência precisa. */
 async function splitLinesFor(tx: EventTx, splitId: string) {
   return tx
-    .select({ id: lootSplitLines.id, userId: lootSplitLines.userId, signedUp: lootSplitLines.signedUp, shareBp: lootSplitLines.shareBp })
+    .select({
+      id: lootSplitLines.id,
+      discordUserId: lootSplitLines.discordUserId,
+      userId: lootSplitLines.userId,
+      signedUp: lootSplitLines.signedUp,
+      presenceBp: lootSplitLines.presenceBp,
+      shareBp: lootSplitLines.shareBp,
+    })
     .from(lootSplitLines)
     .where(eq(lootSplitLines.splitId, splitId))
     .orderBy(asc(lootSplitLines.id));
 }
 
 export interface UpdateLootSplitInput {
-  /** Novo total bruto da leva. Ausente mantém o que está lá. */
-  totalSilver?: bigint;
-  /** Nova participação por linha. Quando vem, precisa cobrir **todas** as linhas do split. */
-  lines?: readonly { id: string; shareBp: number }[];
+  /** Novo total bruto da leva. É a única coisa que se edita no rascunho (PE1). */
+  totalSilver: bigint;
 }
 
 export type UpdateLootSplitResult =
   | { ok: true; split: LootSplitDto }
   | { ok: false; reason: "not_found" }
   | { ok: false; reason: "not_draft"; status: LootSplitStatus }
-  | { ok: false; reason: "event_not_editable"; status: EventStatus }
-  | { ok: false; reason: "unknown_lines" }
-  | { ok: false; reason: "share_without_signup" };
+  | { ok: false; reason: "event_not_editable"; status: EventStatus };
 
 /**
- * Edita o rascunho: total da leva e/ou percentuais (AC#1).
+ * Edita o rascunho: só o **total da leva** (PE1).
  *
- * A soma **não** é exigida aqui de propósito — durante a edição ela passa por estados intermediários
- * o tempo todo, e travar cada passo tornaria a tela impossível de usar. Quem exige 100% é a
- * confirmação (Q22), que é onde a prata de fato nasce.
+ * Os percentuais saíram daqui na TASK-084. O que o caller edita é a **presença**, que é dado do evento
+ * (`setEventPresence`, PE4), e a participação é derivada dela — então mudar o total só redistribui a
+ * prata com os pesos que já estão valendo, e a lista continua fechando 100% sozinha.
  *
  * O que é exigido: o split ainda ser rascunho (confirmado é imutável — a trigger recusaria de
- * qualquer jeito) e o evento ainda estar `finished` (arquivado não aceita nada, Q26). Se `lines` vem,
- * ela precisa cobrir exatamente as linhas deste split: participação é bolo fechado, e aceitar uma
- * lista parcial deixaria o resto num valor que ninguém escolheu.
+ * qualquer jeito) e o evento ainda estar `finished` (arquivado não aceita nada, Q26).
  */
 export async function updateLootSplitDraft(db: Database, splitId: string, input: UpdateLootSplitInput): Promise<UpdateLootSplitResult> {
   const updated = await db.transaction(async (tx) => {
@@ -385,26 +505,20 @@ export async function updateLootSplitDraft(db: Database, splitId: string, input:
     if (ctx.eventStatus !== "finished") return { ok: false as const, reason: "event_not_editable" as const, status: ctx.eventStatus };
 
     const lines = await splitLinesFor(tx, splitId);
-    if (input.lines) {
-      const wanted = new Map(input.lines.map((line) => [line.id, line.shareBp]));
-      if (wanted.size !== lines.length || lines.some((line) => !wanted.has(line.id))) return { ok: false as const, reason: "unknown_lines" as const };
-      for (const line of lines) line.shareBp = wanted.get(line.id)!;
-    }
-    // Mesma regra do CHECK do banco (Q7), só que com uma frase em vez de um erro de constraint.
-    if (lines.some((line) => !line.signedUp && line.shareBp > 0)) return { ok: false as const, reason: "share_without_signup" as const };
-
-    const totalSilver = input.totalSilver ?? ctx.totalSilver;
-    const { feeSilver, distributable } = feeBreakdown(totalSilver, ctx.fee);
-    const { amounts, residual } = distributeByShare(
-      lines.map((line) => line.shareBp),
-      distributable,
-    );
+    const { feeSilver, distributable } = feeBreakdown(input.totalSilver, ctx.fee);
+    // A participação é sempre rederivada da presença guardada na linha: não existe um segundo lugar
+    // onde ela possa ter sido digitada, e por isso não existe estado em que os dois discordem.
+    const shares = sharesFromPresence(lines.map((line) => ({ key: line.discordUserId, presenceBp: line.presenceBp })));
+    const { amounts, residual } = distributeByShare(shares, distributable);
     for (const [index, line] of lines.entries())
       await tx
         .update(lootSplitLines)
-        .set({ shareBp: line.shareBp, amountSilver: amounts[index]! })
+        .set({ shareBp: shares[index]!, amountSilver: amounts[index]! })
         .where(eq(lootSplitLines.id, line.id));
-    await tx.update(lootSplits).set({ totalSilver, feeSilver, residualSilver: residual, updatedAt: new Date() }).where(eq(lootSplits.id, splitId));
+    await tx
+      .update(lootSplits)
+      .set({ totalSilver: input.totalSilver, feeSilver, residualSilver: residual, updatedAt: new Date() })
+      .where(eq(lootSplits.id, splitId));
     return { ok: true as const };
   });
   if (!updated.ok) return updated;
@@ -474,13 +588,19 @@ export async function confirmLootSplit(db: Database, splitId: string, input: Con
     const paidLineIds = new Set(input.paidInGame?.lineIds ?? []);
     // Linha de outro split (ou inventada) não é "desmarcada por engano": é pedido errado, e nada é lançado.
     if ([...paidLineIds].some((id) => !lines.some((line) => line.id === id))) return { ok: false as const, reason: "unknown_lines" as const };
-    const checked = checkSplitConfirm(lines, ctx.totalSilver, ctx.fee);
+    // A divisão é derivada da presença aqui dentro, na transação (PE2): o que a tela mostrou e o que o
+    // ledger credita saem da mesma função, sobre a mesma presença, no mesmo instante.
+    const checked = checkSplitConfirm(
+      lines.map((line) => ({ key: line.discordUserId, presenceBp: line.presenceBp, userId: line.userId })),
+      ctx.totalSilver,
+      ctx.fee,
+    );
     if (!checked.ok) return { ok: false as const, reason: "refused" as const, refusal: checked.reason };
-    const { fee, amounts, residual, ownerSilver } = checked.plan;
+    const { fee, shares, amounts, residual, ownerSilver } = checked.plan;
 
-    // Reescreve a prata das linhas com a conta final: é o que o extrato vai ter que bater depois.
+    // Reescreve participação e prata com a conta final: é o que o extrato vai ter que bater depois.
     for (const [index, line] of lines.entries())
-      await tx.update(lootSplitLines).set({ amountSilver: amounts[index]! }).where(eq(lootSplitLines.id, line.id));
+      await tx.update(lootSplitLines).set({ shareBp: shares[index]!, amountSilver: amounts[index]! }).where(eq(lootSplitLines.id, line.id));
 
     // Loot split paga **prata** (Q23): a Buffunfa do evento é outra coisa, e não nasce aqui.
     const reference = { referenceType: "loot_split" as const, referenceId: splitId, createdBy: input.actorUserId, currency: "silver" as const };

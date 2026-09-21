@@ -731,7 +731,16 @@ export const lootSplitLines = pgTable(
     /** Role da inscrição, copiada como em `event_signups`: a role pode sumir do catálogo depois. */
     roleName: text("role_name"),
     presenceMs: bigint("presence_ms", { mode: "number" }).notNull(),
-    /** Participação em basis points: 10000 = 100%. A soma das linhas fecha 10000 exato. */
+    /**
+     * Presença **que esta leva usou**, em basis points (TASK-084, PE4).
+     *
+     * A presença é dado do **evento** (`event_presence_overrides`) e muda quando o caller edita, mas a
+     * leva precisa guardar a sua cópia: uma leva confirmada não pode mudar de divisão porque alguém
+     * mexeu na presença depois. O rascunho reescreve esta coluna a cada edição; o confirmado não, e
+     * quem garante isso são as triggers append-only do split.
+     */
+    presenceBp: integer("presence_bp").notNull().default(0),
+    /** Participação derivada da presença (PE2): 10000 = 100%. A soma das linhas fecha 10000 exato. */
     shareBp: integer("share_bp").notNull(),
     /** Prata desta linha sobre o **distribuível** (total menos a taxa). É o valor creditado no ledger. */
     amountSilver: bigint("amount_silver", { mode: "bigint" }).notNull(),
@@ -742,9 +751,43 @@ export const lootSplitLines = pgTable(
     index("loot_split_lines_user_idx").on(t.userId),
     check("loot_split_lines_presence_not_negative", sql`${t.presenceMs} >= 0`),
     check("loot_split_lines_share_range", sql`${t.shareBp} between 0 and 10000`),
+    check("loot_split_lines_presence_bp_range", sql`${t.presenceBp} between 0 and 10000`),
     check("loot_split_lines_amount_not_negative", sql`${t.amountSilver} >= 0`),
-    // Q7: não inscrito entra na lista para ser visto, mas sem participação.
-    check("loot_split_lines_not_signed_up_has_no_share", sql`${t.signedUp} or (${t.shareBp} = 0 and ${t.amountSilver} = 0)`),
+    // Participação sem presença não existe (PE2): o que divide o bolo é a presença, e só ela.
+    check("loot_split_lines_share_needs_presence", sql`${t.presenceBp} > 0 or (${t.shareBp} = 0 and ${t.amountSilver} = 0)`),
+  ],
+);
+
+/**
+ * Presença editada do evento (TASK-084, PE1/PE3/PE4).
+ *
+ * Guarda **só o que o caller mudou**: sem linha aqui, a presença da pessoa é a medida na call
+ * (`measuredPresenceBp` sobre `eventCallWindowMs`), e é assim que PE3 sai de graça — a presença nasce
+ * da medição, e editar é acrescentar uma exceção, não copiar a lista inteira.
+ *
+ * Mora no **evento** e não na leva de split (PE4): um evento tem N levas, e a presença é a mesma para
+ * todas as que ainda não foram confirmadas. A leva confirmada congela a sua cópia em
+ * `loot_split_lines.presence_bp` e não olha mais para cá.
+ *
+ * A chave é o snowflake do Discord, como em `voice_sessions`: quem esteve na call pode não ter conta no
+ * painel, e mesmo assim tem presença (e o caller pode dar presença a ele, PE6).
+ */
+export const eventPresenceOverrides = pgTable(
+  "event_presence_overrides",
+  {
+    eventId: uuid("event_id")
+      .notNull()
+      .references(() => events.id, { onDelete: "cascade" }),
+    discordUserId: text("discord_user_id").notNull(),
+    /** Presença de 0 a 100% em basis points (PE1). Independente: não precisa somar 100% com ninguém. */
+    presenceBp: integer("presence_bp").notNull(),
+    /** Quem editou. `set null` porque a presença do evento sobrevive à conta de quem a ajustou. */
+    updatedBy: uuid("updated_by").references(() => users.id, { onDelete: "set null" }),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    primaryKey({ columns: [t.eventId, t.discordUserId] }),
+    check("event_presence_overrides_range", sql`${t.presenceBp} between 0 and 10000`),
   ],
 );
 

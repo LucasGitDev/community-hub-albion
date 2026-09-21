@@ -104,13 +104,22 @@ const toPresence = (c: Awaited<ReturnType<typeof listEventPresence>>[number]): S
   signedUp: c.signedUp,
   roleName: c.roleName,
   presenceMs: c.presenceMs,
+  presenceBp: c.presenceBp,
+  measuredPresenceBp: c.measuredPresenceBp,
 });
 
 /**
  * Prévia (antes do pagamento) e recibo (depois): a mesma conta, com os mesmos valores por role.
- * Depois do pagamento os valores estão congelados e a presença é histórico, então recalcular devolve
- * exatamente o que foi lançado — é por isso que não existe tabela de linhas aqui, ao contrário do
- * split, cujos percentuais o caller edita à mão.
+ *
+ * A presença que entra no corte de 90% é a do **fechamento** (PE5): a medida na call, ou a que o
+ * caller editou na tela do loot split. Ela chega pronta em `listEventPresence` — não há uma segunda
+ * medição aqui, e é isso que impede o caller de ajustar a presença de um lado e não entender por que
+ * o outro não mudou.
+ *
+ * Depois do pagamento os valores por role estão congelados, então recalcular devolve exatamente o que
+ * foi lançado. Editar a presença depois de pago não muda lançamento nenhum (o ledger é imutável), mas
+ * mudaria a tela — por isso `setEventRoleBuffunfa` já recusa depois de pago, e o recibo vive do
+ * `buffunfa_paid_at`.
  */
 export async function previewEventAttendance(db: Database, eventId: string): Promise<EventAttendancePreview | null> {
   const [event] = await db

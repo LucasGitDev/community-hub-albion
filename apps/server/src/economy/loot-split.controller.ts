@@ -2,6 +2,7 @@ import { BadRequestException, Body, ConflictException, Controller, ForbiddenExce
 import {
   asSubject,
   eventFeeUpdateSchema,
+  eventPresenceUpdateSchema,
   firstIssue,
   lootSplitConfirmSchema,
   lootSplitCreateSchema,
@@ -113,6 +114,29 @@ export class LootSplitController {
     return { present: await this.splits.presence(event.id) };
   }
 
+  /**
+   * Edita a presença do evento (TASK-084, PE1/PE4): de 0 a 100% por pessoa, independente.
+   *
+   * A rota é do **evento**, não da leva, porque a presença é dado do evento: um split tem N levas e a
+   * presença é a mesma para todas as que ainda não foram confirmadas. Confirmada, a leva guarda a
+   * presença que usou e não muda mais.
+   *
+   * Autorização igual à da leitura da presença, e pelo mesmo motivo: quem edita quanto cada um
+   * participou é quem responde pela distribuição daquele evento (`distribute`), nunca todo membro
+   * logado. O corpo traz snowflake e presença — nenhum `userId` de painel vem do cliente.
+   */
+  @Put("presence")
+  @HttpCode(200)
+  @UseGuards(SameOriginGuard)
+  @Authorize()
+  async setPresence(@Param("eventId") eventId: string, @Body() body: unknown, @CurrentAuth() auth: Auth): Promise<{ present: SplitPresenceDto[] }> {
+    const event = await this.load(eventId);
+    this.assertCan(auth, "distribute", event);
+    const result = await this.splits.setPresence(event, parseBody(eventPresenceUpdateSchema, body), auth.user.id);
+    if (!result.ok) this.refuse(result);
+    return { present: result.present };
+  }
+
   /** N splits por evento (AC#3, Q23), na ordem em que as levas de loot chegaram. */
   @Get("splits")
   @Authorize("read", "LootSplit")
@@ -158,8 +182,8 @@ export class LootSplitController {
   }
 
   /**
-   * Edita o rascunho: total da leva e/ou percentuais (AC#1). A soma 100% é exigida só na confirmação
-   * (Q22), então a tela pode salvar estados intermediários sem brigar com o usuário.
+   * Edita o rascunho: só o **total da leva** (PE1). A participação é derivada da presença do evento,
+   * que tem rota própria (`PUT /presence`) porque é dado do evento e não da leva (PE4).
    */
   @Patch("splits/:splitId")
   @UseGuards(SameOriginGuard)
