@@ -3,7 +3,7 @@ id: doc-005
 title: Decisões v1
 type: specification
 created_date: '2026-09-15 03:22'
-updated_date: '2026-09-21 12:57'
+updated_date: '2026-09-21 13:02'
 ---
 Resultado do grill (R1–R3, 2026-09-15). Referência pra specs e tasks.
 
@@ -316,3 +316,12 @@ fazer conta na mão. O que ele sabe é **quanto cada um participou**.
 | PE9 | Ao criar a call, o bot publica um **menu de gestão** no chat dela. Opções: **finalizar o evento**, **fechar a call**, **abrir a call** e **chamar os ausentes**. Iniciar evento e encerrar inscrições não entram: a call só existe depois disso. |
 | PE10 | **Fechar a call** = tirar a permissão de entrar de quem não está inscrito, **deixando quem já está**. Expulsar automático tiraria do evento, num erro de inscrição, alguém que deveria estar. |
 | PE11 | O menu é visível para todos (o Discord não esconde componente por cargo), então a checagem é **no clique**: só caller do evento e staff executam; os outros recebem recusa. |
+
+### Chamar quem não entrou na call (2026-09-21, complementa PE9)
+| # | Decisão |
+|---|---|
+| PE12 | Ao **iniciar o evento**, quem está na **sala de espera** é movido para a call (é o que o bot já faz). Ninguém é puxado de outra call: a pessoa pode estar em outro grupo, e a sala de espera é o único lugar onde entrar já significa "estou aqui para o evento". |
+| PE13 | Inscrito **confirmado** que não está na call recebe **mensagem no privado** pedindo para entrar. Quem está na **lista de espera não recebe**: não tem vaga garantida, e chamar seria prometer o que o evento não tem. |
+| PE14 | Privado fechado (o Discord bloqueia DM de quem não é amigo) **cai para menção no chat da call**, com a lista de quem não pôde ser avisado. Falha silenciosa faria o caller achar que chamou. |
+| PE15 | O mesmo chamado é acionável **pelo menu do evento no painel** e **pelo menu da call no Discord**, com **intervalo de 5 minutos por pessoa**: dois callers clicando (ou um clicando várias vezes) viram privado repetido, e é assim que a pessoa bloqueia o bot. |
+| PE16 | Isso **substitui** o "chamar os ausentes" da PE9, que era menção no chat: a ação passa a ser privado com resumo no chat da call. |
