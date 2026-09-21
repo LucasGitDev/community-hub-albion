@@ -102,6 +102,7 @@ export {
   applyEventTransition,
   closeDueEvents,
   createEvent,
+  findRunningEventByVoiceChannelId,
   getEvent,
   listEventOwnerHistory,
   listEvents,
@@ -122,15 +123,19 @@ export {
 export { refundEntryFee, refundEventEntryFees } from "./entry-fee-repo.js";
 export { claimEventSummons, findEventSummon } from "./event-summons-repo.js";
 export {
+  addLateEventSignup,
   findEventRoleSlot,
   joinEventRole,
   leaveEvent,
   listEventSignupMembers,
   listEventSignups,
+  listEventFreeRoleSlots,
   listEventsOccupancy,
   listMemberNicks,
   listUserEventSignups,
   moveEventSignup,
+  type AddLateEventSignupResult,
+  type EventFreeRoleSlot,
   type EventSignupChange,
   type EventSignupMember,
   type JoinEventRoleResult,

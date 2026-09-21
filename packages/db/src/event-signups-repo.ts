@@ -165,10 +165,12 @@ interface InsertInput {
   force?: EventSignupStatus;
   /** Lançamento da taxa já paga. Trocar de role ou ser movido **carrega** a cobrança para a linha nova: a taxa é do evento, não da vaga. */
   feeEntryId?: string | null;
+  /** Instante a partir do qual a presença conta (TASK-086, PE8); null é "desde o início da call". */
+  presenceFrom?: Date | null;
   at: Date;
 }
 
-async function insertSignup(tx: Tx, { eventId, userId, slot, decidedBy, force, feeEntryId, at }: InsertInput): Promise<EventSignupDto> {
+async function insertSignup(tx: Tx, { eventId, userId, slot, decidedBy, force, feeEntryId, presenceFrom, at }: InsertInput): Promise<EventSignupDto> {
   const confirmed = force ? force === "confirmed" : (await confirmedCount(tx, slot.id)) < slot.slots;
   const position = confirmed ? 0 : await nextWaitlistPosition(tx, slot.id);
   const [row] = await tx
@@ -182,6 +184,7 @@ async function insertSignup(tx: Tx, { eventId, userId, slot, decidedBy, force, f
       position,
       decidedBy,
       feeEntryId: feeEntryId ?? null,
+      presenceFrom: presenceFrom ?? null,
       createdAt: at,
       updatedAt: at,
     })
@@ -370,5 +373,97 @@ export async function moveEventSignup(
     const promoted = current.status === "confirmed" ? await promoteFirstWaiting(tx, current.slotId, at, signup.id) : null;
     await resequenceSlots(tx, [slot.id, current.slotId], at);
     return { ok: true as const, signup: await reload(tx, signup.id), promoted };
+  });
+}
+
+/* ------------------------------------------- inscrição no meio da call (TASK-086) */
+
+/** Vaga com quantas cadeiras ainda estão livres agora. Só as livres interessam à pergunta (PE7). */
+export interface EventFreeRoleSlot {
+  id: string;
+  name: string;
+  free: number;
+}
+
+/**
+ * Roles do evento com vaga livre, na ordem em que o caller montou o evento. Serve a pergunta do bot
+ * para quem entrou no meio: sem nenhuma aqui, a resposta diz que não há vaga em vez de falhar calada.
+ */
+export async function listEventFreeRoleSlots(db: Database, eventId: string): Promise<EventFreeRoleSlot[]> {
+  const rows = await db
+    .select({
+      id: eventRoleSlots.id,
+      name: eventRoleSlots.name,
+      slots: eventRoleSlots.slots,
+      taken: sql<number>`count(${eventSignups.id}) filter (where ${eventSignups.status} = 'confirmed')`,
+    })
+    .from(eventRoleSlots)
+    .leftJoin(eventSignups, eq(eventSignups.slotId, eventRoleSlots.id))
+    .where(eq(eventRoleSlots.eventId, eventId))
+    .groupBy(eventRoleSlots.id, eventRoleSlots.name, eventRoleSlots.slots, eventRoleSlots.sortOrder)
+    .orderBy(asc(eventRoleSlots.sortOrder));
+  return rows.map((r) => ({ id: r.id, name: r.name, free: r.slots - Number(r.taken) })).filter((r) => r.free > 0);
+}
+
+export type AddLateEventSignupResult =
+  | ({ ok: true; charged: bigint | null } & EventSignupChange)
+  | { ok: false; reason: "not_found" | "unknown_role" | "already_signed_up" | "role_full" }
+  | { ok: false; reason: "not_running"; status: EventStatus }
+  | { ok: false; reason: "insufficient_funds"; fee: bigint; balance: bigint };
+
+/**
+ * Inscreve alguém **com o evento já rodando** (TASK-086, PE7/PE8): é o que o caller aceita quando o
+ * bot pergunta sobre quem entrou na call sem estar inscrito.
+ *
+ * Três diferenças para o `joinEventRole`, e cada uma tem motivo:
+ * - só com o evento `running` — antes disso a pessoa usa o botão do embed, depois disso não existe
+ *   mais o que presenciar;
+ * - **não** vai para a espera: role lotada é recusada com `role_full`, porque a pessoa já está dentro
+ *   da call e "fica esperando" não quer dizer nada aqui;
+ * - grava `presence_from` no instante do aceite, e é só isso que faz a PE8 valer — a medição de
+ *   presença continua sendo a mesma, com a janela dessa pessoa começando mais tarde.
+ *
+ * A taxa de entrada é cobrada igual à inscrição normal (F6-13): entrar atrasado não é entrar de graça.
+ */
+export async function addLateEventSignup(
+  db: Database,
+  input: { eventId: string; userId: string; slotId: string; actorUserId: string; at?: Date },
+): Promise<AddLateEventSignupResult> {
+  const at = input.at ?? new Date();
+  return db.transaction(async (tx) => {
+    const event = await lockEvent(tx, input.eventId);
+    if (!event) return { ok: false as const, reason: "not_found" as const };
+    if (event.status !== "running") return { ok: false as const, reason: "not_running" as const, status: event.status };
+    const slot = await findSlot(tx, input.eventId, input.slotId);
+    if (!slot) return { ok: false as const, reason: "unknown_role" as const };
+    if (await findActiveSignup(tx, input.eventId, input.userId)) return { ok: false as const, reason: "already_signed_up" as const };
+    if ((await confirmedCount(tx, slot.id)) >= slot.slots) return { ok: false as const, reason: "role_full" as const };
+
+    let feeEntryId: string | null = null;
+    let charged: bigint | null = null;
+    if (event.entryFee > NO_ENTRY_FEE) {
+      const paid = await spendCurrencyTx(tx, {
+        userId: input.userId,
+        currency: "buffunfa",
+        amount: event.entryFee,
+        kind: "entry_fee",
+        reference: { type: "event", id: input.eventId },
+        memo: `Taxa de entrada: ${event.name}`,
+      });
+      if (!paid.ok) return { ok: false as const, reason: "insufficient_funds" as const, fee: event.entryFee, balance: paid.reason === "insufficient_funds" ? paid.balance : 0n };
+      feeEntryId = paid.entry.id;
+      charged = event.entryFee;
+    }
+    const signup = await insertSignup(tx, {
+      eventId: input.eventId,
+      userId: input.userId,
+      slot,
+      decidedBy: input.actorUserId,
+      force: "confirmed",
+      feeEntryId,
+      presenceFrom: at,
+      at,
+    });
+    return { ok: true as const, signup: await reload(tx, signup.id), promoted: null, charged };
   });
 }

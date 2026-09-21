@@ -139,6 +139,21 @@ export async function getEvent(db: Database, id: string): Promise<EventDto | nul
   return (await loadEvents(db, [id]))[0] ?? null;
 }
 
+/**
+ * Evento **em andamento** dono deste canal de voz (TASK-086). É como o bot descobre, a partir de uma
+ * entrada na voz, se aquele canal é a call de um evento. Evento que ainda não começou não tem canal e
+ * evento finalizado já teve o `voice_channel_id` limpo, então o filtro por `running` é cinto sobre
+ * suspensório: garante que ninguém seja perguntado fora da janela do evento.
+ */
+export async function findRunningEventByVoiceChannelId(db: Database, channelId: string): Promise<EventDto | null> {
+  const [row] = await db
+    .select({ id: events.id })
+    .from(events)
+    .where(and(eq(events.voiceChannelId, channelId), eq(events.status, "running")))
+    .limit(1);
+  return row ? getEvent(db, row.id) : null;
+}
+
 /** Eventos mais recentes primeiro, com filtros opcionais de estado, owner e template. */
 export function listEvents(db: Database, filters: EventListQuery = {}): Promise<EventDto[]> {
   return loadEvents(db, undefined, filters);
