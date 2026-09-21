@@ -1,9 +1,11 @@
 ---
 id: TASK-084
 title: Presença vira o peso da divisão do loot
-status: To Do
-assignee: []
+status: In Progress
+assignee:
+  - '@claude'
 created_date: '2026-09-21 12:57'
+updated_date: '2026-09-21 13:00'
 labels: []
 milestone: m-12
 dependencies: []
@@ -45,3 +47,15 @@ A presença é dado **do evento** (PE4), não da leva: uma leva confirmada não 
 - [ ] #8 Notas e final summary com evidências; commits Conventional atômicos sem co-autor
 - [ ] #9 PR merged na main com quality gate verde; branch e worktree removidos
 <!-- DOD:END -->
+
+## Implementation Plan
+
+<!-- SECTION:PLAN:BEGIN -->
+1. shared/loot-split.ts: presença vira peso. `measuredPresenceBp`/`effectivePresenceBp` (override ?? medido; não inscrito nasce 0, PE6), `sharesFromPresence` (maior resto sobre 10000, desempate por chave). `calculateSplitDraft` passa a ratear por presenceBp. `checkSplitConfirm` deriva as fatias da presença e recusa `zero_presence` (AC#7); saem `shares_not_100` e `share_without_signup` (AC#6 exige poder dar presença a quem não se inscreveu). `lootSplitUpdateSchema` fica só com totalSilver; nasce `eventPresenceUpdateSchema` ({entries:[{discordUserId,presenceBp}]}).
+2. shared/event-attendance.ts: `attendanceRows` passa a receber a presença efetiva (override) e o corte de 90% passa a ser sobre ela (PE5).
+3. db: tabela `event_presence_overrides` (event_id, discord_user_id, presence_bp, updated_by, updated_at) — a presença é do evento (PE4). Coluna `presence_bp` em `loot_split_lines` (congela o que a leva usou). Cai o check `loot_split_lines_not_signed_up_has_no_share`. Migration gerada com `db:generate` depois de rebuildar shared.
+4. db/repos: `listEventPresenceOverrides`/`setEventPresenceOverrides` (upsert + re-sync do rascunho aberto na mesma transação; leva confirmada intocada). `listEventPresence` devolve presenceBp efetivo. Draft, update e confirm passam a derivar fatia da presença.
+5. server: rota `PUT /api/events/:id/presence` (mesma autorização `distribute`), timeline `events.presence_edited` publicada depois do commit.
+6. web: tabela do acerto mostra os dois números (presença editável + prata derivada, PE2), em prévia e em rascunho; rodapé troca 'soma 100%' por 'soma das presenças'; e2e do fluxo; screenshots 1280 e 400.
+7. Gate completo, security-review, task-done-check, PR.
+<!-- SECTION:PLAN:END -->

@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { amountSchema } from "./currency.js";
 import { BUFFUNFA_ROLE_MAX, type BuffunfaRange } from "./event-templates.js";
-import { type SplitPresenceDto } from "./loot-split.js";
+import { measuredPresenceBp, type SplitPresenceDto } from "./loot-split.js";
 
 /**
  * Ganho de Buffunfa por participação em evento (TASK-057, F6-8 a F6-11).
@@ -13,11 +13,11 @@ import { type SplitPresenceDto } from "./loot-split.js";
  * As três regras que este módulo faz valer:
  * - o valor é **por role** e vale o do fechamento para todos daquela role (F6-9), então nada aqui
  *   olha para o instante da inscrição — só para a role;
- * - presença é **binária**: 90% ou mais do tempo de vida da call paga cheio, abaixo disso paga nada
- *   (F6-10). Não existe proporcional. "Tempo de vida da call" é medido a partir da **primeira entrada
- *   no canal** (TASK-073), não do início do evento: entre um e outro o bot ainda está criando o canal
- *   e arrastando gente, e contar esse intervalo derrubava quem ficou o evento inteiro. Quem monta a
- *   janela é `eventCallWindowMs`, no repo — aqui ela chega pronta;
+ * - presença é **binária**: 90% ou mais paga cheio, abaixo disso paga nada (F6-10). Não existe
+ *   proporcional. O número sobre o qual o corte cai é a **presença do fechamento** (PE5): nasce da
+ *   medição da call — "tempo de vida da call" a partir da primeira entrada no canal (TASK-073), não do
+ *   início do evento — e o caller edita por cima na mesma tela do loot split. Duas medidas de presença
+ *   no mesmo evento fariam ele ajustar uma e não entender por que a outra não mudou;
  * - evento sem canal de voz carimbado não paga a ninguém (F6-11), e o motivo aparece linha a linha
  *   em vez de a tabela vir vazia sem explicação.
  */
@@ -25,19 +25,19 @@ import { type SplitPresenceDto } from "./loot-split.js";
 /** Corte de presença em basis points do tempo de vida da call: 90% (F6-10). */
 export const ATTENDANCE_MIN_PRESENCE_BP = 9000;
 
-/** Presença em basis points da janela; 0 quando não houve janela medida. */
-export function attendancePresenceBp(presenceMs: number, windowMs: number): number {
-  if (windowMs <= 0) return 0;
-  return Math.min(10_000, Math.floor((presenceMs * 10_000) / windowMs));
-}
+/**
+ * Presença medida em basis points da janela; 0 quando não houve janela medida. É a mesma conta do loot
+ * split, e mora lá: as duas telas leem o mesmo relógio, sempre (Q6).
+ */
+export const attendancePresenceBp = measuredPresenceBp;
 
 /**
- * Bateu o corte? Comparação em inteiros (`presenceMs * 10000 >= windowMs * 9000`) de propósito: com
- * divisão em ponto flutuante, quem ficou exatamente 90% cairia ou não conforme o arredondamento.
+ * Bateu o corte? Comparação em inteiros de propósito: com divisão em ponto flutuante, quem ficou
+ * exatamente 90% cairia ou não conforme o arredondamento. O número comparado é a **presença do
+ * fechamento** (PE5), já com a edição do caller aplicada.
  */
-export function meetsAttendance(presenceMs: number, windowMs: number): boolean {
-  if (windowMs <= 0) return false;
-  return presenceMs * 10_000 >= windowMs * ATTENDANCE_MIN_PRESENCE_BP;
+export function meetsAttendance(presenceBp: number): boolean {
+  return presenceBp >= ATTENDANCE_MIN_PRESENCE_BP;
 }
 
 /** Por que uma pessoa que esteve no evento não recebe. Um motivo por linha, sempre o primeiro que bate. */
@@ -87,14 +87,15 @@ const nickOf = (nick: string | null, discordUserId: string): string => nick ?? `
 export function attendanceRows(present: readonly SplitPresenceDto[], input: AttendanceInput): AttendanceRow[] {
   const rows = present.map((p): AttendanceRow => {
     const roleValue = (p.roleName && input.valueByRole.get(p.roleName)) || 0n;
-    const presenceBp = attendancePresenceBp(p.presenceMs, input.windowMs);
+    // PE5: a presença que conta é a do fechamento — a medida, ou a que o caller editou por cima.
+    const presenceBp = p.presenceBp;
     const skip: AttendanceSkipReason | null = !input.measured
       ? "no_channel"
       : !p.signedUp || !p.roleName
         ? "not_signed_up"
         : p.userId === null
           ? "no_account"
-          : !meetsAttendance(p.presenceMs, input.windowMs)
+          : !meetsAttendance(presenceBp)
             ? "below_presence"
             : roleValue <= 0n
               ? "zero_value"
@@ -111,7 +112,7 @@ export function attendanceRows(present: readonly SplitPresenceDto[], input: Atte
       skip,
     };
   });
-  return rows.sort((a, b) => (a.skip === null ? 0 : 1) - (b.skip === null ? 0 : 1) || b.presenceMs - a.presenceMs || a.nick.localeCompare(b.nick, "pt-BR"));
+  return rows.sort((a, b) => (a.skip === null ? 0 : 1) - (b.skip === null ? 0 : 1) || b.presenceBp - a.presenceBp || b.presenceMs - a.presenceMs || a.nick.localeCompare(b.nick, "pt-BR"));
 }
 
 /** Total de Buffunfa que o fechamento vai criar. É criação do nada: quem olha isto precisa do número. */

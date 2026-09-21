@@ -9,21 +9,25 @@ import {
   listEventPresence,
   reverseLootSplit,
   setEventFee,
+  setEventPresence,
   updateLootSplitDraft,
   type ConfirmLootSplitResult,
   type CreateLootSplitResult,
   type DbHandle,
   type PaidInGameWithdrawal,
   type ReverseLootSplitResult,
+  type SetEventPresenceResult,
   type UpdateLootSplitResult,
 } from "@albion-hub/db";
 import {
   eventStatusLabel,
   feeFromDto,
   formatAmount,
+  formatShare,
   splitConfirmRefusalMessage,
   type EventDto,
   type EventFee,
+  type EventPresenceUpdateInput,
   type LootSplitCreateInput,
   type LootSplitDto,
   type LootSplitUpdateInput,
@@ -112,12 +116,65 @@ export class LootSplitService implements OnModuleInit {
   }
 
   /**
-   * Edita o rascunho: total da leva e/ou percentuais (AC#1). A soma 100% só é exigida na confirmação
-   * (Q22) — durante a edição a lista passa por estados intermediários o tempo todo.
+   * Edita o rascunho: só o **total da leva** (PE1). Os pesos da divisão são a presença do evento, que
+   * se edita em `setPresence` — mudar o total apenas redistribui a prata com os pesos de agora.
    */
   async update(event: EventDto, splitId: string, input: LootSplitUpdateInput): Promise<UpdateLootSplitResult> {
     assertEventEditable(event);
     return updateLootSplitDraft(this.handle.db, splitId, input);
+  }
+
+  /**
+   * Edita a presença do evento (TASK-084, PE1 a PE6): de 0 a 100% por pessoa, independente, sem
+   * precisar somar 100%.
+   *
+   * A presença é dado do **evento** (PE4), então a chamada não fala de leva nenhuma: o repo grava a
+   * presença e, na mesma transação, recalcula o rascunho aberto. Leva já confirmada não muda — ela
+   * guarda a presença com que foi dividida, e as próximas levas é que usam o valor novo.
+   *
+   * A Buffunfa por presença lê a **mesma** presença (PE5): não há segunda medição a sincronizar.
+   */
+  async setPresence(event: EventDto, input: EventPresenceUpdateInput, actorUserId: string | null): Promise<SetEventPresenceResult> {
+    assertEventEditable(event);
+    const before = new Map((await listEventPresence(this.handle.db, event.id)).map((p) => [p.discordUserId, p]));
+    const result = await setEventPresence(this.handle.db, event.id, { entries: input.entries, actorUserId });
+    if (result.ok) await this.publishPresence(event, before, result, actorUserId);
+    return result;
+  }
+
+  /**
+   * Timeline (T14, DoD#7): **um** registro por edição, com uma linha por pessoa que de fato mudou.
+   *
+   * A presença decide quanto cada um leva de prata e quem bate o corte da Buffunfa, então o canal de
+   * auditoria precisa do antes e do depois — "fulano: 45% → 100%" é a frase que explica um pagamento
+   * que alguém vai questionar depois. Publicado **depois do commit** (T5).
+   */
+  private publishPresence(
+    event: EventDto,
+    before: Map<string, { nick: string | null; presenceBp: number }>,
+    result: Extract<SetEventPresenceResult, { ok: true }>,
+    actorUserId: string | null,
+  ): Promise<void> {
+    const changed = result.present.filter((p) => (before.get(p.discordUserId)?.presenceBp ?? 0) !== p.presenceBp);
+    if (changed.length === 0) return Promise.resolve();
+    return publishAfterCommit(this.timeline, TIMELINE_LOGGER, async () => {
+      const people = await loadTimelinePeople(this.handle.db, [actorUserId]);
+      return {
+        action: "event.presence_edited" as const,
+        summary: `Presença editada: ${event.name}`,
+        actor: people.actor(actorUserId),
+        target: { name: event.name, id: event.id },
+        recordId: event.id,
+        details: [{ name: "Leva em rascunho recalculada", value: result.draftSplitId ?? "nenhuma" }],
+        list: {
+          title: "Presenças alteradas",
+          items: changed.map((p) => {
+            const who = p.nick ?? `Discord ${p.discordUserId}`;
+            return `${who}: ${formatShare(before.get(p.discordUserId)?.presenceBp ?? 0)} → ${formatShare(p.presenceBp)}`;
+          }),
+        },
+      };
+    });
   }
 
   /**
@@ -232,7 +289,7 @@ export class LootSplitService implements OnModuleInit {
 }
 
 /** Toda recusa possível de editar, confirmar ou estornar um split. */
-export type SplitWriteRefusal = Exclude<UpdateLootSplitResult | ConfirmLootSplitResult | ReverseLootSplitResult, { ok: true }>;
+export type SplitWriteRefusal = Exclude<UpdateLootSplitResult | ConfirmLootSplitResult | ReverseLootSplitResult | SetEventPresenceResult, { ok: true }>;
 
 /**
  * Frase do 409 de cada recusa. Uma por motivo, todas dizendo o que fazer em seguida — quem lê isso
@@ -245,9 +302,7 @@ export function splitWriteError(result: SplitWriteRefusal): string {
     case "event_not_editable":
       return `O evento está ${eventStatusLabel(result.status)}: o loot split só é editado e confirmado enquanto o evento está finalizado.`;
     case "unknown_lines":
-      return "A lista de participações precisa trazer exatamente as linhas deste split.";
-    case "share_without_signup":
-      return "Alguém que não estava inscrito no evento ficou com participação. Só quem estava inscrito pode receber.";
+      return "A lista de quem foi pago no jogo precisa trazer só linhas deste split.";
     case "not_confirmed":
       return "Este loot split ainda é rascunho: não há lançamento para estornar.";
     case "already_reversed":

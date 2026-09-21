@@ -71,8 +71,8 @@ export const feeFromDto = (dto: EventFeeDto): EventFee => ({ type: dto.type, val
 /* --------------------------------------------------------------- rascunho */
 
 /**
- * Estados do split. Esta task só grava `draft`; `confirmed` é a TASK-028 (Q22 bloqueia confirmar com
- * soma ≠ 100%). Os dois já nascem no enum do banco de propósito: `alter type ... add value` não pode
+ * Estados do split. Esta task só grava `draft`; `confirmed` é a TASK-028. Os dois já nascem no enum
+ * do banco de propósito: `alter type ... add value` não pode
  * ser usado na mesma transação que compara com o valor novo, dor que a migration do `archived` já
  * documentou em `events`.
  */
@@ -82,14 +82,90 @@ export type LootSplitStatus = (typeof LOOT_SPLIT_STATUSES)[number];
 /** Basis points da participação: 10000 = 100%. Inteiro pelo mesmo motivo da taxa. */
 export const SHARE_SCALE = 10_000;
 
+/**
+ * Escala da **presença** (TASK-084, PE1): 10000 = 100%. É a mesma escala da participação, mas os dois
+ * números são coisas diferentes e não devem ser confundidos: a presença de cada um é independente e a
+ * soma delas **não** fecha 100%; a participação é derivada delas e essa, sim, fecha (PE2).
+ */
+export const PRESENCE_SCALE = 10_000;
+
+/** Prende um valor de presença dentro da escala. Presença negativa não existe; acima de 100% é 100%. */
+export const clampPresenceBp = (bp: number): number => Math.max(0, Math.min(PRESENCE_SCALE, Math.trunc(bp)));
+
+/**
+ * Presença **medida**: quanto do tempo de vida da call a pessoa ficou nela, em basis points (PE3).
+ *
+ * É o número que nasce sozinho, antes de o caller tocar em nada, e o mesmo que o corte de 90% da
+ * Buffunfa já usava (F6-10/F6-58). Sem janela medida não há presença: janela zero devolve zero, e
+ * ninguém bate um corte de zero.
+ */
+export function measuredPresenceBp(presenceMs: number, windowMs: number): number {
+  if (windowMs <= 0) return 0;
+  return Math.min(PRESENCE_SCALE, Math.floor((presenceMs * PRESENCE_SCALE) / windowMs));
+}
+
+/**
+ * A presença que **vale**: o que o caller editou, ou a medição quando ele não editou (PE3).
+ *
+ * Quem apareceu na call e nunca se inscreveu nasce em **zero**, por mais tempo que tenha ficado
+ * (PE6): ele aparece na lista para o caller ver que esteve lá, e incluí-lo na divisão é gesto
+ * explícito — digitar a presença dele. Editado é editado: um zero digitado para um inscrito é zero de
+ * verdade, e não volta para a medição.
+ */
+export function effectivePresenceBp(person: { presenceMs: number; signedUp: boolean }, windowMs: number, override: number | null | undefined): number {
+  if (override !== null && override !== undefined) return clampPresenceBp(override);
+  if (!person.signedUp) return 0;
+  return measuredPresenceBp(person.presenceMs, windowMs);
+}
+
+/**
+ * Participação de cada um a partir da presença (PE2): `presença ÷ soma das presenças`.
+ *
+ * Três pessoas com 100%, 100% e 50% recebem 40%, 40% e 20%. A presença não precisa somar 100% — é
+ * justamente o que a TASK-084 tirou do caminho do caller, que antes fazia essa conta na mão.
+ *
+ * Arredondamento por **maior resto** sobre 10000 bp, então a lista fecha 100% exato mesmo quando a
+ * divisão não é redonda. Empate de resto é desempatado por `key`, para o mesmo evento gerar sempre a
+ * mesma divisão. Soma de presenças zero devolve tudo zero — quem recusa esse caso é a confirmação
+ * (`zero_presence`), com uma frase, em vez de uma divisão por zero.
+ */
+export function sharesFromPresence(entries: readonly { key: string; presenceBp: number }[]): number[] {
+  const shares = entries.map(() => 0);
+  const eligible = entries.map((entry, index) => ({ entry, index })).filter(({ entry }) => entry.presenceBp > 0);
+  const totalBp = eligible.reduce((sum, { entry }) => sum + entry.presenceBp, 0);
+  if (totalBp === 0) return shares;
+
+  let usedBp = 0;
+  // Resto inteiro do rateio, para o desempate não depender de float.
+  const remainders: { index: number; remainder: number; key: string }[] = [];
+  for (const { entry, index } of eligible) {
+    const scaled = entry.presenceBp * SHARE_SCALE;
+    shares[index] = Math.floor(scaled / totalBp);
+    usedBp += shares[index]!;
+    remainders.push({ index, remainder: scaled % totalBp, key: entry.key });
+  }
+  remainders.sort((a, b) => b.remainder - a.remainder || (a.key < b.key ? -1 : 1));
+  // Cada floor perde menos de 1 bp, então o que falta nunca passa do número de linhas elegíveis.
+  for (let i = 0; i < SHARE_SCALE - usedBp; i++) shares[remainders[i % remainders.length]!.index]++;
+  return shares;
+}
+
+/** Soma das presenças da lista. Zero é o caso que a confirmação recusa (AC#7). */
+export const presenceBpSum = (entries: readonly { presenceBp: number }[]): number => entries.reduce((sum, e) => sum + e.presenceBp, 0);
+
 /** Uma pessoa que esteve no canal do evento na janela start→finish (Q6). */
 export interface SplitPresence {
   /** Chave da presença: `voice_sessions.discord_user_id`. Nem todo presente tem conta no painel. */
   discordUserId: string;
-  /** Milissegundos no canal do evento dentro da janela. Guardado para a tela explicar o número (TASK-029). */
+  /** Milissegundos no canal do evento dentro da janela. É de onde a presença nasce (PE3). */
   presenceMs: number;
-  /** Tinha inscrição ativa no evento. Não inscrito entra com 0% (Q7). */
+  /** Tinha inscrição ativa no evento. Não inscrito nasce com presença 0 (PE6). */
   signedUp: boolean;
+  /**
+   * Presença que vale (0 a 10000), já resolvida: o que o caller editou, ou a medição (PE3). É **ela**
+   * que pesa na divisão — os milissegundos ficam do lado para explicar de onde o número veio.
+   */
+  presenceBp: number;
 }
 
 /** O que o rateio acrescenta a cada linha. */
@@ -109,52 +185,29 @@ export interface SplitDraftCalc<T extends SplitPresence = SplitPresence> {
 }
 
 /**
- * Rateio do rascunho (AC#1/AC#2).
+ * Rateio do rascunho a partir da presença (PE1, PE2).
  *
- * Peso de cada pessoa = seus milissegundos no canal do evento entre `started_at` e `finished_at`
- * (Q6). Não há presença mínima: o split já é proporcional (Q5). Quem estava presente mas **não**
- * estava inscrito aparece na lista com 0% e fica **fora do denominador** (Q7) — senão a presença de
- * quem não se inscreveu diluiria a prata de quem se inscreveu.
+ * O peso de cada pessoa é a **presença** dela (`presenceBp`), não os milissegundos crus: a presença
+ * nasce da medição da call (PE3) e o caller edita por cima, e é o número editado que precisa mandar na
+ * divisão — senão a tela mostraria um valor e o ledger creditaria outro. Não há presença mínima: o
+ * split já é proporcional (Q5).
+ *
+ * Quem tem presença zero fica fora do denominador e recebe zero. É o caso de quem apareceu sem
+ * inscrição enquanto o caller não decidir incluí-lo (PE6) e de quem nem entrou na call.
  *
  * Arredondamento, regra escolhida e documentada aqui porque prata é `bigint` inteiro (Q20):
- * - **percentual**: maior resto (largest remainder) sobre 10000 bp, então a lista fecha 100% exato
- *   (Q22). Empate de resto é desempatado por `discordUserId`, para o mesmo evento gerar sempre o
- *   mesmo rascunho.
- * - **prata**: derivada do percentual por `distributeByShare` — a mesma função que a confirmação usa
- *   (TASK-028). É o percentual que manda, e não os milissegundos, porque depois de uma edição à mão
- *   os milissegundos deixam de ser a verdade; e assim o número conferido na tela é exatamente o
- *   número creditado no ledger.
+ * - **percentual**: maior resto sobre 10000 bp em `sharesFromPresence`, então a lista fecha 100% exato;
+ * - **prata**: derivada do percentual por `distributeByShare` — a mesma função que a confirmação usa.
+ *   É o percentual que manda, e assim o número conferido na tela é exatamente o número creditado.
  *
  * `distributable` é o total **já sem a taxa** (doc-005, "Taxa do split"): a taxa é retirada antes da
- * divisão, então ela não chega aqui. Sem ninguém inscrito e presente, todo mundo fica com 0% e o
- * distribuível inteiro vira resíduo do dono (Q23).
+ * divisão, então ela não chega aqui. Sem ninguém com presença, todo mundo fica com 0% e o distribuível
+ * inteiro vira resíduo do dono (Q23) — e a confirmação recusa antes disso (`zero_presence`, AC#7).
  */
 export function calculateSplitDraft<T extends SplitPresence>(present: readonly T[], distributable: bigint): SplitDraftCalc<T> {
-  const lines: SplitShare<T>[] = present.map((p) => ({ ...p, shareBp: 0, amount: 0n }));
-  const eligible = lines.map((line, index) => ({ line, index })).filter(({ line }) => line.signedUp && line.presenceMs > 0);
-  const totalMs = eligible.reduce((sum, { line }) => sum + line.presenceMs, 0);
-  if (totalMs === 0) return { lines, residual: distributable > 0n ? distributable : 0n };
-
-  let usedBp = 0;
-  // Resto inteiro do rateio de basis points, para o desempate não depender de float.
-  const remainders: { index: number; remainder: number; discordUserId: string }[] = [];
-
-  for (const { line, index } of eligible) {
-    const scaled = line.presenceMs * SHARE_SCALE;
-    line.shareBp = Math.floor(scaled / totalMs);
-    usedBp += line.shareBp;
-    remainders.push({ index, remainder: scaled % totalMs, discordUserId: line.discordUserId });
-  }
-
-  remainders.sort((a, b) => b.remainder - a.remainder || (a.discordUserId < b.discordUserId ? -1 : 1));
-  // Cada floor perde menos de 1 bp, então o que falta nunca passa do número de linhas elegíveis.
-  for (let i = 0; i < SHARE_SCALE - usedBp; i++) lines[remainders[i % remainders.length]!.index]!.shareBp++;
-
-  const { amounts, residual } = distributeByShare(
-    lines.map((line) => line.shareBp),
-    distributable,
-  );
-  for (const [index, line] of lines.entries()) line.amount = amounts[index]!;
+  const shares = sharesFromPresence(present.map((p) => ({ key: p.discordUserId, presenceBp: p.presenceBp })));
+  const { amounts, residual } = distributeByShare(shares, distributable);
+  const lines: SplitShare<T>[] = present.map((p, index) => ({ ...p, shareBp: shares[index]!, amount: amounts[index]! }));
   return { lines, residual };
 }
 
@@ -180,8 +233,15 @@ export interface LootSplitLineDto {
   /** Tinha inscrição ativa no evento; false = presente não inscrito, com 0% (Q7). */
   signedUp: boolean;
   roleName: string | null;
-  /** Milissegundos no canal do evento na janela do evento: é o que explica o percentual (TASK-029). */
+  /** Milissegundos no canal do evento na janela do evento: é de onde a presença nasceu (PE3). */
   presenceMs: number;
+  /**
+   * Presença que esta leva usou, em basis points (PE4). **Congelada na linha**: a presença é dado do
+   * evento e muda quando o caller edita, mas uma leva já confirmada continua mostrando a presença com
+   * que ela foi dividida — senão o extrato e a tela contariam histórias diferentes.
+   */
+  presenceBp: number;
+  /** Participação derivada da presença (PE2). A soma das linhas fecha 10000. */
   shareBp: number;
   /** Prata desta linha sobre o distribuível (total menos taxa), como string. */
   amount: string;
@@ -235,6 +295,10 @@ export interface SplitPresenceDto {
   signedUp: boolean;
   roleName: string | null;
   presenceMs: number;
+  /** Presença que vale agora: o que o caller editou, ou a medição (PE3). É o peso da divisão (PE2). */
+  presenceBp: number;
+  /** A medição crua, sem edição. Fica ao lado para a tela dizer "medido 72%, você pôs 100%". */
+  measuredPresenceBp: number;
 }
 
 /**
@@ -298,19 +362,23 @@ export function distributeByShare(shares: readonly number[], distributable: bigi
 /* ------------------------------------------------- confirmação (TASK-028) */
 
 /** Por que a confirmação foi recusada. Cada uma vira uma frase em PT-BR no 409. */
-export const SPLIT_CONFIRM_REFUSALS = ["shares_not_100", "fee_exceeds_total", "share_without_account", "share_without_signup"] as const;
+export const SPLIT_CONFIRM_REFUSALS = ["zero_presence", "fee_exceeds_total", "share_without_account"] as const;
 export type SplitConfirmRefusal = (typeof SPLIT_CONFIRM_REFUSALS)[number];
 
 /** O mínimo que a conferência precisa saber de cada linha. */
 export interface ConfirmableLine {
-  shareBp: number;
+  /** Chave estável da pessoa (`discordUserId`): é o desempate do arredondamento (PE2). */
+  key: string;
+  /** Presença desta linha, de 0 a 10000. É dela que a participação sai. */
+  presenceBp: number;
   /** Conta no painel. Sem ela não há para quem creditar: o ledger é por `user_id`. */
   userId: string | null;
-  signedUp: boolean;
 }
 
 export interface SplitConfirmPlan {
   fee: FeeBreakdown;
+  /** Participação por linha, derivada da presença (PE2), na mesma ordem das linhas recebidas. */
+  shares: number[];
   /** Prata por linha, na mesma ordem das linhas recebidas. */
   amounts: bigint[];
   /** Sobra do arredondamento; soma com `fee.feeSilver` no crédito do dono (Q23). */
@@ -321,74 +389,86 @@ export interface SplitConfirmPlan {
 
 export type CheckSplitConfirmResult = { ok: true; plan: SplitConfirmPlan } | { ok: false; reason: SplitConfirmRefusal };
 
-export const splitShareSum = (lines: readonly { shareBp: number }[]): number => lines.reduce((sum, line) => sum + line.shareBp, 0);
-
 /**
- * Tudo que precisa ser verdade para o split virar prata de verdade (AC#1, AC#2, Q22, Q23).
+ * Tudo que precisa ser verdade para o split virar prata de verdade (AC#7, PE2, Q23).
  *
- * A ordem das recusas é a ordem em que elas ajudam: a soma é o que o caller acabou de digitar, a taxa
- * é a configuração do evento, e as duas últimas são pessoas na lista que não podem receber. Todas
- * acontecem **antes** de qualquer escrita — a confirmação é uma transação só, e ela não começa
- * sabendo que vai dar errado no meio.
+ * A participação **não** é lida das linhas: ela é derivada aqui, da presença, pela mesma
+ * `sharesFromPresence` que montou o rascunho. Com isso não existe estado em que a tela mostre uma
+ * divisão e o ledger credite outra — a presença é a única coisa que alguém edita.
  *
- * `shares_not_100` também cobre o split de total zero: 100% de nada continua sendo 100%, e a lista
- * precisa fechar do mesmo jeito.
+ * As recusas, na ordem em que ajudam: a soma de presenças zero é o que o caller acabou de digitar
+ * (**dividir por zero não é opção**, AC#7), a taxa é a configuração do evento, e a última é gente na
+ * lista que não pode receber. Todas acontecem **antes** de qualquer escrita — a confirmação é uma
+ * transação só, e ela não começa sabendo que vai dar errado no meio.
+ *
+ * Presença zero em todo mundo cobre também o split sem ninguém na lista: não há como dividir prata
+ * entre ninguém, e um "confirmado" que só credita o dono esconderia isso do caller.
  */
 export function checkSplitConfirm(lines: readonly ConfirmableLine[], total: bigint, fee: EventFee): CheckSplitConfirmResult {
-  if (splitShareSum(lines) !== SHARE_SCALE) return { ok: false, reason: "shares_not_100" };
+  if (presenceBpSum(lines) <= 0) return { ok: false, reason: "zero_presence" };
   const breakdown = feeBreakdown(total, fee);
   if (breakdown.exceedsTotal) return { ok: false, reason: "fee_exceeds_total" };
-  if (lines.some((line) => line.shareBp > 0 && !line.signedUp)) return { ok: false, reason: "share_without_signup" };
-  if (lines.some((line) => line.shareBp > 0 && line.userId === null)) return { ok: false, reason: "share_without_account" };
-  const { amounts, residual } = distributeByShare(
-    lines.map((line) => line.shareBp),
-    breakdown.distributable,
-  );
-  return { ok: true, plan: { fee: breakdown, amounts, residual, ownerSilver: breakdown.feeSilver + residual } };
+  const shares = sharesFromPresence(lines);
+  if (lines.some((line, index) => shares[index]! > 0 && line.userId === null)) return { ok: false, reason: "share_without_account" };
+  const { amounts, residual } = distributeByShare(shares, breakdown.distributable);
+  return { ok: true, plan: { fee: breakdown, shares, amounts, residual, ownerSilver: breakdown.feeSilver + residual } };
 }
 
 /** Frase do 409 de cada recusa. Explica o que fazer, não só o que está errado. */
 export function splitConfirmRefusalMessage(reason: SplitConfirmRefusal): string {
   switch (reason) {
-    case "shares_not_100":
-      return "A soma das participações precisa ser exatamente 100% para confirmar o split.";
+    case "zero_presence":
+      return "Ninguém está com presença acima de zero: não há como dividir a prata. Dê presença a pelo menos uma pessoa antes de confirmar.";
     case "fee_exceeds_total":
       return "A taxa do evento é maior que o total deste split: não sobra prata para dividir. Baixe a taxa ou aumente o total.";
-    case "share_without_signup":
-      return "Alguém que não estava inscrito no evento ficou com participação. Só quem estava inscrito pode receber.";
     case "share_without_account":
-      return "Alguém com participação ainda não tem conta no painel. Peça para essa pessoa entrar no painel ou zere a participação dela.";
+      return "Alguém com presença ainda não tem conta no painel. Peça para essa pessoa entrar no painel ou zere a presença dela.";
   }
 }
 
 /* ---------------------------------------------- edição do rascunho (TASK-028) */
 
 /**
- * Edição do rascunho (AC#1): o caller ajusta o total da leva e/ou os percentuais.
+ * Edição do rascunho: só o **total da leva** (PE1, PE2).
  *
- * Os dois campos são opcionais e independentes — mexer só no total é o caso comum (o loot foi
- * vendido por mais do que o estimado) e não deve obrigar a reenviar a lista inteira. Quando `lines`
- * vem, ela precisa trazer **todas** as linhas do split: participação é um bolo fechado, e aceitar uma
- * lista parcial deixaria o resto num valor que ninguém escolheu. A soma só é exigida na confirmação
- * (Q22) — durante a edição ela passa por estados intermediários o tempo todo.
+ * Os percentuais saíram daqui de propósito. Participação deixou de ser algo que alguém digita: ela é
+ * derivada da presença (PE2), e a presença é dado do **evento**, não da leva (PE4) — quem a edita é
+ * `eventPresenceUpdateSchema`, na rota do evento. Aceitar percentual por aqui criaria uma segunda
+ * verdade sobre a mesma divisão, e a tela e o ledger passariam a poder discordar.
  */
-export const lootSplitUpdateSchema = z
-  .object({
-    totalSilver: silverAmountSchema("O total da prata").optional(),
-    lines: z
-      .array(
-        z.object({
-          id: z.uuid({ error: "Id de linha inválido." }),
-          shareBp: z
-            .int({ error: "A participação precisa ser um número inteiro de basis points (10000 = 100%)." })
-            .min(0, "A participação não pode ser negativa.")
-            .max(SHARE_SCALE, "A participação de uma linha não passa de 100%."),
-        }),
-      )
-      .optional(),
-  })
-  .refine((body) => body.totalSilver !== undefined || body.lines !== undefined, { error: "Nada para alterar: mande o total, as participações, ou os dois." });
+export const lootSplitUpdateSchema = z.object({
+  totalSilver: silverAmountSchema("O total da prata"),
+});
 export type LootSplitUpdateInput = z.output<typeof lootSplitUpdateSchema>;
+
+/** Presença de 0 a 100% em basis points, do jeito que o caller edita (PE1). */
+export const presenceBpSchema = z
+  .int({ error: "A presença precisa ser um número inteiro de basis points (10000 = 100%)." })
+  .min(0, "A presença não pode ser negativa.")
+  .max(PRESENCE_SCALE, "A presença vai de 0 a 100%.");
+
+/**
+ * Edição da presença do evento (PE1, PE4): **de 0 a 100% por pessoa, independente**, sem precisar
+ * somar 100%.
+ *
+ * A lista é **parcial** de propósito, e é a diferença que a TASK-084 faz: cada presença é um número
+ * sobre uma pessoa, não uma fatia de um bolo fechado, então mexer na de um não obriga a reenviar a dos
+ * outros. A chave é o snowflake do Discord, a mesma que a presença medida usa — quem esteve na call
+ * sem conta no painel também tem presença, e um dia pode ter conta.
+ */
+export const eventPresenceUpdateSchema = z.object({
+  entries: z
+    .array(
+      z.object({
+        discordUserId: z.string().trim().regex(/^\d{5,32}$/, "Id do Discord inválido."),
+        presenceBp: presenceBpSchema,
+      }),
+    )
+    .min(1, "Mande pelo menos uma presença para alterar.")
+    .max(1000, "Gente demais para um evento.")
+    .refine((entries) => new Set(entries.map((e) => e.discordUserId)).size === entries.length, { error: "A mesma pessoa apareceu duas vezes na lista." }),
+});
+export type EventPresenceUpdateInput = z.output<typeof eventPresenceUpdateSchema>;
 
 /** Motivo do estorno: a única correção possível de um split já confirmado. */
 export const lootSplitReversalSchema = z.object({
