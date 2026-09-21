@@ -5,7 +5,7 @@ status: In Progress
 assignee:
   - '@claude'
 created_date: '2026-09-21 12:57'
-updated_date: '2026-09-21 13:12'
+updated_date: '2026-09-21 13:19'
 labels: []
 milestone: m-12
 dependencies: []
@@ -41,7 +41,7 @@ Fechar a call é tirar a permissão de entrar de quem não está inscrito, deixa
 - [x] #3 Skills aplicáveis do doc-003 invocadas e listadas nas notas
 - [ ] #4 UI alterada: fluxo coberto por e2e e screenshots desktop 1280 e mobile 400 revisados pelo agent
 - [x] #5 Comportamento confere com decisões do doc-005 (Qs citadas) e nada fora do escopo da task
-- [ ] #6 Toca auth, ledger, prata ou saque: security-review sem achado crítico
+- [x] #6 Toca auth, ledger, prata ou saque: security-review sem achado crítico
 - [x] #7 Operação nova que muda estado publica na timeline depois do commit (ator, alvo, valor, ID), com teste que comprova; falha ao publicar nunca derruba a operação
 - [x] #8 Notas e final summary com evidências; commits Conventional atômicos sem co-autor
 - [ ] #9 PR merged na main com quality gate verde; branch e worktree removidos
@@ -130,6 +130,23 @@ finalizar o evento, fechar a call e abrir a call. "Chamar os ausentes" saiu do e
 mesmo nome base e, **no mesmo worker**, compartilham o sufixo `RUN`, então o locator do card casava com
 dois itens. Só aparece com `E2E_WORKERS=2` (com mais workers os testes caem em processos diferentes e o
 timestamp muda). Corrigido com um contador no sufixo, em commit próprio (`fix(e2e)`).
+
+## Security review (DoD#6)
+
+Rodado sobre o diff da branch: **nenhum achado crítico**. O que foi conferido: o custom id do botão não
+é fonte de autoridade (quem clicou vem de `interaction.user.id`, o id do evento é só chave de leitura e
+passa por `isUuid`); o CASL é o mesmo padrão do controller e do comando; a autorização vem **antes** de
+qualquer escrita e antes do check de estado; todo caminho de erro fecha sem executar; a lista de
+liberados sai de `listEventSignupMembers` (só inscrição ativa), sem caminho para liberar não inscrito;
+respostas sempre efêmeras e sem id interno.
+
+Uma observação de baixa severidade foi **corrigida** em commit próprio (`fix(bot)`): fechar a call
+abortava no primeiro inscrito recusado pelo Discord (quem saiu do servidor), deixando o `@everyone` já
+negado e o resto dos inscritos sem liberação — trancados do lado de fora. Agora a porta é aplicada
+primeiro, cada inscrito é tratado por conta própria, e o número de recusados volta para quem clicou e
+para a timeline. Teste: "inscrito recusado pelo Discord não aborta os outros".
+
+Gate re-rodado depois da correção (commit f06f928): verde, 0 lint, 87.55% branch coverage, 156 e2e ok.
 <!-- SECTION:NOTES:END -->
 
 ## Final Summary
