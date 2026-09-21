@@ -13,6 +13,8 @@ import { EventsService } from "../events/events.service.js";
 import { FakeTimelinePublisher } from "../timeline/fake-timeline.publisher.js";
 import { EventLateSignupInteractions, type LateSignupInteraction } from "./event-late-signup.interactions.js";
 import { EventLateSignupService, LATE_SIGNUP_BATCH_MS } from "./event-late-signup.service.js";
+import { EventSummonService, SUMMON_CLOCK } from "./event-summon.service.js";
+import { DISCORD_GUILD_ID } from "./discord-guild.gateway.js";
 import { EVENT_VOICE_GATEWAY, type EventVoiceGateway } from "./event-voice.gateway.js";
 import { EventVoiceService } from "./event-voice.service.js";
 
@@ -22,6 +24,7 @@ const baseUrl = process.env.TEST_DATABASE_URL ?? process.env.DATABASE_URL;
 if (!baseUrl && process.env.CI) throw new Error("CI sem TEST_DATABASE_URL: testes da inscrição no meio da call não podem ser pulados");
 
 const WAITING = "623456789012345679";
+const GUILD = "1545957441643090012";
 
 /** Discord falso: quem está em cada canal e o que o bot publicou no chat da call, com view inteira. */
 function fakeVoice() {
@@ -136,6 +139,13 @@ describe.skipIf(!baseUrl)("pergunta de inscrição no meio da call (TASK-086, Po
         EventsService,
         EventSignupsService,
         EventVoiceService,
+        // TASK-087: o start do evento passou a chamar no privado quem faltou, então o EventVoiceService
+        // depende do EventSummonService (e este, do id da guild e do relógio). Entra o serviço real, não
+        // um dublê: uma quebra de integração entre as duas features precisa aparecer aqui. Sem estes
+        // providers o módulo nem subia, e os 16 testes deste arquivo eram **pulados em silêncio**.
+        EventSummonService,
+        { provide: SUMMON_CLOCK, useValue: () => new Date() },
+        { provide: DISCORD_GUILD_ID, useValue: GUILD },
         EventLateSignupService,
         EventLateSignupInteractions,
         // Janela zero: o teste fecha o lote na mão com `flush()`, em vez de esperar relógio.
