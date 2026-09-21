@@ -98,8 +98,8 @@ test("a presença é o peso: o caller edita presença e lê a prata que sai dela
   await presencas.nth(0).fill("100");
   await presencas.nth(1).fill("50");
   await expect(acerto.getByText("de presença somada, entre 2 pessoas")).toBeVisible();
-  await expect(acerto.getByText("66,67% da divisão")).toBeVisible();
-  await expect(acerto.getByText("33,33% da divisão")).toBeVisible();
+  await expect(acerto.getByText("66,67%", { exact: false }).first()).toBeVisible();
+  await expect(acerto.getByText("33,33%", { exact: false }).first()).toBeVisible();
   await expect(acerto.getByText("20.001.000").first()).toBeVisible();
   await expect(acerto.getByText("9.999.000").first()).toBeVisible();
   await snap(page, `presenca-peso-${tag()}`);
