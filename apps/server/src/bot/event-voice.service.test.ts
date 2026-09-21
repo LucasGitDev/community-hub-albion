@@ -22,6 +22,7 @@ import { EVENT_COMMAND_REPLIES } from "../domain/event-voice.js";
 import { EventSignupsService } from "../events/event-signups.service.js";
 import { EventsService } from "../events/events.service.js";
 import { DISCORD_GUILD_ID } from "./discord-guild.gateway.js";
+import { EventSummonService, SUMMON_CLOCK } from "./event-summon.service.js";
 import { EVENT_VOICE_GATEWAY, type EventVoiceGateway } from "./event-voice.gateway.js";
 import { EventVoiceService } from "./event-voice.service.js";
 import { EventCommand, type EventCommandInteraction } from "./event.command.js";
@@ -29,6 +30,9 @@ import { TIMELINE_PUBLISHER } from "../domain/timeline.js";
 import { FakeTimelinePublisher } from "../timeline/fake-timeline.publisher.js";
 
 const timeline = new FakeTimelinePublisher();
+
+/** Relógio do intervalo de 5 minutos do chamado (TASK-087); cada teste empurra o tempo que precisa. */
+let clock = new Date("2026-09-21T20:00:00Z");
 
 const baseUrl = process.env.TEST_DATABASE_URL ?? process.env.DATABASE_URL;
 if (!baseUrl && process.env.CI) throw new Error("CI sem TEST_DATABASE_URL: testes do canal de voz do evento não podem ser pulados");
@@ -49,8 +53,11 @@ function fakeVoice() {
   const created: { id: string; name: string }[] = [];
   const deleted: string[] = [];
   let seq = 0;
-  const fail = { create: false, move: new Set<string>(), delete: false, list: false, post: false };
+  const fail = { create: false, move: new Set<string>(), delete: false, list: false, post: false, dm: new Set<string>() };
   const posted: { channelId: string; title: string }[] = [];
+  /** Privados e menções do chamado de quem não entrou na call (TASK-087). */
+  const dms: { discordId: string; title: string }[] = [];
+  const mentions: { channelId: string; discordIds: string[]; content: string }[] = [];
 
   const gateway: EventVoiceGateway = {
     waitingChannelId: WAITING,
@@ -78,6 +85,13 @@ function fakeVoice() {
     async setChannelConnectLock() {
       return { failed: 0 };
     },
+    async sendDirectMessage(discordId, view) {
+      if (fail.dm.has(discordId)) throw Object.assign(new Error("privado fechado"), { code: 50007 });
+      dms.push({ discordId, title: view.title });
+    },
+    async mentionInChannel(channelId, discordIds, content) {
+      mentions.push({ channelId, discordIds: [...discordIds], content });
+    },
     async moveMember(discordId, toChannelId) {
       if (fail.move.has(discordId)) throw Object.assign(new Error("saiu da voz"), { code: 40032 });
       for (const members of channels.values()) members.delete(discordId);
@@ -89,6 +103,8 @@ function fakeVoice() {
     created,
     deleted,
     posted,
+    dms,
+    mentions,
     fail,
     channels,
     connect: (channelId: string, ...discordIds: string[]) => {
@@ -156,11 +172,13 @@ describe.skipIf(!baseUrl)("canal de voz do evento (TASK-024, Postgres real + Dis
         EventsService,
         EventSignupsService,
         EventVoiceService,
+        EventSummonService,
         EventCommand,
         { provide: DB_HANDLE, useValue: handle },
         { provide: TIMELINE_PUBLISHER, useValue: timeline },
         { provide: EVENT_VOICE_GATEWAY, useValue: discord.gateway },
         { provide: DISCORD_GUILD_ID, useValue: GUILD },
+        { provide: SUMMON_CLOCK, useValue: () => clock },
       ],
     }).compile();
     moduleRef.useLogger(false);

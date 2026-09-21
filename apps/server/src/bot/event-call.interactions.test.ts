@@ -20,6 +20,9 @@ import { EventSignupsService } from "../events/event-signups.service.js";
 import { EventsService } from "../events/events.service.js";
 import { FakeTimelinePublisher } from "../timeline/fake-timeline.publisher.js";
 import { EventCallInteractions, type CallMenuInteraction } from "./event-call.interactions.js";
+import { EventSummonService, SUMMON_CLOCK } from "./event-summon.service.js";
+import { EVENT_SUMMONER } from "../events/event-summoner.token.js";
+import { DISCORD_GUILD_ID } from "./discord-guild.gateway.js";
 import { EVENT_VOICE_GATEWAY, type EventVoiceGateway } from "./event-voice.gateway.js";
 import { EventVoiceService } from "./event-voice.service.js";
 
@@ -28,7 +31,11 @@ const timeline = new FakeTimelinePublisher();
 const baseUrl = process.env.TEST_DATABASE_URL ?? process.env.DATABASE_URL;
 if (!baseUrl && process.env.CI) throw new Error("CI sem TEST_DATABASE_URL: testes do menu da call não podem ser pulados");
 
+const GUILD = "123456789012345678";
 const WAITING = "623456789012345678";
+
+/** Relógio do intervalo de 5 minutos do chamado (TASK-087). */
+let clock = new Date("2026-09-21T20:00:00Z");
 
 /**
  * Discord falso do menu: guarda quem está conectado em cada canal (para provar que fechar a call não
@@ -39,7 +46,10 @@ function fakeCallVoice() {
   const posted: { channelId: string; title: string }[] = [];
   /** `null` = sem sobrescrita (call aberta). */
   let lock: { allowed: string[] } | null = null;
-  const fail = { lock: false, refuse: new Set<string>() };
+  const fail = { lock: false, refuse: new Set<string>(), dm: new Set<string>() };
+  /** Privados enviados e menções publicadas pelo chamado da TASK-087. */
+  const dms: { discordId: string; title: string }[] = [];
+  const mentions: { channelId: string; discordIds: string[]; content: string }[] = [];
   let seq = 0;
 
   const gateway: EventVoiceGateway = {
@@ -63,6 +73,14 @@ function fakeCallVoice() {
       posted.push({ channelId, title: view.title });
       return `msg-${posted.length}`;
     },
+    async sendDirectMessage(discordId, view) {
+      // `fail.dm` simula o Discord recusando DM de quem não é amigo (PE14).
+      if (fail.dm.has(discordId)) throw Object.assign(new Error("privado fechado"), { code: 50007 });
+      dms.push({ discordId, title: view.title });
+    },
+    async mentionInChannel(channelId, discordIds, content) {
+      mentions.push({ channelId, discordIds: [...discordIds], content });
+    },
     async setChannelConnectLock(_channelId, locked, allowDiscordIds) {
       if (fail.lock) throw Object.assign(new Error("sem permissão"), { code: 50013 });
       // `refuse` simula o Discord recusando um inscrito (saiu do servidor): ele não entra na liberação.
@@ -75,6 +93,8 @@ function fakeCallVoice() {
   return {
     gateway,
     posted,
+    dms,
+    mentions,
     fail,
     lockState: () => lock,
     refuseFor: (discordId: string) => fail.refuse.add(discordId),
@@ -87,6 +107,9 @@ function fakeCallVoice() {
     reset: () => {
       for (const members of connected.values()) members.clear();
       posted.length = 0;
+      dms.length = 0;
+      mentions.length = 0;
+      fail.dm.clear();
       lock = null;
       fail.lock = false;
       fail.refuse.clear();
@@ -136,10 +159,14 @@ describe.skipIf(!baseUrl)("menu de gestão da call (TASK-085, Postgres real + Di
         EventsService,
         EventSignupsService,
         EventVoiceService,
+        EventSummonService,
+        { provide: EVENT_SUMMONER, useExisting: EventSummonService },
         EventCallInteractions,
         { provide: DB_HANDLE, useValue: handle },
         { provide: TIMELINE_PUBLISHER, useValue: timeline },
         { provide: EVENT_VOICE_GATEWAY, useValue: discord.gateway },
+        { provide: DISCORD_GUILD_ID, useValue: GUILD },
+        { provide: SUMMON_CLOCK, useValue: () => clock },
       ],
     }).compile();
     moduleRef.useLogger(false);

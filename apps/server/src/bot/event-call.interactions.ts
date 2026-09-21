@@ -10,8 +10,11 @@ import {
   EVENT_CALL_FINISH_BUTTON,
   EVENT_CALL_LOCK_BUTTON,
   EVENT_CALL_REPLIES,
+  EVENT_CALL_SUMMON_BUTTON,
   EVENT_CALL_UNLOCK_BUTTON,
 } from "../domain/event-call-menu.js";
+import { EVENT_SUMMON_REPLIES, eventSummonSummary } from "../domain/event-summon.js";
+import { EVENT_SUMMONER, type EventSummoner } from "../events/event-summoner.token.js";
 import { TIMELINE_PUBLISHER, type TimelineAction, type TimelinePublisher } from "../domain/timeline.js";
 import { EventsService } from "../events/events.service.js";
 import { loadTimelinePeople, publishAfterCommit } from "../timeline/timeline-people.js";
@@ -25,22 +28,22 @@ export interface CallMenuInteraction {
   editReply(options: { content: string }): Promise<unknown>;
 }
 
-type CallAction = "finish" | "lock" | "unlock";
+type CallAction = "finish" | "lock" | "unlock" | "summon";
 
 /** Ação CASL de cada botão: finalizar é `finish`; mexer na call é `update` do evento. */
-const ABILITY: Record<CallAction, Action> = { finish: "finish", lock: "update", unlock: "update" };
+const ABILITY: Record<CallAction, Action> = { finish: "finish", lock: "update", unlock: "update", summon: "update" };
 
 /** Ação da timeline de cada botão que não passa pelo serviço de evento (o finish publica sozinho). */
-const TIMELINE: Record<Exclude<CallAction, "finish">, { action: TimelineAction; verb: string }> = {
+const TIMELINE: Record<"lock" | "unlock", { action: TimelineAction; verb: string }> = {
   lock: { action: "event.call_locked", verb: "Call fechada" },
   unlock: { action: "event.call_unlocked", verb: "Call aberta" },
 };
 
 /**
- * Menu de gestão da call (TASK-085, PE9 a PE11). Três botões no chat de texto do canal de voz do
- * evento: finalizar o evento, fechar a call e abrir a call. Chamar os ausentes saiu daqui e virou a
- * TASK-087 (PE12 a PE16): lá o chamado é mensagem no privado, com queda para menção e intervalo por
- * pessoa, e também sai do painel — outra ação, outro caminho, não este botão.
+ * Menu de gestão da call (TASK-085, PE9 a PE11; a quarta ação é a TASK-087, PE15/PE16). Botões no chat
+ * de texto do canal de voz do evento: chamar quem falta, fechar a call, abrir a call e finalizar o
+ * evento. "Chamar quem falta" é **privado**, não menção no chat (PE16): ele delega ao mesmo
+ * `EventSummoner` que o painel e o início do evento usam, com intervalo de 5 minutos por pessoa.
  *
  * **Segurança (PE11):** o menu é visível para todo mundo que enxerga a call — o Discord não esconde
  * componente por cargo —, então a checagem é no clique. Quem clicou vem sempre de
@@ -66,11 +69,17 @@ export class EventCallInteractions {
     @Inject(DB_HANDLE) private readonly handle: DbHandle,
     @Inject(EVENT_VOICE_GATEWAY) private readonly gateway: EventVoiceGateway,
     @Inject(TIMELINE_PUBLISHER) private readonly timeline: TimelinePublisher,
+    @Inject(EVENT_SUMMONER) private readonly summons: EventSummoner,
   ) {}
 
   @Button(EVENT_CALL_FINISH_BUTTON)
   async onFinish(@Context() [interaction]: [CallMenuInteraction], @ComponentParam("eventId") eventId: string): Promise<void> {
     await this.guarded(interaction, eventId, "finish");
+  }
+
+  @Button(EVENT_CALL_SUMMON_BUTTON)
+  async onSummon(@Context() [interaction]: [CallMenuInteraction], @ComponentParam("eventId") eventId: string): Promise<void> {
+    await this.guarded(interaction, eventId, "summon");
   }
 
   @Button(EVENT_CALL_LOCK_BUTTON)
@@ -113,7 +122,19 @@ export class EventCallInteractions {
 
     if (action === "finish") return this.finish(event, userId);
     if (!event.voiceChannelId) return EVENT_CALL_REPLIES.noChannel;
+    // TASK-087 (PE15/PE16): o chamado é o mesmo serviço do painel e do início do evento — o botão não
+    // repete regra nenhuma, nem a do intervalo de 5 minutos, nem a da queda para menção.
+    if (action === "summon") return this.summon(event.id, userId);
     return this.setLock(event, event.voiceChannelId, userId, action === "lock");
+  }
+
+  /** Quarta ação do menu (TASK-087): o serviço já checou tudo; aqui só vira frase para quem clicou. */
+  private async summon(eventId: string, userId: string): Promise<string> {
+    const result = await this.summons.summon(eventId, userId);
+    if (result.ok) return eventSummonSummary(result.outcome);
+    if (result.reason === "not_found") return EVENT_CALL_REPLIES.notFound;
+    if (result.reason === "denied") return EVENT_SUMMON_REPLIES.denied;
+    return result.reason === "no_channel" ? EVENT_SUMMON_REPLIES.noChannel : EVENT_SUMMON_REPLIES.notRunning;
   }
 
   /** Mesmo serviço do painel (AC#2): o menu não conhece a máquina de estados nem o canal de voz. */
@@ -143,7 +164,7 @@ export class EventCallInteractions {
   }
 
   /** Linha da timeline com **quem clicou** (AC#7). Falhar aqui nunca desfaz o que já aconteceu (T6). */
-  private async publish(action: Exclude<CallAction, "finish">, event: EventDto, userId: string, details: { name: string; value: string }[]): Promise<void> {
+  private async publish(action: "lock" | "unlock", event: EventDto, userId: string, details: { name: string; value: string }[]): Promise<void> {
     const meta = TIMELINE[action];
     await publishAfterCommit(this.timeline, this.logger, async () => {
       const people = await loadTimelinePeople(this.handle.db, [userId]);

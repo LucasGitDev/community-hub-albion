@@ -20,6 +20,7 @@ export const DISCORD_EVENT_CATEGORY_ID = Symbol("DISCORD_EVENT_CATEGORY_ID");
 const EVENT_CATEGORY_INVALID = "EVENT_CATEGORY_INVALID";
 const WAITING_VOICE_CHANNEL_INVALID = "WAITING_VOICE_CHANNEL_INVALID";
 const EVENT_VOICE_CHANNEL_INVALID = "EVENT_VOICE_CHANNEL_INVALID";
+const DIRECT_MESSAGE_UNAVAILABLE = "DIRECT_MESSAGE_UNAVAILABLE";
 
 /**
  * Porta da voz do evento (TASK-024, Q28/Q29). Quatro operações, nenhuma regra: criar o canal do evento
@@ -49,6 +50,18 @@ export interface EventVoiceGateway {
    * permissão de entrada não expulsa ninguém.
    */
   setChannelConnectLock(channelId: string, locked: boolean, allowDiscordIds: readonly string[], reason: string): Promise<ConnectLockResult>;
+  /**
+   * Privado para a pessoa (TASK-087, PE13). Quem está com a DM fechada faz o Discord **lançar** (50007,
+   * "Cannot send messages to this user"): quem chama traduz isso na queda para menção (PE14), então
+   * este erro é esperado e não é sinal de bug.
+   */
+  sendDirectMessage(discordId: string, view: EmbedView): Promise<void>;
+  /**
+   * Queda do privado fechado (PE14): **uma** mensagem no chat da call mencionando a lista. Diferente de
+   * `postToChannel`, aqui a menção **notifica de propósito** — é o único toque que essas pessoas vão
+   * receber —, e só quem está na lista é notificado.
+   */
+  mentionInChannel(channelId: string, discordIds: readonly string[], content: string): Promise<void>;
   /** Id do canal fixo "Aguardando Evento": destino do finish e única origem do start (Q29). */
   readonly waitingChannelId: string;
 }
@@ -64,7 +77,7 @@ type VoiceChannelLike = {
   send?(payload: unknown): Promise<{ id: string }>;
   permissionOverwrites?: PermissionOverwritesLike;
 };
-type MemberLike = { voice: { setChannel(channelId: string, reason?: string): Promise<unknown> } };
+type MemberLike = { voice: { setChannel(channelId: string, reason?: string): Promise<unknown> }; send?(payload: unknown): Promise<unknown> };
 type GuildLike = {
   channels: {
     fetch(id: string): Promise<VoiceChannelLike | null>;
@@ -122,6 +135,20 @@ export class DiscordJsEventVoiceGateway implements EventVoiceGateway {
     if (!channel.send) throw Object.assign(new Error("Canal do evento não aceita mensagem"), { code: EVENT_VOICE_CHANNEL_INVALID });
     const message = await channel.send(toMessagePayload(view));
     return message.id;
+  }
+
+  async sendDirectMessage(discordId: string, view: EmbedView): Promise<void> {
+    const guild = await this.client.guilds.fetch(this.guildId);
+    const member = await guild.members.fetch(discordId);
+    if (!member.send) throw Object.assign(new Error("Membro do Discord não aceita mensagem no privado"), { code: DIRECT_MESSAGE_UNAVAILABLE });
+    await member.send(toMessagePayload(view));
+  }
+
+  async mentionInChannel(channelId: string, discordIds: readonly string[], content: string): Promise<void> {
+    const channel = await this.voiceChannel(channelId);
+    if (!channel.send) throw Object.assign(new Error("Canal do evento não aceita mensagem"), { code: EVENT_VOICE_CHANNEL_INVALID });
+    // `users` explícito: notifica exatamente quem está na lista e nada mais — nunca @everyone, nunca cargo.
+    await channel.send({ content, allowedMentions: { users: [...discordIds] } });
   }
 
   /**

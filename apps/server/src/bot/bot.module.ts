@@ -13,6 +13,8 @@ import { EventSignupInteractions } from "./event-signup.interactions.js";
 import { DISCORD_EVENT_CATEGORY_ID, DISCORD_WAITING_VOICE_CHANNEL_ID, DiscordJsEventVoiceGateway, EVENT_VOICE_GATEWAY } from "./event-voice.gateway.js";
 import { EventVoiceService } from "./event-voice.service.js";
 import { EventCallInteractions } from "./event-call.interactions.js";
+import { EventSummonService, SUMMON_CLOCK } from "./event-summon.service.js";
+import { EVENT_SUMMONER } from "../events/event-summoner.token.js";
 import { EventCommand } from "./event.command.js";
 import { ImportMembersCommand } from "./import-members.command.js";
 import { DISCORD_EVENTS_CHANNEL_ID, DiscordJsEventsChannelGateway, EVENTS_CHANNEL_GATEWAY } from "./events-channel.gateway.js";
@@ -103,6 +105,10 @@ export class BotModule {
         EventCommand,
         // TASK-085: menu de gestão da call no chat de texto do canal de voz (PE9 a PE11).
         EventCallInteractions,
+        // TASK-087: chamar no privado quem confirmou e não entrou na call (PE12 a PE16).
+        { provide: SUMMON_CLOCK, useValue: () => new Date() },
+        EventSummonService,
+        { provide: EVENT_SUMMONER, useExisting: EventSummonService },
         // TASK-056: emoji da Buffunfa resolvido no boot (env > descoberto > texto puro, F6-28).
         { provide: BUFFUNFA_EMOJI_GATEWAY, useClass: DiscordJsGuildEmojiGateway },
         { provide: BUFFUNFA_EMOJI_ID, useValue: env.DISCORD_BUFFUNFA_EMOJI_ID ?? null },
@@ -110,7 +116,8 @@ export class BotModule {
         BuffunfaEmojiService,
       ],
       // DISCORD_GUILD_MEMBERS_GATEWAY sai daqui para a limpeza diária (TASK-049) ler a guild com o mesmo cliente.
-      exports: [DiscordMemberImportService, MEMBER_IMPORTER, DISCORD_GUILD_MEMBERS_GATEWAY, BuffunfaEmojiService],
+      // EVENT_SUMMONER sai daqui para o endpoint do painel (TASK-087) chamar o mesmo serviço do menu da call.
+      exports: [DiscordMemberImportService, MEMBER_IMPORTER, DISCORD_GUILD_MEMBERS_GATEWAY, BuffunfaEmojiService, EVENT_SUMMONER],
     };
   }
 }
