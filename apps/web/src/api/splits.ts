@@ -1,4 +1,4 @@
-import type { EventDto, EventFeeInput, LootSplitDto, SplitPresenceDto } from "@albion-hub/shared";
+import type { EventDto, EventFeeInput, EventPresenceUpdateInput, LootSplitDto, SplitPresenceDto } from "@albion-hub/shared";
 import { api } from "./http";
 
 /**
@@ -15,15 +15,16 @@ export const fetchEventSplits = (eventId: string): Promise<{ splits: LootSplitDt
 export const createSplit = (eventId: string, totalSilver: bigint): Promise<LootSplitDto> =>
   api(`/api/events/${eventId}/splits`, { method: "POST", body: JSON.stringify({ totalSilver: totalSilver.toString() }) });
 
-export const updateSplit = (
-  eventId: string,
-  splitId: string,
-  body: { totalSilver?: bigint; lines?: { id: string; shareBp: number }[] },
-): Promise<LootSplitDto> =>
-  api(`/api/events/${eventId}/splits/${splitId}`, {
-    method: "PATCH",
-    body: JSON.stringify({ ...(body.totalSilver === undefined ? {} : { totalSilver: body.totalSilver.toString() }), ...(body.lines ? { lines: body.lines } : {}) }),
-  });
+/** Só o total: a participação é derivada da presença do evento (PE1/PE2), que tem rota própria. */
+export const updateSplit = (eventId: string, splitId: string, totalSilver: bigint): Promise<LootSplitDto> =>
+  api(`/api/events/${eventId}/splits/${splitId}`, { method: "PATCH", body: JSON.stringify({ totalSilver: totalSilver.toString() }) });
+
+/**
+ * Presença do evento (PE1, PE4): de 0 a 100% por pessoa, independente, sem precisar somar 100%.
+ * A lista é parcial — manda só quem mudou — e a resposta traz a presença do evento inteiro.
+ */
+export const setEventPresence = (eventId: string, entries: EventPresenceUpdateInput["entries"]): Promise<{ present: SplitPresenceDto[] }> =>
+  api(`/api/events/${eventId}/presence`, { method: "PUT", body: JSON.stringify({ entries }) });
 
 /** `paidInGameLineIds`: quem já recebeu a prata no jogo (TASK-081). Cada um ganha crédito e saque liquidado juntos. */
 export const confirmSplit = (eventId: string, splitId: string, paidInGameLineIds: readonly string[]): Promise<LootSplitDto> =>

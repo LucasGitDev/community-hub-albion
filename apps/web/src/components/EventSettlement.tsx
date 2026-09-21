@@ -13,7 +13,7 @@ import {
   type LootSplitDto,
   type SplitPresenceDto,
 } from "@albion-hub/shared";
-import { AlertTriangle, Archive, Calculator, Check, Coins, Crown, Lock, Pencil, RotateCcw, Save, Users } from "lucide-react";
+import { AlertTriangle, Archive, Calculator, Check, Coins, Crown, Lock, Pencil, RotateCcw, Save, Timer, Users } from "lucide-react";
 import { useCallback, useEffect, useId, useMemo, useState } from "react";
 import { toast } from "sonner";
 import * as eventsApi from "@/api/events";
@@ -36,12 +36,13 @@ import {
   eventFee,
   feePreviewText,
   isSettlementOpen,
+  presenceSum,
+  presenceSumText,
   rowsFromPresence,
   rowsFromSplit,
   settlementTotals,
-  shareSum,
-  shareSumText,
   withAmounts,
+  withShares,
   type SettlementRow,
 } from "@/lib/settlement";
 import { cn } from "@/lib/utils";
@@ -374,8 +375,8 @@ function SplitStep({
         !open
           ? "Arquivado: as levas abaixo são o registro final do que foi dividido."
           : draft
-            ? "Ajuste o total e os percentuais. Confirmar credita a prata na carteira de cada um e não volta atrás."
-            : "O tempo de call de cada um já está medido desde o fim do evento. Informe o total da leva para dividir."
+            ? "Ajuste o total e a presença de cada um. A prata é calculada daí — confirmar credita na carteira e não volta atrás."
+            : "A presença de cada um já veio medida da call. Ajuste quem precisa e informe o total da leva para dividir."
       }
     >
       <div className="space-y-6">
@@ -386,6 +387,7 @@ function SplitStep({
           <DraftEditor
             event={event}
             split={draft}
+            present={present}
             open={open}
             onChanged={() => {
               onConfirmed();
@@ -400,7 +402,39 @@ function SplitStep({
   );
 }
 
-/** Sem rascunho: o campo do total é o CTA, e a presença já medida aparece embaixo como prévia. */
+/**
+ * Presença em edição (PE1): **de 0 a 100% por pessoa, independente**.
+ *
+ * O estado guarda só as pessoas que o caller mexeu, e é essa lista parcial que vai para a API — cada
+ * presença é um número sobre uma pessoa, não uma fatia de um bolo fechado, então mexer na de um não
+ * reenvia a dos outros. A participação e a prata que a tela mostra saem daqui pelas **mesmas** funções
+ * que o servidor usa (`withShares`), então o número conferido é o número creditado.
+ */
+function usePresenceDraft(eventId: string, base: SettlementRow[], distributable: bigint) {
+  const [edits, setEdits] = useState<Record<string, number>>({});
+  const changed = base.filter((row) => edits[row.key] !== undefined && edits[row.key] !== row.presenceBp);
+  const rows = withAmounts(
+    withShares(base.map((row) => ({ ...row, presenceBp: edits[row.key] ?? row.presenceBp }))),
+    distributable,
+  );
+
+  return {
+    rows,
+    dirty: changed.length > 0,
+    setPresence: (key: string, presenceBp: number) => setEdits((e) => ({ ...e, [key]: presenceBp })),
+    reset: () => setEdits({}),
+    /** Grava a presença do evento. Sem nada mudado não gasta requisição. */
+    save: async (): Promise<void> => {
+      if (changed.length === 0) return;
+      await splitsApi.setEventPresence(
+        eventId,
+        changed.map((row) => ({ discordUserId: row.key, presenceBp: edits[row.key]! })),
+      );
+    },
+  };
+}
+
+/** Sem rascunho: o campo do total é o CTA, e a presença já medida aparece embaixo, editável. */
 function NewSplit({
   event,
   open,
@@ -421,9 +455,13 @@ function NewSplit({
   const fieldId = useId();
   const [busy, setBusy] = useState(false);
   const fee = eventFee(event);
-  const rows = useMemo(() => rowsFromPresence(present), [present]);
+  const base = useMemo(() => rowsFromPresence(present), [present]);
   const total = parseAmount(text, "silver") ?? 0n;
+  const distributable = feeBreakdown(total, fee).distributable;
+  const presence = usePresenceDraft(event.id, base, distributable);
+  const rows = presence.rows;
   const totals = settlementTotals(total, fee, rows);
+  const sum = presenceSum(rows);
   /*
    * AC#8: taxa maior que o total não chega na API. A frase inteira (a mesma do 409) fica no passo 2,
    * que é onde se conserta; aqui basta dizer por que o botão não vai, sem repetir o parágrafo colado.
@@ -433,11 +471,27 @@ function NewSplit({
   async function create() {
     setBusy(true);
     try {
+      // A presença vai antes: é ela que pesa a divisão, e o rascunho nasce já com a lista ajustada.
+      await presence.save();
       await splitsApi.createSplit(event.id, total);
-      toast.success("Divisão calculada", { description: "Confira os percentuais e o que cada um recebe antes de confirmar." });
+      toast.success("Divisão calculada", { description: "Confira a presença e o que cada um recebe antes de confirmar." });
       onChanged();
     } catch (e) {
       toast.error(errorText(e, "Não foi possível calcular a divisão."));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function savePresence() {
+    setBusy(true);
+    try {
+      await presence.save();
+      presence.reset();
+      toast.success("Presença salva", { description: "Ela vale para as próximas levas e para o prêmio de presença em Buffunfa." });
+      onChanged();
+    } catch (e) {
+      toast.error(errorText(e, "Não foi possível salvar a presença."));
     } finally {
       setBusy(false);
     }
@@ -472,12 +526,20 @@ function NewSplit({
               className="num mt-1.5 w-48 text-lg"
             />
           </div>
-          <Button disabled={busy || total <= 0n || blocked} onClick={() => void create()}>
+          <Button disabled={busy || total <= 0n || blocked || !sum.ok} onClick={() => void create()}>
             <Calculator />
             Calcular divisão
           </Button>
+          {presence.dirty && (
+            <Button variant="outline" disabled={busy} onClick={() => void savePresence()}>
+              <Save />
+              Salvar só a presença
+            </Button>
+          )}
         </div>
       )}
+
+      {open && <PresenceFooter sum={sum} />}
 
       {blocked && (
         <p role="alert" className="flex items-start gap-2 text-sm">
@@ -489,41 +551,68 @@ function NewSplit({
       {!open && (
         <p className="text-sm text-muted-foreground">Este evento foi arquivado sem nenhuma divisão de loot. Ficou registrado quem esteve na call:</p>
       )}
-      <SettlementTable rows={rows} caption={open ? "Quem esteve na call — a divisão nasce desta lista" : "Quem esteve na call"} />
+      <SettlementTable
+        rows={rows}
+        onPresenceChange={open ? presence.setPresence : undefined}
+        caption={open ? "Quem esteve na call — a presença de cada um é o peso da divisão" : "Quem esteve na call"}
+      />
     </div>
   );
 }
 
 /* ------------------------------------------------------------ rascunho */
 
-function DraftEditor({ event, split, open, onChanged }: { event: EventDto; split: LootSplitDto; open: boolean; onChanged: () => void }) {
+function DraftEditor({
+  event,
+  split,
+  present,
+  open,
+  onChanged,
+}: {
+  event: EventDto;
+  split: LootSplitDto;
+  present: SplitPresenceDto[];
+  open: boolean;
+  onChanged: () => void;
+}) {
   const totalId = useId();
   // A taxa do rascunho é a que ele congelou no momento em que nasceu, não a que está no evento agora.
   const fee = feeFromDto(split.fee);
   const [totalText, setTotalText] = useState(() => formatAmount(BigInt(split.totalSilver), "silver"));
-  const [shares, setShares] = useState<Record<string, number>>(() => Object.fromEntries(split.lines.map((l) => [l.id, l.shareBp])));
   const [busy, setBusy] = useState(false);
   const [confirming, setConfirming] = useState(false);
 
   const total = parseAmount(totalText, "silver") ?? 0n;
-  const base = useMemo(() => rowsFromSplit(split), [split]);
-  const edited: SettlementRow[] = base.map((row) => ({ ...row, shareBp: shares[row.lineId!] ?? row.shareBp }));
-  const totals = settlementTotals(total, fee, edited);
-  const rows = withAmounts(edited, totals.distributable);
-  const sum = shareSum(rows);
+  const distributable = feeBreakdown(total, fee).distributable;
+  // A medição crua vem da presença do evento: é o que deixa a tela dizer "medido 72%, você pôs 100%".
+  const measured = useMemo(() => new Map(present.map((p) => [p.discordUserId, p.measuredPresenceBp])), [present]);
+  const base = useMemo(() => rowsFromSplit(split, measured), [split, measured]);
+  const presence = usePresenceDraft(event.id, base, distributable);
+  const rows = presence.rows;
+  const totals = settlementTotals(total, fee, rows);
+  const sum = presenceSum(rows);
   const blocked = confirmBlockedReason(total, fee, rows);
-  const dirty = total !== BigInt(split.totalSilver) || base.some((row) => rows.find((r) => r.lineId === row.lineId)!.shareBp !== row.shareBp);
+  const totalDirty = total !== BigInt(split.totalSilver);
+  const dirty = totalDirty || presence.dirty;
 
-  const payload = () => ({ totalSilver: total, lines: rows.map((r) => ({ id: r.lineId!, shareBp: r.shareBp })) });
+  /**
+   * Presença primeiro, total depois. A ordem importa: gravar a presença recalcula o rascunho inteiro
+   * no servidor, e o total chega em cima de uma divisão que já é a de agora.
+   */
+  async function persist(): Promise<void> {
+    await presence.save();
+    if (totalDirty) await splitsApi.updateSplit(event.id, split.id, total);
+    presence.reset();
+  }
 
-  async function save(): Promise<boolean> {
+  async function save() {
     setBusy(true);
     try {
-      await splitsApi.updateSplit(event.id, split.id, payload());
-      return true;
+      await persist();
+      toast.success("Rascunho salvo");
+      onChanged();
     } catch (e) {
       toast.error(errorText(e, "Não foi possível salvar o rascunho."));
-      return false;
     } finally {
       setBusy(false);
     }
@@ -533,7 +622,7 @@ function DraftEditor({ event, split, open, onChanged }: { event: EventDto; split
     setBusy(true);
     try {
       // Salva antes de confirmar: o que o caller está vendo na tela é o que tem que ser creditado.
-      if (dirty) await splitsApi.updateSplit(event.id, split.id, payload());
+      if (dirty) await persist();
       await splitsApi.confirmSplit(event.id, split.id, paidInGameLineIds);
       const paid = paidInGameLineIds.length;
       toast.success("Split confirmado", {
@@ -575,19 +664,16 @@ function DraftEditor({ event, split, open, onChanged }: { event: EventDto; split
         totals={totals}
         ownerNick={event.ownerNick}
         fee={fee}
-        onShareChange={open ? (lineId, shareBp) => setShares((s) => ({ ...s, [lineId]: shareBp })) : undefined}
-        caption="Participação de cada um nesta leva"
+        onPresenceChange={open ? presence.setPresence : undefined}
+        caption="Presença de cada um nesta leva, e a prata que sai dela"
       />
 
-      {/* Rodapé do dinheiro: a soma é o número-chave da tela, e o botão de confirmar fica do lado dela. */}
+      {/* Rodapé do dinheiro: o divisor da conta é o número-chave, e o botão de confirmar fica do lado dele. */}
       <div className="flex flex-wrap items-center justify-between gap-x-6 gap-y-3 rounded-xl border bg-muted/40 px-4 py-3">
-        <p className="flex items-baseline gap-2">
-          <span className={cn("num text-3xl font-semibold", sum.ok ? "text-success" : "text-foreground")}>{formatShare(sum.sumBp)}</span>
-          <span className="text-sm text-muted-foreground">{sum.ok ? "a divisão fecha" : shareSumText(sum)}</span>
-        </p>
+        <PresenceFooter sum={sum} />
         {open && (
           <div className="flex flex-wrap items-center gap-2">
-            <Button variant="outline" size="sm" disabled={busy || !dirty} onClick={() => void save().then((ok) => ok && (toast.success("Rascunho salvo"), onChanged()))}>
+            <Button variant="outline" size="sm" disabled={busy || !dirty} onClick={() => void save()}>
               <Save />
               Salvar rascunho
             </Button>
@@ -618,6 +704,22 @@ function DraftEditor({ event, split, open, onChanged }: { event: EventDto; split
         />
       )}
     </div>
+  );
+}
+
+/**
+ * O divisor da conta, dito em voz alta (PE2).
+ *
+ * Substitui o "100% — a divisão fecha" de antes, que não existe mais: a presença **não** soma 100%, e
+ * mostrar o total somado é o que explica por que quem ficou 100% na call levou 40% da prata. Quando
+ * ninguém tem presença, este é o lugar onde o caller descobre por que o botão não vai (AC#7).
+ */
+function PresenceFooter({ sum }: { sum: ReturnType<typeof presenceSum> }) {
+  return (
+    <p className="flex items-baseline gap-2">
+      <span className={cn("num text-3xl font-semibold", sum.ok ? "text-foreground" : "text-destructive")}>{formatShare(sum.sumBp)}</span>
+      <span className="max-w-64 text-sm text-muted-foreground">{presenceSumText(sum)}</span>
+    </p>
   );
 }
 
@@ -670,14 +772,15 @@ function SettlementTable({
   totals,
   fee,
   ownerNick,
-  onShareChange,
+  onPresenceChange,
   caption,
 }: {
   rows: SettlementRow[];
   totals?: ReturnType<typeof settlementTotals>;
   fee?: EventFee;
   ownerNick?: string | null;
-  onShareChange?: (lineId: string, shareBp: number) => void;
+  /** Ausente = tabela só de leitura (leva confirmada, evento arquivado). */
+  onPresenceChange?: (key: string, presenceBp: number) => void;
   caption: string;
 }) {
   const owner = ownerNick ?? "o caller do evento";
@@ -691,7 +794,8 @@ function SettlementTable({
             {/* Em 400px de largura não cabem quatro colunas sem empurrar a prata para fora da tela,
                 e a prata é o número que se confere. O tempo vira uma linha abaixo do nome. */}
             <TableHead className="hidden text-right sm:table-cell">Tempo na call</TableHead>
-            <TableHead className="text-right">Participação</TableHead>
+            {/* Os dois números da PE2, lado a lado: o de cima se edita, o da direita sai dele. */}
+            <TableHead className="text-right">Presença</TableHead>
             <TableHead className="text-right">Prata</TableHead>
           </TableRow>
         </TableHeader>
@@ -710,15 +814,18 @@ function SettlementTable({
                 </span>
               </TableCell>
               <TableCell className="num hidden text-right text-muted-foreground sm:table-cell">{formatPresence(row.presenceMs)}</TableCell>
-              <TableCell className="text-right">
-                {onShareChange && row.lineId ? (
-                  <ShareInput nick={row.nick} shareBp={row.shareBp} onChange={(bp) => onShareChange(row.lineId!, bp)} />
+              <TableCell className="text-right align-top">
+                {onPresenceChange ? (
+                  <PresenceInput nick={row.nick} row={row} onChange={(bp) => onPresenceChange(row.key, bp)} />
                 ) : (
-                  <span className="num font-medium">{formatShare(row.shareBp)}</span>
+                  <span className="num font-medium">{formatShare(row.presenceBp)}</span>
                 )}
               </TableCell>
-              <TableCell className="px-2 text-right sm:px-3">
+              <TableCell className="px-2 text-right align-top sm:px-3">
                 <Amount currency="silver" value={row.amount} className={cn("font-semibold", row.amount === 0n && "text-muted-foreground")} />
+                {/* O terceiro número não ganha coluna: ele **explica** a prata, e a coluna extra
+                    empurraria o valor para fora da tela em 400px. */}
+                <span className="num block text-xs text-muted-foreground">{row.shareBp > 0 ? `${formatShare(row.shareBp)} da divisão` : "não recebe"}</span>
               </TableCell>
             </TableRow>
           ))}
@@ -769,26 +876,41 @@ function SettlementTable({
   );
 }
 
-/** Percentual editável em basis points (0,01%): a granularidade que o caller vê é a que é creditada. */
-function ShareInput({ nick, shareBp, onChange }: { nick: string; shareBp: number; onChange: (shareBp: number) => void }) {
-  const [text, setText] = useState(() => (shareBp / 100).toString().replace(".", ","));
+/**
+ * A presença editável (PE1): 0 a 100%, independente de todo mundo.
+ *
+ * Embaixo do campo fica a medição da call quando ela **discorda** do que está digitado — dito só
+ * quando é notícia, porque repetir "medido 100%" embaixo de um 100% seria ruído em toda linha. É o
+ * que dá ao caller o direito de discordar do relógio sem ficar às cegas.
+ */
+function PresenceInput({ nick, row, onChange }: { nick: string; row: SettlementRow; onChange: (presenceBp: number) => void }) {
+  const [text, setText] = useState(() => (row.presenceBp / 100).toString().replace(".", ","));
   const parsed = parsePercentBp(text || "0");
+  const edited = row.measuredPresenceBp !== null && row.measuredPresenceBp !== row.presenceBp;
 
   return (
-    <span className="inline-flex items-center gap-1">
-      <Input
-        aria-label={`Participação de ${nick} em porcentagem`}
-        inputMode="decimal"
-        value={text}
-        aria-invalid={parsed === null}
-        onChange={(e) => {
-          setText(e.target.value);
-          const bp = parsePercentBp(e.target.value || "0");
-          if (bp !== null) onChange(bp);
-        }}
-        className="num h-8 w-20 text-right"
-      />
-      <span className="text-sm text-muted-foreground">%</span>
+    <span className="inline-flex flex-col items-end gap-0.5">
+      <span className="inline-flex items-center gap-1">
+        <Input
+          aria-label={`Presença de ${nick} em porcentagem`}
+          inputMode="decimal"
+          value={text}
+          aria-invalid={parsed === null}
+          onChange={(e) => {
+            setText(e.target.value);
+            const bp = parsePercentBp(e.target.value || "0");
+            if (bp !== null) onChange(bp);
+          }}
+          className="num h-8 w-20 text-right"
+        />
+        <span className="text-sm text-muted-foreground">%</span>
+      </span>
+      {edited && (
+        <span className="num inline-flex items-center gap-1 pr-5 text-xs text-muted-foreground">
+          <Timer className="size-3" aria-hidden />
+          medido {formatShare(row.measuredPresenceBp!)}
+        </span>
+      )}
     </span>
   );
 }
@@ -854,7 +976,7 @@ function ConfirmSplitDialog({
           <dd className="text-muted-foreground">
             <Amount currency="silver" value={-totals.residual} />
           </dd>
-          <dt className="border-t pt-2">Dividido entre {paid.length === 1 ? "1 pessoa" : `${paid.length} pessoas`}</dt>
+          <dt className="border-t pt-2">Dividido entre {paid.length === 1 ? "1 pessoa" : `${paid.length} pessoas`}, pela presença</dt>
           <dd className="border-t pt-2">
             <Amount currency="silver" value={totals.paid} className="font-semibold" />
           </dd>
@@ -887,7 +1009,7 @@ function ConfirmSplitDialog({
                       aria-label={`${row.nick} já recebeu no jogo`}
                     />
                     <span className="min-w-0 flex-1 truncate">
-                      {row.nick} <span className="num text-muted-foreground">{formatShare(row.shareBp)}</span>
+                      {row.nick} <span className="num text-muted-foreground">{formatShare(row.shareBp)} da divisão</span>
                       <span className="block text-xs text-muted-foreground">
                         {!canMark ? "sem conta no painel: não recebe pelo painel" : checked ? "pago no jogo" : "vai para a carteira"}
                       </span>
