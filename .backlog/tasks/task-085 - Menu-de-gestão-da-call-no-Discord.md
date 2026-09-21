@@ -1,10 +1,11 @@
 ---
 id: TASK-085
 title: Menu de gestão da call no Discord
-status: To Do
-assignee: []
+status: In Progress
+assignee:
+  - '@claude'
 created_date: '2026-09-21 12:57'
-updated_date: '2026-09-21 13:02'
+updated_date: '2026-09-21 13:05'
 labels: []
 milestone: m-12
 dependencies: []
@@ -45,6 +46,19 @@ Fechar a call é tirar a permissão de entrar de quem não está inscrito, deixa
 - [ ] #8 Notas e final summary com evidências; commits Conventional atômicos sem co-autor
 - [ ] #9 PR merged na main com quality gate verde; branch e worktree removidos
 <!-- DOD:END -->
+
+## Implementation Plan
+
+<!-- SECTION:PLAN:BEGIN -->
+1. domain/event-call-menu.ts puro: ids dos 3 botões, EmbedView do menu, copy PT-BR das recusas e a seleção de quem continua podendo entrar com a call fechada.
+2. event-voice.gateway.ts: duas operações novas na porta — postar o menu no chat de texto do canal de voz e editar a sobrescrita de Connect (fechar/abrir). Erro do Discord sobe para o chamador traduzir.
+3. event-voice.service.ts: depois de criar e gravar o canal, publica o menu; falha só loga e o start segue (PE9).
+4. bot/event-call.interactions.ts: 3 @Button. Checagem no clique (PE11): discordId → userId → CASL finish/update Event com ownerId, contra o evento recarregado. Finalizar chama EventsService.transition('finish') — mesmo serviço do painel. Fechar/abrir mexem só em permissão do canal (PE10, sem estado novo).
+5. Timeline: finish já publica event.finished pelo serviço com o ator do clique; fechar/abrir publicam event.call_locked / event.call_unlocked.
+6. Testes: domínio puro + interações com Postgres real, Discord falso e FakeTimelinePublisher.
+7. Gate completo com E2E_PORT=4193.
+Fora de escopo (mudança do usuário): 'chamar os ausentes' virou TASK-087 (PE12 a PE16).
+<!-- SECTION:PLAN:END -->
 
 ## Implementation Notes
 
