@@ -6,6 +6,7 @@ import { describeDiscordError } from "../domain/discord-errors.js";
 import { eventCallMenuView } from "../domain/event-call-menu.js";
 import { eventVoiceChannelName, membersToMove } from "../domain/event-voice.js";
 import { EventsService } from "../events/events.service.js";
+import { EventSummonService } from "./event-summon.service.js";
 import { EVENT_VOICE_GATEWAY, type EventVoiceGateway } from "./event-voice.gateway.js";
 
 /** Quantas pessoas foram movidas e quantas falharam numa operação. */
@@ -18,7 +19,8 @@ export interface VoiceMoveResult {
  * Canal de voz por evento (TASK-024, Q28/Q29). Assina o hook pós-commit de transição:
  * - `→ running`: cria o canal na categoria configurada, guarda `events.voice_channel_id` e arrasta só
  *   quem está **confirmado** e **agora** no canal "Aguardando Evento" (Q29). Ninguém é puxado de outro
- *   canal, e a lista de espera não entra.
+ *   canal, e a lista de espera não entra. Logo depois, quem confirmou e ficou de fora é chamado no
+ *   privado (TASK-087, PE12/PE13) — extra que nunca derruba o start (AC#7).
  * - `→ finished`: devolve **todo mundo** que estiver no canal do evento para "Aguardando Evento"
  *   (inclusive quem entrou sem inscrição, Q7) e apaga o canal.
  * - `→ cancelled` **com o evento rodando** (TASK-025, Q26): mesma coisa do finish, reusando
@@ -40,12 +42,13 @@ export class EventVoiceService implements OnModuleInit, OnModuleDestroy {
     private readonly events: EventsService,
     @Inject(DB_HANDLE) private readonly handle: DbHandle,
     @Inject(EVENT_VOICE_GATEWAY) private readonly gateway: EventVoiceGateway,
+    private readonly summons: EventSummonService,
   ) {}
 
   onModuleInit(): void {
     this.unsubscribe.push(
-      this.events.onEventTransition(async ({ event, to }) => {
-        if (to === "running") await this.openChannel(event);
+      this.events.onEventTransition(async ({ event, to, actorUserId }) => {
+        if (to === "running") await this.openChannel(event, actorUserId);
         else if (to === "finished") await this.closeChannel(event);
         // Só evento que chegou a rodar tem canal; `closeChannel` sai na hora quando não tem.
         else if (to === "cancelled") await this.cancelChannel(event);
@@ -61,7 +64,7 @@ export class EventVoiceService implements OnModuleInit, OnModuleDestroy {
    * Cria o canal do evento e puxa os confirmados que estão em "Aguardando Evento" (AC#1).
    * Idempotente no que importa: evento que já tem canal não ganha um segundo.
    */
-  async openChannel(event: EventDto): Promise<VoiceMoveResult> {
+  async openChannel(event: EventDto, actorUserId: string | null = null): Promise<VoiceMoveResult> {
     const empty: VoiceMoveResult = { moved: 0, failed: 0 };
     if (event.voiceChannelId) {
       this.logger.warn(`Evento ${event.id} já tinha canal de voz ${event.voiceChannelId}: não criei outro.`);
@@ -102,6 +105,11 @@ export class EventVoiceService implements OnModuleInit, OnModuleDestroy {
 
     const result = await this.moveAll(membersToMove(signups, present), channelId, `Início do evento ${event.name}`);
     this.logger.log(`Evento ${event.id}: canal ${channelId} criado; ${result.moved} confirmado(s) movido(s) de Aguardando Evento${result.failed > 0 ? `, ${result.failed} falha(s)` : ""}.`);
+
+    // TASK-087 (PE12/PE13): a sala de espera já foi arrastada; quem confirmou e **não** está na call
+    // recebe privado. Vem depois da movimentação de propósito — quem acabou de ser puxado já está
+    // dentro e não pode receber um "entra na call". `summonOnStart` nunca lança (AC#7).
+    await this.summons.summonOnStart({ ...event, voiceChannelId: channelId }, channelId, actorUserId);
     return result;
   }
 

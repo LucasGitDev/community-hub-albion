@@ -1,4 +1,22 @@
-import { BadRequestException, Body, ConflictException, Controller, ForbiddenException, Get, HttpCode, Inject, NotFoundException, Param, Patch, Post, Query, Res, UseGuards } from "@nestjs/common";
+import {
+  BadRequestException,
+  Body,
+  ConflictException,
+  Controller,
+  ForbiddenException,
+  Get,
+  HttpCode,
+  Inject,
+  NotFoundException,
+  Optional,
+  Param,
+  Patch,
+  Post,
+  Query,
+  Res,
+  ServiceUnavailableException,
+  UseGuards,
+} from "@nestjs/common";
 import {
   asSubject,
   entryFeeEditable,
@@ -24,7 +42,9 @@ import type { Response } from "express";
 import type { z } from "zod";
 import { Authorize, CurrentAuth, type AuthorizedRequest } from "../auth/authorize.js";
 import { SameOriginGuard } from "../auth/same-origin.guard.js";
+import { EVENT_SUMMON_REPLIES, type SummonOutcome } from "../domain/event-summon.js";
 import { assertEventEditable } from "./archived.guard.js";
+import { EVENT_SUMMONER, type EventSummoner } from "./event-summoner.token.js";
 import { EventSignupsService } from "./event-signups.service.js";
 import { EventsService } from "./events.service.js";
 
@@ -53,6 +73,7 @@ export class EventsController {
   constructor(
     @Inject(EventsService) private readonly events: EventsService,
     @Inject(EventSignupsService) private readonly signups: EventSignupsService,
+    @Optional() @Inject(EVENT_SUMMONER) private readonly summons: EventSummoner | null = null,
   ) {}
 
   /** 404 em vez de 403 quando o evento não existe: não vaza a existência de ids. */
@@ -176,6 +197,29 @@ export class EventsController {
     // Precondição de negócio recusou (hoje: split em rascunho barrando o arquivamento, AC#4).
     if (result.reason === "blocked") throw new ConflictException(result.message);
     throw new ConflictException(transitionError(result.from, EVENT_TRANSITIONS[transition]));
+  }
+
+  /**
+   * Chama no privado quem confirmou e não está na call (TASK-087, PE15, AC#4). É a **mesma** ação do
+   * menu da call e do início do evento: este endpoint não conhece a lista de espera, nem o intervalo de
+   * 5 minutos, nem a queda para menção — tudo isso é do `EventSummoner`.
+   *
+   * Sem bot ligado (e2e, instância só de API) o token não existe e a resposta é 503 com texto claro,
+   * mesmo padrão do import de membros: chamar no privado é Discord, e sem Discord não há o que fazer.
+   */
+  @Post(":id/summon")
+  @HttpCode(200)
+  @UseGuards(SameOriginGuard)
+  @Authorize("update", "Event")
+  async summon(@Param("id") id: string, @CurrentAuth() auth: Auth): Promise<SummonOutcome> {
+    const event = await this.load(id);
+    this.assertCan(auth, "update", event);
+    if (!this.summons) throw new ServiceUnavailableException(EVENT_SUMMON_REPLIES.unavailable);
+    const result = await this.summons.summon(event.id, auth.user.id);
+    if (result.ok) return result.outcome;
+    if (result.reason === "not_found") throw new NotFoundException(EVENT_SUMMON_REPLIES.notFound);
+    if (result.reason === "denied") throw new ForbiddenException(EVENT_SUMMON_REPLIES.denied);
+    throw new ConflictException(result.reason === "no_channel" ? EVENT_SUMMON_REPLIES.noChannel : EVENT_SUMMON_REPLIES.notRunning);
   }
 
   /**

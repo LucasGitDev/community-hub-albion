@@ -29,6 +29,10 @@ export function describeDiscordError(error: unknown): string {
   if (code === "EVENT_VOICE_CHANNEL_INVALID") {
     return `Canal de voz do evento não encontrado ou não aceita a operação (${message}). Confira se ele ainda existe e se o bot tem Ver canal, Enviar mensagens e Gerenciar Canais nele.`;
   }
+  if (code === 50007 || code === "DIRECT_MESSAGE_UNAVAILABLE") {
+    // Esperado, não é falha de config: o Discord recusa DM de quem não é amigo (TASK-087, PE14).
+    return `Pessoa com o privado fechado (${message}). O chamado cai para menção no chat da call.`;
+  }
   if (code === 10008) {
     return `Mensagem do embed não existe mais (${message}).`;
   }

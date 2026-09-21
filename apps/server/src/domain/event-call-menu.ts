@@ -2,7 +2,7 @@ import type { EmbedView } from "./embed-view.js";
 import type { EventStatus } from "@albion-hub/shared";
 
 /**
- * Menu de gestão da call (TASK-085, decisões PE9 a PE11 do doc-005). Funções puras, sem discord.js e
+ * Menu de gestão da call (TASK-085, decisões PE9 a PE11 do doc-005; a quarta ação é a TASK-087, PE15/PE16). Funções puras, sem discord.js e
  * sem banco: os ids dos botões, o embed do menu, a copy das recusas e a seleção de quem continua
  * podendo entrar com a call fechada.
  *
@@ -17,12 +17,15 @@ import type { EventStatus } from "@albion-hub/shared";
 export const EVENT_CALL_FINISH_BUTTON = "evento/call/finalizar/:eventId";
 export const EVENT_CALL_LOCK_BUTTON = "evento/call/fechar/:eventId";
 export const EVENT_CALL_UNLOCK_BUTTON = "evento/call/abrir/:eventId";
+export const EVENT_CALL_SUMMON_BUTTON = "evento/call/chamar/:eventId";
 
 const withEvent = (template: string, eventId: string) => template.replace(":eventId", eventId);
 
 export const eventCallFinishButtonId = (eventId: string): string => withEvent(EVENT_CALL_FINISH_BUTTON, eventId);
 export const eventCallLockButtonId = (eventId: string): string => withEvent(EVENT_CALL_LOCK_BUTTON, eventId);
 export const eventCallUnlockButtonId = (eventId: string): string => withEvent(EVENT_CALL_UNLOCK_BUTTON, eventId);
+/** Quarta ação (TASK-087, PE15/PE16): chamar no privado quem confirmou e não está na call. */
+export const eventCallSummonButtonId = (eventId: string): string => withEvent(EVENT_CALL_SUMMON_BUTTON, eventId);
 
 /** Azul do evento em andamento, igual ao `running` do embed de inscrição: é a mesma call. */
 const MENU_COLOR = 0x3498db;
@@ -33,10 +36,12 @@ export function eventCallMenuView(event: { id: string; name: string }): EmbedVie
     title: `Gestão da call — ${event.name}`,
     description:
       "Só o caller do evento e a staff executam estas ações; quem clicar sem permissão recebe uma recusa e nada acontece.\n" +
+      "**Chamar quem falta** manda privado para cada confirmado que não está aqui (quem está na espera não recebe, e ninguém é chamado duas vezes em 5 minutos).\n" +
       "**Fechar a call** tira a permissão de entrar de quem não está inscrito e **não remove ninguém que já está dentro**.",
     color: MENU_COLOR,
     fields: [],
     buttons: [
+      { customId: eventCallSummonButtonId(event.id), label: "Chamar quem falta", style: "primary" },
       { customId: eventCallLockButtonId(event.id), label: "Fechar a call", style: "secondary" },
       { customId: eventCallUnlockButtonId(event.id), label: "Abrir a call", style: "secondary" },
       { customId: eventCallFinishButtonId(event.id), label: "Finalizar o evento", style: "danger" },
