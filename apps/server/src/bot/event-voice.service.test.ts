@@ -256,6 +256,21 @@ describe.skipIf(!baseUrl)("canal de voz do evento (TASK-024, Postgres real + Dis
     expect(discord.membersOf(OTHER_CHANNEL)).toEqual([healer.discordId]);
   });
 
+  it("falha ao publicar o menu de gestão não impede o start (TASK-085, AC#1)", async () => {
+    const { event, tank } = await openEvent("Start sem menu");
+    discord.connect(WAITING, tank.discordId);
+    discord.fail.post = true;
+
+    const started = await events.transition(event.id, "start", owner);
+
+    expect(started.ok).toBe(true);
+    expect(discord.posted).toEqual([]);
+    // O evento rodou do mesmo jeito: canal criado e o confirmado arrastado.
+    const channelId = discord.created[0]!.id;
+    expect(discord.membersOf(channelId)).toEqual([tank.discordId]);
+    expect((await reload(event)).status).toBe("running");
+  });
+
   it("finish devolve todo mundo do canal (inclusive quem entrou sem inscrição) e apaga o canal (AC#2/AC#3)", async () => {
     const { event, tank } = await openEvent("Roads da tarde");
     discord.connect(WAITING, tank.discordId);
