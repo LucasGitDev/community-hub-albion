@@ -49,7 +49,8 @@ function fakeVoice() {
   const created: { id: string; name: string }[] = [];
   const deleted: string[] = [];
   let seq = 0;
-  const fail = { create: false, move: new Set<string>(), delete: false, list: false };
+  const fail = { create: false, move: new Set<string>(), delete: false, list: false, post: false };
+  const posted: { channelId: string; title: string }[] = [];
 
   const gateway: EventVoiceGateway = {
     waitingChannelId: WAITING,
@@ -69,6 +70,12 @@ function fakeVoice() {
       if (fail.list) throw Object.assign(new Error("canal sumiu"), { code: "WAITING_VOICE_CHANNEL_INVALID" });
       return [...(channels.get(channelId) ?? [])];
     },
+    async postToChannel(channelId, view) {
+      if (fail.post) throw Object.assign(new Error("sem permissão de escrever"), { code: 50013 });
+      posted.push({ channelId, title: view.title });
+      return `msg-${posted.length}`;
+    },
+    async setChannelConnectLock() {},
     async moveMember(discordId, toChannelId) {
       if (fail.move.has(discordId)) throw Object.assign(new Error("saiu da voz"), { code: 40032 });
       for (const members of channels.values()) members.delete(discordId);
@@ -79,6 +86,7 @@ function fakeVoice() {
     gateway,
     created,
     deleted,
+    posted,
     fail,
     channels,
     connect: (channelId: string, ...discordIds: string[]) => {
@@ -95,6 +103,8 @@ function fakeVoice() {
       }
       created.length = 0;
       deleted.length = 0;
+      posted.length = 0;
+      fail.post = false;
       fail.create = false;
       fail.delete = false;
       fail.list = false;

@@ -3,6 +3,7 @@ import { closeOpenVoiceSessionsInChannel, listEventSignupMembers, setEventVoiceC
 import type { EventDto } from "@albion-hub/shared";
 import { DB_HANDLE } from "../db/db.module.js";
 import { describeDiscordError } from "../domain/discord-errors.js";
+import { eventCallMenuView } from "../domain/event-call-menu.js";
 import { eventVoiceChannelName, membersToMove } from "../domain/event-voice.js";
 import { EventsService } from "../events/events.service.js";
 import { EVENT_VOICE_GATEWAY, type EventVoiceGateway } from "./event-voice.gateway.js";
@@ -84,6 +85,11 @@ export class EventVoiceService implements OnModuleInit, OnModuleDestroy {
       return empty;
     }
 
+    // Menu de gestão no chat de texto da própria call (TASK-085, PE9). Publicado antes de arrastar
+    // gente: quem chegar junto com o canal já encontra o menu. Falhar aqui não pode travar o start —
+    // o evento está rodando com ou sem menu, e o caller continua com o painel e o /evento.
+    await this.postCallMenu(event, channelId);
+
     let present: string[];
     let signups: { discordId: string; status: "confirmed" | "waitlist" }[];
     try {
@@ -147,6 +153,15 @@ export class EventVoiceService implements OnModuleInit, OnModuleDestroy {
       this.logger.error(`Evento ${event.id}: falha ao fechar as sessões de voz do canal ${voiceChannelId}: ${String(error)}`);
     }
     return result;
+  }
+
+  /** Publica o menu de gestão da call (PE9). Só loga quando falha: o start não depende dele. */
+  private async postCallMenu(event: EventDto, channelId: string): Promise<void> {
+    try {
+      await this.gateway.postToChannel(channelId, eventCallMenuView(event));
+    } catch (error) {
+      this.logger.error(`Evento ${event.id}: canal ${channelId} criado, mas não consegui publicar o menu de gestão. ${describeDiscordError(error)}`);
+    }
   }
 
   /** Move um por um: quem falhar (saiu da voz, sem permissão) não impede os outros de irem. */
