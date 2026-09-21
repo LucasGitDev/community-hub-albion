@@ -9,6 +9,7 @@ import { EventSignupsController } from "./event-signups.controller.js";
 import { EventSignupsService } from "./event-signups.service.js";
 import { EventsController } from "./events.controller.js";
 import { EventsService } from "./events.service.js";
+import { EVENT_SUMMONER, type EventSummoner } from "./event-summoner.token.js";
 
 /**
  * Eventos, máquina de estados (TASK-021) e inscrição por role (TASK-022). Global e exportando os dois
@@ -19,7 +20,7 @@ import { EventsService } from "./events.service.js";
 export class EventsModule implements OnApplicationBootstrap {
   constructor(private readonly signupsClose: EventSignupsCloseService) {}
 
-  static register(env: Env): DynamicModule {
+  static register(env: Env, summoner?: EventSummoner): DynamicModule {
     return {
       module: EventsModule,
       global: true,
@@ -34,6 +35,9 @@ export class EventsModule implements OnApplicationBootstrap {
         EventSignupsCloseService,
         { provide: EVENTS_CLOCK, useValue: () => new Date() },
         { provide: SIGNUPS_CLOSE_INTERVAL_MS, useValue: DEFAULT_SIGNUPS_CLOSE_INTERVAL_MS },
+        // Em produção quem fornece o EVENT_SUMMONER é o BotModule (global); só teste passa um dublê,
+        // igual ao MEMBER_IMPORTER. Sem bot e sem dublê o endpoint do painel responde 503 (TASK-087).
+        ...(summoner ? [{ provide: EVENT_SUMMONER, useValue: summoner }] : []),
       ],
       exports: [EventsService, EventSignupsService],
     };
