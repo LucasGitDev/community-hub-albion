@@ -355,6 +355,138 @@ describe.skipIf(!baseUrl)("menu de gestão da call (TASK-085, Postgres real + Di
     expect(timeline.entries).toEqual([]);
   });
 
+  /**
+   * Quarta ação do menu (TASK-087, PE12 a PE16). O chamado é **privado**, não menção no chat: a menção
+   * existe só como queda de quem está com a DM fechada.
+   */
+  describe("chamar quem falta (TASK-087)", () => {
+    /** Evento rodando com dois confirmados e um na espera (a role tem 2 vagas). */
+    async function eventWithWaitlist(name: string) {
+      const created = await createEvent(handle.db, { templateId, name, description: null, startsAt: null, signupsCloseAt: null, ownerUserId: owner, createdBy: owner });
+      if (!created.ok) throw new Error(created.reason);
+      if (!(await events.transition(created.event.id, "open", owner)).ok) throw new Error("não abriu");
+      const open = (await events.get(created.event.id))!;
+      const slot = open.roles.find((r) => r.name === "Tank")!.id;
+      const [first, second, waiting] = [await newMember(), await newMember(), await newMember()];
+      for (const person of [first, second, waiting]) {
+        const joined = await signups.join(open.id, person.id, slot);
+        if (!joined.ok) throw new Error(joined.reason);
+      }
+      clock = new Date("2026-09-21T19:50:00Z");
+      if (!(await events.transition(open.id, "start", owner)).ok) throw new Error("não iniciou");
+      const event = (await events.get(open.id))!;
+      // O próprio start já chamou todo mundo (AC#1): o relógio anda além dos 5 minutos para que estes
+      // testes falem do clique no menu, e não do chamado do início. O intervalo em si é o teste AC#6.
+      const startDms = discord.dms.map((d) => d.discordId);
+      discord.reset();
+      clock = new Date("2026-09-21T20:00:00Z");
+      return { event, channelId: event.voiceChannelId!, first, second, waiting, startDms };
+    }
+
+    it("AC#5: o caller aciona pelo menu da call, e quem já está dentro não é chamado", async () => {
+      const { event, channelId, first, second } = await eventWithWaitlist("Chamado pelo menu");
+      discord.connect(channelId, first.discordId);
+
+      const click = fakeClick(ownerDiscordId);
+      await menu.onSummon([click], event.id);
+
+      // Só o confirmado que está fora recebe privado; quem está na call não recebe nada.
+      expect(discord.dms.map((d) => d.discordId)).toEqual([second.discordId]);
+      expect(discord.dms[0]!.title).toContain("Chamado pelo menu");
+      expect(answer(click)).toContain("1 pessoa no privado");
+    });
+
+    it("AC#2: quem está na lista de espera não recebe privado (PE13)", async () => {
+      const { event, waiting } = await eventWithWaitlist("Espera não é chamada");
+
+      await menu.onSummon([fakeClick(ownerDiscordId)], event.id);
+
+      expect(discord.dms.map((d) => d.discordId)).not.toContain(waiting.discordId);
+      expect(discord.dms).toHaveLength(2);
+      expect(discord.mentions).toEqual([]);
+    });
+
+    it("AC#3: privado fechado vira menção no chat da call, numa mensagem só, com a lista (PE14)", async () => {
+      const { event, channelId, first, second } = await eventWithWaitlist("Privado fechado");
+      discord.fail.dm.add(first.discordId);
+      discord.fail.dm.add(second.discordId);
+
+      const click = fakeClick(ownerDiscordId);
+      await menu.onSummon([click], event.id);
+
+      expect(discord.dms).toEqual([]);
+      // Uma mensagem só, com os dois mencionados nela.
+      expect(discord.mentions).toHaveLength(1);
+      expect(discord.mentions[0]!.channelId).toBe(channelId);
+      expect(discord.mentions[0]!.discordIds.sort()).toEqual([first.discordId, second.discordId].sort());
+      expect(discord.mentions[0]!.content).toContain(`<@${first.discordId}>`);
+      expect(discord.mentions[0]!.content).toContain("Privado fechado");
+      expect(answer(click)).toContain("privado fechado");
+    });
+
+    it("AC#6: chamar de novo antes de 5 minutos não manda privado repetido (PE15)", async () => {
+      const { event, first, second } = await eventWithWaitlist("Intervalo de 5 minutos");
+      await menu.onSummon([fakeClick(ownerDiscordId)], event.id);
+      expect(discord.dms.map((d) => d.discordId).sort()).toEqual([first.discordId, second.discordId].sort());
+      discord.dms.length = 0;
+
+      // Outro caller (staff) clicando 4m59s depois: ninguém recebe de novo.
+      clock = new Date("2026-09-21T20:04:59Z");
+      const again = fakeClick(staffDiscordId);
+      await menu.onSummon([again], event.id);
+      expect(discord.dms).toEqual([]);
+      expect(discord.mentions).toEqual([]);
+      expect(answer(again)).toContain("há menos de 5 minutos");
+
+      // Passados os 5 minutos o chamado volta a valer.
+      clock = new Date("2026-09-21T20:05:00Z");
+      await menu.onSummon([fakeClick(ownerDiscordId)], event.id);
+      expect(discord.dms.map((d) => d.discordId).sort()).toEqual([first.discordId, second.discordId].sort());
+    });
+
+    it("AC#8: o chamado publica na timeline com quem acionou e quantos foram avisados", async () => {
+      const { event, channelId, first } = await eventWithWaitlist("Timeline do chamado");
+      discord.connect(channelId, first.discordId);
+
+      await menu.onSummon([fakeClick(staffDiscordId)], event.id);
+
+      const entry = timeline.only("event.call_summoned");
+      expect(entry).toMatchObject({ recordId: event.id, actor: { kind: "user", discordId: staffDiscordId } });
+      expect(entry.summary).toContain("Timeline do chamado");
+      expect(entry.details).toEqual([
+        { name: "Avisados no privado", value: "1" },
+        { name: "Mencionados na call", value: "0" },
+        { name: "Dentro do intervalo de 5 min", value: "0" },
+        { name: "Confirmados fora da call", value: "1" },
+      ]);
+    });
+
+    it("quem não é caller do evento nem staff não chama ninguém", async () => {
+      const { event } = await eventWithWaitlist("Recusa do chamado");
+
+      const click = fakeClick(strangerDiscordId);
+      await menu.onSummon([click], event.id);
+
+      // A recusa é a do menu, checada no clique (PE11), antes de o serviço do chamado ser consultado.
+      expect(answer(click)).toBe(EVENT_CALL_REPLIES.denied);
+      expect(discord.dms).toEqual([]);
+      expect(discord.mentions).toEqual([]);
+      expect(timeline.entries).toEqual([]);
+    });
+
+    it("todo mundo já na call: ninguém é chamado e nada é publicado no chat", async () => {
+      const { event, channelId, first, second } = await eventWithWaitlist("Call cheia");
+      discord.connect(channelId, first.discordId, second.discordId);
+
+      const click = fakeClick(ownerDiscordId);
+      await menu.onSummon([click], event.id);
+
+      expect(discord.dms).toEqual([]);
+      expect(discord.mentions).toEqual([]);
+      expect(answer(click)).toContain("já está na call");
+    });
+  });
+
   it("id forjado no botão não executa nada e nem chega ao banco", async () => {
     const click = fakeClick(ownerDiscordId);
     await menu.onLock([click], "não-é-uuid");
