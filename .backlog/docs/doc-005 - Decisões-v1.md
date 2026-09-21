@@ -3,7 +3,7 @@ id: doc-005
 title: Decisões v1
 type: specification
 created_date: '2026-09-15 03:22'
-updated_date: '2026-09-20 13:15'
+updated_date: '2026-09-21 12:57'
 ---
 Resultado do grill (R1–R3, 2026-09-15). Referência pra specs e tasks.
 
@@ -297,3 +297,22 @@ O membro pede no Discord ou no jogo e não usa o painel; a staff precisa abrir o
 | SS4 | **Motivo obrigatório**, gravado no pedido e publicado na timeline: saque que o próprio dono não pediu precisa dizer por que existe. |
 | SS5 | Entra em **dois lugares**: na fila de saques e na lista de jogadores. |
 | SS6 | **Convenção de UI, daqui pra frente:** ação nova de linha entra em **menu de ações** (popup), não em mais um botão solto. Vale para a lista de jogadores e para as próximas telas. |
+
+## Grelha de 2026-09-21 — Presença como peso, e gestão da call pelo Discord
+
+O formulário de fechamento pedia a **% do loot** de cada um (somando 100%), o que obrigava o caller a
+fazer conta na mão. O que ele sabe é **quanto cada um participou**.
+
+| # | Decisão |
+|---|---|
+| PE1 | O que o caller edita é **presença de 0 a 100% por pessoa**, independente — não precisa somar 100%. A divisão do loot é **derivada** dela. |
+| PE2 | A presença é o **peso** da divisão: cada um recebe `presença ÷ soma das presenças`. Três pessoas com 100%, 100% e 50% recebem 40%, 40% e 20%. A tela mostra os dois números: a presença que se edita e a prata que sai dela. |
+| PE3 | A presença **nasce da medição** da call (a mesma que a Buffunfa já usa) e o caller edita por cima. Nascer tudo em 100% jogaria fora a medição e viraria trabalho manual. |
+| PE4 | A presença é **dado do evento**, não da leva de split: uma leva confirmada não muda quando a presença é editada depois; as próximas usam o valor novo. |
+| PE5 | A **Buffunfa por presença passa a ler a presença editada** (o corte de 90% continua, sobre o número da tela). Duas medidas de presença no mesmo evento fariam o caller ajustar uma e não entender por que a outra não mudou. |
+| PE6 | Quem apareceu na call e **nunca foi inscrito** continua na lista com **presença 0**: o caller vê que a pessoa esteve lá, e incluir é gesto explícito. |
+| PE7 | Quem entra no meio: o bot pergunta **no chat de texto do próprio canal de voz**, com botões *Inscrever* e *Ignorar*. Sem resposta, **nada acontece** — silêncio não vira inscrição. |
+| PE8 | A contagem de presença de quem entrou no meio **começa no aceite**, não em quando ele entrou na call. Quem é aceito faltando 20% do evento termina com 20% de presença (e, pelo corte, não leva Buffunfa). O caller pode subir na mão. |
+| PE9 | Ao criar a call, o bot publica um **menu de gestão** no chat dela. Opções: **finalizar o evento**, **fechar a call**, **abrir a call** e **chamar os ausentes**. Iniciar evento e encerrar inscrições não entram: a call só existe depois disso. |
+| PE10 | **Fechar a call** = tirar a permissão de entrar de quem não está inscrito, **deixando quem já está**. Expulsar automático tiraria do evento, num erro de inscrição, alguém que deveria estar. |
+| PE11 | O menu é visível para todos (o Discord não esconde componente por cargo), então a checagem é **no clique**: só caller do evento e staff executam; os outros recebem recusa. |
