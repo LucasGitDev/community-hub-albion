@@ -7,8 +7,12 @@ import {
   parsePercentBp,
   lootSplitReversalSchema,
   lootSplitUpdateSchema,
+  eventPresenceUpdateSchema,
+  effectivePresenceBp,
+  measuredPresenceBp,
+  presenceBpSum,
+  sharesFromPresence,
   splitConfirmRefusalMessage,
-  splitShareSum,
   type ConfirmableLine,
   type EventFee,
   eventFeeSchema,
@@ -27,13 +31,58 @@ import {
 } from "./loot-split.js";
 
 const MIN = 60_000;
+/** Call de duas horas: é o denominador da presença medida em todos os casos abaixo. */
+const CALL = 120 * MIN;
 
-const present = (discordUserId: string, minutes: number, signedUp = true): SplitPresence => ({ discordUserId, presenceMs: minutes * MIN, signedUp });
+/**
+ * Uma pessoa da call, com a presença já resolvida como o repo a resolve (PE3): a medida sobre a janela
+ * da call, e **zero** para quem não estava inscrito (PE6), por mais tempo que tenha ficado.
+ */
+const present = (discordUserId: string, minutes: number, signedUp = true): SplitPresence => {
+  const base = { discordUserId, presenceMs: minutes * MIN, signedUp };
+  return { ...base, presenceBp: effectivePresenceBp(base, CALL, null) };
+};
+
+/** A mesma pessoa com a presença que o caller digitou por cima (PE1). */
+const edited = (discordUserId: string, minutes: number, presenceBp: number, signedUp = true): SplitPresence => ({
+  ...present(discordUserId, minutes, signedUp),
+  presenceBp,
+});
 
 const sumBp = (lines: readonly { shareBp: number }[]) => lines.reduce((s, l) => s + l.shareBp, 0);
 const sumAmount = (lines: readonly { amount: bigint }[]) => lines.reduce((s, l) => s + l.amount, 0n);
 
-describe("rateio do rascunho de loot split (TASK-027)", () => {
+describe("rateio do rascunho de loot split (TASK-027, TASK-084)", () => {
+  describe("a presença é o peso da divisão (PE1, PE2)", () => {
+    it("100%, 100% e 50% de presença viram 40%, 40% e 20% da prata (exemplo da PE2)", () => {
+      const { lines } = calculateSplitDraft([edited("a", 120, 10_000), edited("b", 120, 10_000), edited("c", 60, 5000)], 1_000_000n);
+      expect(lines.map((l) => l.shareBp)).toEqual([4000, 4000, 2000]);
+      expect(lines.map((l) => l.amount)).toEqual([400_000n, 400_000n, 200_000n]);
+    });
+
+    it("a presença **não** precisa somar 100%: três pessoas em 100% dividem por três", () => {
+      const rows = [edited("a", 120, 10_000), edited("b", 120, 10_000), edited("c", 120, 10_000)];
+      expect(presenceBpSum(rows)).toBe(30_000);
+      const { lines, residual } = calculateSplitDraft(rows, 300n);
+      // Um terço não fecha em basis points: 33,34% / 33,33% / 33,33%, e os tostões vão para o dono (Q23).
+      expect(lines.map((l) => l.shareBp)).toEqual([3334, 3333, 3333]);
+      expect(lines.map((l) => l.amount)).toEqual([100n, 99n, 99n]);
+      expect(lines.reduce((sum, l) => sum + l.amount, 0n) + residual).toBe(300n);
+    });
+
+    it("a presença editada manda, e não os milissegundos medidos", () => {
+      // Quem ficou o dobro do tempo, mas levou metade da presença do outro, recebe metade.
+      const { lines } = calculateSplitDraft([edited("a", 120, 2500), edited("b", 60, 7500)], 1_000_000n);
+      expect(lines.map((l) => l.amount)).toEqual([250_000n, 750_000n]);
+    });
+
+    it("quem ganhou presença sem estar inscrito recebe (PE6: incluir é gesto explícito)", () => {
+      const { lines } = calculateSplitDraft([present("a", 120), edited("visita", 120, 5000, false)], 900_000n);
+      expect(lines.map((l) => l.shareBp)).toEqual([6667, 3333]);
+      expect(lines[1]!.amount).toBeGreaterThan(0n);
+    });
+  });
+
   describe("percentual por tempo no canal (AC#1, Q5/Q6)", () => {
     it("divide proporcionalmente aos milissegundos de presença", () => {
       const { lines, residual } = calculateSplitDraft([present("a", 60), present("b", 30), present("c", 30)], 1_200_000n);
@@ -67,7 +116,7 @@ describe("rateio do rascunho de loot split (TASK-027)", () => {
     });
   });
 
-  describe("presente não inscrito entra com 0% (AC#2, Q7)", () => {
+  describe("presente não inscrito nasce com presença 0 (PE6)", () => {
     it("aparece na lista, com o tempo dele, mas sem participação", () => {
       const { lines } = calculateSplitDraft([present("a", 60), present("intruso", 60, false)], 1_000_000n);
       const intruso = lines.find((l) => l.discordUserId === "intruso")!;
@@ -301,30 +350,32 @@ describe("prata a partir do percentual (TASK-028)", () => {
   });
 });
 
-describe("conferência da confirmação (TASK-028, AC#1, AC#2, Q22, Q23)", () => {
-  const line = (shareBp: number, over: Partial<ConfirmableLine> = {}): ConfirmableLine => ({ shareBp, userId: "u", signedUp: true, ...over });
+describe("conferência da confirmação (TASK-028, TASK-084 AC#7, Q23)", () => {
+  let seq = 0;
+  const line = (presenceBp: number, over: Partial<ConfirmableLine> = {}): ConfirmableLine => ({ key: `k${seq++}`, presenceBp, userId: "u", ...over });
   const noFee: EventFee = { type: "percent", value: 0n };
 
-  it("soma diferente de 100% é recusada (AC#1, Q22)", () => {
-    expect(checkSplitConfirm([line(5000), line(4999)], 1000n, noFee)).toEqual({ ok: false, reason: "shares_not_100" });
-    expect(checkSplitConfirm([line(5000), line(5001)], 1000n, noFee)).toEqual({ ok: false, reason: "shares_not_100" });
-    expect(checkSplitConfirm([], 1000n, noFee)).toEqual({ ok: false, reason: "shares_not_100" });
+  it("soma de presenças zero é recusada, sem dividir por zero (AC#7)", () => {
+    expect(checkSplitConfirm([line(0), line(0)], 1000n, noFee)).toEqual({ ok: false, reason: "zero_presence" });
+    expect(checkSplitConfirm([], 1000n, noFee)).toEqual({ ok: false, reason: "zero_presence" });
+  });
+
+  it("a soma das presenças **não** precisa fechar 100%", () => {
+    const result = checkSplitConfirm([line(10_000), line(10_000)], 1000n, noFee);
+    expect(result.ok).toBe(true);
+    expect(result.ok && result.plan.shares).toEqual([5000, 5000]);
   });
 
   it("taxa fixa maior que o total é recusada: sem isso o distribuível ficaria negativo", () => {
     expect(checkSplitConfirm([line(10_000)], 1000n, { type: "fixed", value: 1001n })).toEqual({ ok: false, reason: "fee_exceeds_total" });
   });
 
-  it("participação para quem não estava inscrito é recusada (Q7)", () => {
-    expect(checkSplitConfirm([line(5000), line(5000, { signedUp: false })], 1000n, noFee)).toEqual({ ok: false, reason: "share_without_signup" });
-  });
-
-  it("participação para quem não tem conta no painel é recusada: não há para quem creditar", () => {
+  it("presença para quem não tem conta no painel é recusada: não há para quem creditar", () => {
     expect(checkSplitConfirm([line(5000), line(5000, { userId: null })], 1000n, noFee)).toEqual({ ok: false, reason: "share_without_account" });
   });
 
-  it("presente sem conta e sem participação não atrapalha ninguém (Q7)", () => {
-    const result = checkSplitConfirm([line(10_000), line(0, { userId: null, signedUp: false })], 1000n, noFee);
+  it("presente sem conta e sem presença não atrapalha ninguém (PE6)", () => {
+    const result = checkSplitConfirm([line(10_000), line(0, { userId: null })], 1000n, noFee);
     expect(result.ok).toBe(true);
   });
 
@@ -356,33 +407,54 @@ describe("conferência da confirmação (TASK-028, AC#1, AC#2, Q22, Q23)", () =>
     expect(result.plan).toMatchObject({ amounts: [0n], residual: 0n, ownerSilver: 0n });
   });
 
-  it("splitShareSum soma os basis points sem passar por float", () => {
-    expect(splitShareSum([{ shareBp: 3334 }, { shareBp: 3333 }, { shareBp: 3333 }])).toBe(10_000);
+  it("presenceBpSum soma as presenças sem passar por float", () => {
+    expect(presenceBpSum([{ presenceBp: 10_000 }, { presenceBp: 3333 }, { presenceBp: 1 }])).toBe(13_334);
   });
 
   it("toda recusa tem uma frase em PT-BR que diz o que fazer", () => {
-    for (const reason of ["shares_not_100", "fee_exceeds_total", "share_without_account", "share_without_signup"] as const) {
+    for (const reason of ["zero_presence", "fee_exceeds_total", "share_without_account"] as const) {
       expect(splitConfirmRefusalMessage(reason)).toMatch(/\S/);
     }
     expect(splitConfirmRefusalMessage("fee_exceeds_total")).toContain("taxa");
-    expect(splitConfirmRefusalMessage("shares_not_100")).toContain("100%");
+    expect(splitConfirmRefusalMessage("zero_presence")).toContain("presença");
   });
 });
 
-describe("corpo da edição e do estorno (TASK-028)", () => {
-  it("aceita só o total, só as linhas, ou os dois", () => {
+describe("corpo da edição e do estorno (TASK-028, TASK-084)", () => {
+  it("a edição do rascunho é só o total: participação não se digita mais (PE1)", () => {
     expect(lootSplitUpdateSchema.safeParse({ totalSilver: "1000" }).success).toBe(true);
-    expect(lootSplitUpdateSchema.safeParse({ lines: [{ id: "11111111-1111-4111-8111-111111111111", shareBp: 10_000 }] }).success).toBe(true);
     expect(lootSplitUpdateSchema.safeParse({}).success).toBe(false);
   });
 
-  it("recusa participação negativa, acima de 100% ou fracionada", () => {
-    const id = "11111111-1111-4111-8111-111111111111";
-    for (const shareBp of [-1, 10_001, 1.5]) expect(lootSplitUpdateSchema.safeParse({ lines: [{ id, shareBp }] }).success).toBe(false);
+  it("a presença do evento vem em lista parcial, de 0 a 100% (PE1, PE4)", () => {
+    expect(eventPresenceUpdateSchema.safeParse({ entries: [{ discordUserId: "123456789", presenceBp: 10_000 }] }).success).toBe(true);
+    // Não precisa somar 100%: duas pessoas em 100% é um corpo válido, e é o caso da PE2.
+    expect(
+      eventPresenceUpdateSchema.safeParse({
+        entries: [
+          { discordUserId: "111111111", presenceBp: 10_000 },
+          { discordUserId: "222222222", presenceBp: 10_000 },
+        ],
+      }).success,
+    ).toBe(true);
+    expect(eventPresenceUpdateSchema.safeParse({ entries: [] }).success).toBe(false);
   });
 
-  it("recusa id de linha que não é uuid", () => {
-    expect(lootSplitUpdateSchema.safeParse({ lines: [{ id: "nao-e-uuid", shareBp: 0 }] }).success).toBe(false);
+  it("recusa presença negativa, acima de 100% ou fracionada", () => {
+    for (const presenceBp of [-1, 10_001, 1.5])
+      expect(eventPresenceUpdateSchema.safeParse({ entries: [{ discordUserId: "123456789", presenceBp }] }).success).toBe(false);
+  });
+
+  it("recusa a mesma pessoa duas vezes e snowflake inválido", () => {
+    expect(
+      eventPresenceUpdateSchema.safeParse({
+        entries: [
+          { discordUserId: "123456789", presenceBp: 10_000 },
+          { discordUserId: "123456789", presenceBp: 0 },
+        ],
+      }).success,
+    ).toBe(false);
+    expect(eventPresenceUpdateSchema.safeParse({ entries: [{ discordUserId: "nao-e-snowflake", presenceBp: 0 }] }).success).toBe(false);
   });
 
   it("total continua vindo como string e virando bigint (Q20)", () => {

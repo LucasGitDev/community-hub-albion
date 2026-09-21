@@ -7,11 +7,12 @@ import {
   feePreviewText,
   rowsFromPresence,
   rowsFromSplit,
+  presenceSum,
+  presenceSumText,
   settlementTotals,
-  shareSum,
-  shareSumText,
   toSettle,
   withAmounts,
+  withShares,
   type SettlementRow,
 } from "./settlement";
 
@@ -30,6 +31,8 @@ const presence = (over: Partial<SplitPresenceDto> = {}): SplitPresenceDto => ({
   signedUp: true,
   roleName: "Tank",
   presenceMs: 60_000,
+  presenceBp: 10_000,
+  measuredPresenceBp: 10_000,
   ...over,
 });
 
@@ -41,6 +44,8 @@ const row = (over: Partial<SettlementRow> = {}): SettlementRow => ({
   signedUp: true,
   roleName: "Tank",
   presenceMs: 60_000,
+  presenceBp: 10_000,
+  measuredPresenceBp: 10_000,
   shareBp: 10_000,
   amount: 0n,
   ...over,
@@ -50,25 +55,39 @@ describe("tabela do acerto", () => {
   it("abre com a presença medida, sem rascunho e sem tela vazia", () => {
     const rows = rowsFromPresence([presence(), presence({ discordUserId: "9002", nick: null, userId: null, signedUp: false, presenceMs: 1_000 })]);
     expect(rows).toHaveLength(2);
-    expect(rows[0]).toMatchObject({ nick: "Thalya", shareBp: 0, amount: 0n, lineId: null, hasAccount: true });
-    // Presente sem conta no painel aparece assim mesmo: o caller precisa ver que a pessoa esteve lá (Q7).
+    expect(rows[0]).toMatchObject({ nick: "Thalya", presenceBp: 10_000, shareBp: 0, amount: 0n, lineId: null, hasAccount: true });
+    // Presente sem conta no painel aparece assim mesmo: o caller precisa ver que a pessoa esteve lá (PE6).
     expect(rows[1]).toMatchObject({ nick: "Discord 9002", hasAccount: false, signedUp: false, presenceMs: 1_000 });
   });
 
   it("com rascunho, usa o percentual e a prata que o servidor gravou", () => {
     const split = {
-      lines: [{ id: "l1", discordUserId: "9001", userId: "u1", nick: "Thalya", signedUp: true, roleName: "Tank", presenceMs: 60_000, shareBp: 6000, amount: "600" }],
+      lines: [
+        { id: "l1", discordUserId: "9001", userId: "u1", nick: "Thalya", signedUp: true, roleName: "Tank", presenceMs: 60_000, presenceBp: 5000, shareBp: 6000, amount: "600" },
+      ],
     } as LootSplitDto;
-    expect(rowsFromSplit(split)[0]).toMatchObject({ lineId: "l1", shareBp: 6000, amount: 600n });
+    // A leva guarda a presença que usou (PE4); a medição crua vem de fora e explica a diferença.
+    expect(rowsFromSplit(split, new Map([["9001", 10_000]]))[0]).toMatchObject({ lineId: "l1", presenceBp: 5000, measuredPresenceBp: 10_000, shareBp: 6000, amount: 600n });
+    expect(rowsFromSplit(split)[0]!.measuredPresenceBp).toBeNull();
   });
 });
 
-describe("soma dos percentuais (Q22, AC#5)", () => {
-  it("diz quanto falta, quanto passou, ou só 100%", () => {
-    expect(shareSumText(shareSum([row({ shareBp: 10_000 })]))).toBe("100%");
-    expect(shareSumText(shareSum([row({ shareBp: 9700 })]))).toBe("faltam 3%");
-    expect(shareSumText(shareSum([row({ shareBp: 10_050 })]))).toBe("passou 0,5%");
-    expect(shareSum([row({ shareBp: 5000 }), row({ key: "2", shareBp: 5000 })])).toEqual({ sumBp: 10_000, missingBp: 0, ok: true });
+describe("a presença é o peso, e ela não soma 100% (PE1, PE2)", () => {
+  it("o rodapé mostra o divisor da conta, não uma meta de 100%", () => {
+    const rows = [row({ presenceBp: 10_000 }), row({ key: "2", presenceBp: 10_000 }), row({ key: "3", presenceBp: 5000 })];
+    expect(presenceSum(rows)).toEqual({ sumBp: 25_000, people: 3, ok: true });
+    expect(presenceSumText(presenceSum(rows))).toBe("de presença somada, entre 3 pessoas");
+  });
+
+  it("ninguém com presença é o único estado que não divide (AC#7)", () => {
+    const sum = presenceSum([row({ presenceBp: 0 })]);
+    expect(sum.ok).toBe(false);
+    expect(presenceSumText(sum)).toContain("não tem como ser dividida");
+  });
+
+  it("100%, 100% e 50% de presença viram 40%, 40% e 20% da divisão (PE2)", () => {
+    const rows = withShares([row({ presenceBp: 10_000 }), row({ key: "2", presenceBp: 10_000 }), row({ key: "3", presenceBp: 5000 })]);
+    expect(rows.map((r) => r.shareBp)).toEqual([4000, 4000, 2000]);
   });
 });
 
@@ -118,21 +137,22 @@ describe("frase da taxa em tempo real (AC#3)", () => {
 describe("confirmar só quando pode (AC#5, AC#8)", () => {
   const fee = { type: "percent" as const, value: 1000n };
 
-  it("libera com 100% e taxa que cabe", () => {
-    expect(confirmBlockedReason(10_000_000n, fee, [row({ shareBp: 10_000 })])).toBeNull();
+  it("libera com presença e taxa que cabe, some qual for a soma", () => {
+    expect(confirmBlockedReason(10_000_000n, fee, [row({ presenceBp: 10_000 })])).toBeNull();
+    expect(confirmBlockedReason(10_000_000n, fee, [row({ presenceBp: 3700 }), row({ key: "2", presenceBp: 900 })])).toBeNull();
   });
 
-  it("barra soma diferente de 100% dizendo o quanto falta", () => {
-    expect(confirmBlockedReason(10_000_000n, fee, [row({ shareBp: 9700 })])).toBe("A soma das participações precisa fechar 100%: faltam 3%.");
+  it("barra soma de presenças zero, sem dividir por zero (AC#7)", () => {
+    expect(confirmBlockedReason(10_000_000n, fee, [row({ presenceBp: 0 })])).toContain("Dê presença a pelo menos uma pessoa");
   });
 
   it("barra taxa maior que o total antes de chamar a API, com a frase da API", () => {
-    expect(confirmBlockedReason(1_000_000n, { type: "fixed", value: 2_000_000n }, [row({ shareBp: 10_000 })])).toContain("Baixe a taxa ou aumente o total");
+    expect(confirmBlockedReason(1_000_000n, { type: "fixed", value: 2_000_000n }, [row({ presenceBp: 10_000 })])).toContain("Baixe a taxa ou aumente o total");
   });
 
-  it("barra participação de quem não estava inscrito e de quem não tem conta no painel", () => {
-    expect(confirmBlockedReason(10n, fee, [row({ shareBp: 10_000, signedUp: false })])).toContain("Só quem estava inscrito pode receber");
-    expect(confirmBlockedReason(10n, fee, [row({ shareBp: 10_000, hasAccount: false })])).toContain("ainda não tem conta no painel");
+  it("barra presença de quem não tem conta no painel, mas deixa passar quem não se inscreveu (PE6)", () => {
+    expect(confirmBlockedReason(10n, fee, [row({ presenceBp: 10_000, hasAccount: false })])).toContain("ainda não tem conta no painel");
+    expect(confirmBlockedReason(10n, fee, [row({ presenceBp: 10_000, signedUp: false })])).toBeNull();
   });
 });
 
