@@ -75,7 +75,9 @@ function fakeVoice() {
       posted.push({ channelId, title: view.title });
       return `msg-${posted.length}`;
     },
-    async setChannelConnectLock() {},
+    async setChannelConnectLock() {
+      return { failed: 0 };
+    },
     async moveMember(discordId, toChannelId) {
       if (fail.move.has(discordId)) throw Object.assign(new Error("saiu da voz"), { code: 40032 });
       for (const members of channels.values()) members.delete(discordId);

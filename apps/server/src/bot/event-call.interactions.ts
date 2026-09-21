@@ -128,14 +128,18 @@ export class EventCallInteractions {
   private async setLock(event: EventDto, channelId: string, userId: string, locked: boolean): Promise<string> {
     const signups = await listEventSignupMembers(this.handle.db, event.id);
     const allowed = callAllowedDiscordIds(signups);
+    let failed: number;
     try {
-      await this.gateway.setChannelConnectLock(channelId, locked, allowed, `Menu da call do evento ${event.name}`);
+      ({ failed } = await this.gateway.setChannelConnectLock(channelId, locked, allowed, `Menu da call do evento ${event.name}`));
     } catch (error) {
       this.logger.error(`Evento ${event.id}: falha ao ${locked ? "fechar" : "abrir"} a call ${channelId}. ${describeDiscordError(error)}`);
       return EVENT_CALL_REPLIES.lockFailed;
     }
-    await this.publish(locked ? "lock" : "unlock", event, userId, [{ name: "Inscritos liberados", value: String(allowed.length) }]);
-    return locked ? EVENT_CALL_REPLIES.locked : EVENT_CALL_REPLIES.unlocked;
+    const details = [{ name: "Inscritos liberados", value: String(allowed.length - failed) }];
+    if (failed > 0) details.push({ name: "Recusados pelo Discord", value: String(failed) });
+    await this.publish(locked ? "lock" : "unlock", event, userId, details);
+    const done = locked ? EVENT_CALL_REPLIES.locked : EVENT_CALL_REPLIES.unlocked;
+    return failed > 0 ? `${done}\n${EVENT_CALL_REPLIES.someRefused(failed)}` : done;
   }
 
   /** Linha da timeline com **quem clicou** (AC#7). Falhar aqui nunca desfaz o que já aconteceu (T6). */

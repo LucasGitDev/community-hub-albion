@@ -4,6 +4,11 @@ import type { EmbedView } from "../domain/embed-view.js";
 import { toMessagePayload } from "./embed-message.js";
 import { DISCORD_GUILD_ID } from "./discord-guild.gateway.js";
 
+/** Quantos inscritos o Discord recusou na sobrescrita; o `@everyone` falhar lança, esse não. */
+export interface ConnectLockResult {
+  failed: number;
+}
+
 export const EVENT_VOICE_GATEWAY = Symbol("EVENT_VOICE_GATEWAY");
 export const DISCORD_WAITING_VOICE_CHANNEL_ID = Symbol("DISCORD_WAITING_VOICE_CHANNEL_ID");
 export const DISCORD_EVENT_CATEGORY_ID = Symbol("DISCORD_EVENT_CATEGORY_ID");
@@ -43,7 +48,7 @@ export interface EventVoiceGateway {
    * inscritos; abrir = apagar essas sobrescritas. **Nunca** mexe em quem já está no canal: mudar
    * permissão de entrada não expulsa ninguém.
    */
-  setChannelConnectLock(channelId: string, locked: boolean, allowDiscordIds: readonly string[], reason: string): Promise<void>;
+  setChannelConnectLock(channelId: string, locked: boolean, allowDiscordIds: readonly string[], reason: string): Promise<ConnectLockResult>;
   /** Id do canal fixo "Aguardando Evento": destino do finish e única origem do start (Q29). */
   readonly waitingChannelId: string;
 }
@@ -123,17 +128,25 @@ export class DiscordJsEventVoiceGateway implements EventVoiceGateway {
    * Fechar nega `Connect` para `@everyone` (cujo id de cargo é o id da guild) e libera cada inscrito;
    * abrir apaga as duas coisas. Mudar sobrescrita não mexe em quem já está conectado (PE10).
    */
-  async setChannelConnectLock(channelId: string, locked: boolean, allowDiscordIds: readonly string[], reason: string): Promise<void> {
+  async setChannelConnectLock(channelId: string, locked: boolean, allowDiscordIds: readonly string[], reason: string): Promise<ConnectLockResult> {
     const channel = await this.voiceChannel(channelId);
     const overwrites = channel.permissionOverwrites;
     if (!overwrites) throw Object.assign(new Error("Canal do evento sem sobrescritas de permissão"), { code: EVENT_VOICE_CHANNEL_INVALID });
-    if (locked) {
-      await overwrites.edit(this.guildId, { Connect: false }, { reason });
-      for (const discordId of allowDiscordIds) await overwrites.edit(discordId, { Connect: true }, { reason });
-      return;
+    // O `@everyone` é a porta: se ele falhar, nada aconteceu e o chamador precisa saber.
+    if (locked) await overwrites.edit(this.guildId, { Connect: false }, { reason });
+    else await overwrites.delete(this.guildId, reason);
+    // Um inscrito por vez, e falha de um não aborta os outros (mesma regra de `moveAll`): abortar no
+    // primeiro erro deixaria a porta fechada e metade dos inscritos sem liberação, trancados de fora.
+    let failed = 0;
+    for (const discordId of allowDiscordIds) {
+      try {
+        if (locked) await overwrites.edit(discordId, { Connect: true }, { reason });
+        else await overwrites.delete(discordId, reason);
+      } catch {
+        failed++;
+      }
     }
-    await overwrites.delete(this.guildId, reason);
-    for (const discordId of allowDiscordIds) await overwrites.delete(discordId, reason);
+    return { failed };
   }
 
   private async voiceChannel(channelId: string): Promise<VoiceChannelLike> {
