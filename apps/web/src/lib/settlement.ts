@@ -8,8 +8,8 @@ import {
   formatAmount,
   hasFee,
   splitConfirmRefusalMessage,
-  splitShareSum,
-  SHARE_SCALE,
+  presenceBpSum,
+  sharesFromPresence,
   type AppAbility,
   type EventDto,
   type EventFee,
@@ -38,6 +38,11 @@ export interface SettlementRow {
   signedUp: boolean;
   roleName: string | null;
   presenceMs: number;
+  /** Presença que vale: o que o caller editou, ou a medição (PE3). É o que ele edita nesta tela. */
+  presenceBp: number;
+  /** A medição crua da call. `null` quando a leva já foi confirmada e só guarda o que usou. */
+  measuredPresenceBp: number | null;
+  /** Participação derivada da presença (PE2). Ninguém digita isto: a tela **lê**. */
   shareBp: number;
   amount: bigint;
 }
@@ -59,11 +64,13 @@ export const rowsFromPresence = (present: readonly SplitPresenceDto[]): Settleme
     signedUp: p.signedUp,
     roleName: p.roleName,
     presenceMs: p.presenceMs,
+    presenceBp: p.presenceBp,
+    measuredPresenceBp: p.measuredPresenceBp,
     shareBp: 0,
     amount: 0n,
   }));
 
-export const rowsFromSplit = (split: LootSplitDto): SettlementRow[] =>
+export const rowsFromSplit = (split: LootSplitDto, measured?: ReadonlyMap<string, number>): SettlementRow[] =>
   split.lines.map((line) => ({
     key: line.discordUserId,
     lineId: line.id,
@@ -72,29 +79,42 @@ export const rowsFromSplit = (split: LootSplitDto): SettlementRow[] =>
     signedUp: line.signedUp,
     roleName: line.roleName,
     presenceMs: line.presenceMs,
+    presenceBp: line.presenceBp,
+    measuredPresenceBp: measured?.get(line.discordUserId) ?? null,
     shareBp: line.shareBp,
     amount: BigInt(line.amount),
   }));
 
-/** Soma dos percentuais e o quanto falta ou sobra para 100% (Q22, AC#5). */
-export interface ShareSum {
+/**
+ * O denominador da divisão (PE2): a soma das presenças e quanta gente entra nela.
+ *
+ * Ela **não** precisa fechar 100% — é a regra que a TASK-084 tirou do caminho do caller. O que a tela
+ * mostra é o divisor, porque é ele que explica por que 100% de presença virou 40% da prata. Soma zero
+ * é o único estado que trava a confirmação (AC#7).
+ */
+export interface PresenceSum {
   sumBp: number;
-  /** Positivo = falta; negativo = passou. Zero = fecha. */
-  missingBp: number;
+  /** Quantas pessoas têm presença acima de zero: é entre elas que a prata é dividida. */
+  people: number;
+  /** Alguém com presença? Zero não divide (AC#7). */
   ok: boolean;
 }
 
-export function shareSum(rows: readonly SettlementRow[]): ShareSum {
-  const sumBp = splitShareSum(rows);
-  return { sumBp, missingBp: SHARE_SCALE - sumBp, ok: sumBp === SHARE_SCALE };
+export function presenceSum(rows: readonly SettlementRow[]): PresenceSum {
+  const sumBp = presenceBpSum(rows);
+  return { sumBp, people: rows.filter((r) => r.presenceBp > 0).length, ok: sumBp > 0 };
 }
 
-/** "100%" quando fecha; senão o número e o que fazer com ele. */
-export function shareSumText(sum: ShareSum): string {
-  if (sum.ok) return "100%";
-  const off = Math.abs(sum.missingBp) / 100;
-  const amount = `${off.toLocaleString("pt-BR", { maximumFractionDigits: 2 })}%`;
-  return sum.missingBp > 0 ? `faltam ${amount}` : `passou ${amount}`;
+/** "300% entre 3 pessoas" — o divisor da conta, em uma frase. */
+export function presenceSumText(sum: PresenceSum): string {
+  if (!sum.ok) return "ninguém com presença: a prata não tem como ser dividida";
+  return `de presença somada, entre ${sum.people === 1 ? "1 pessoa" : `${sum.people} pessoas`}`;
+}
+
+/** Participação derivada da presença (PE2), sem esperar a resposta do servidor. */
+export function withShares(rows: readonly SettlementRow[]): SettlementRow[] {
+  const shares = sharesFromPresence(rows.map((r) => ({ key: r.key, presenceBp: r.presenceBp })));
+  return rows.map((row, i) => ({ ...row, shareBp: shares[i]! }));
 }
 
 /** Como o dinheiro fecha de cima a baixo: bruto → taxa → dividido → sobra → dono. */
@@ -161,17 +181,14 @@ export function feePreviewText(total: bigint, fee: EventFee, ownerNick: string):
  *
  * Roda a **mesma** `checkSplitConfirm` do servidor e devolve a **mesma** frase: a tela recusa antes
  * de gastar uma requisição (AC#8), e quem passar por ela mesmo assim lê exatamente o que a API diria.
- * A soma fora de 100% é a única que ganha texto próprio, porque o número que falta já está no rodapé.
  */
 export function confirmBlockedReason(total: bigint, fee: EventFee, rows: readonly SettlementRow[]): string | null {
   const result = checkSplitConfirm(
-    rows.map((r) => ({ shareBp: r.shareBp, userId: r.hasAccount ? r.key : null, signedUp: r.signedUp })),
+    rows.map((r) => ({ key: r.key, presenceBp: r.presenceBp, userId: r.hasAccount ? r.key : null })),
     total,
     fee,
   );
-  if (result.ok) return null;
-  if (result.reason === "shares_not_100") return `A soma das participações precisa fechar 100%: ${shareSumText(shareSum(rows))}.`;
-  return splitConfirmRefusalMessage(result.reason);
+  return result.ok ? null : splitConfirmRefusalMessage(result.reason);
 }
 
 /**
