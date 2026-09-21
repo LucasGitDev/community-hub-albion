@@ -283,6 +283,7 @@ describe.skipIf(!baseUrl)("loot split HTTP (TASK-027)", () => {
   describe("edição, confirmação e estorno (TASK-028)", () => {
     const patch = (cookie: string | null, eventId: string, splitId: string, body: object, origin = PUBLIC_URL) =>
       send("patch", `/api/events/${eventId}/splits/${splitId}`, cookie, body, origin);
+    const presence = (cookie: string | null, eventId: string, body: object, origin = PUBLIC_URL) => send("put", `/api/events/${eventId}/presence`, cookie, body, origin);
     const confirm = (cookie: string | null, eventId: string, splitId: string, origin = PUBLIC_URL) =>
       send("post", `/api/events/${eventId}/splits/${splitId}/confirm`, cookie, {}, origin);
     const reverse = (cookie: string | null, eventId: string, splitId: string, body: object = { reason: "loot contado errado" }, origin = PUBLIC_URL) =>
@@ -356,12 +357,10 @@ describe.skipIf(!baseUrl)("loot split HTTP (TASK-027)", () => {
         expect((res.body as LootSplitDto).lines[0]!.amount).toBe("2000000");
       });
 
-      it("corpo vazio ou participação inválida é 400 em PT-BR", async () => {
+      it("corpo vazio é 400 em PT-BR: a edição do rascunho é só o total (PE1)", async () => {
         const { event, split } = await drafted();
         expect((await patch(caller, event.id, split.id, {})).status).toBe(400);
-        const ruim = await patch(caller, event.id, split.id, { lines: [{ id: split.lines[0]!.id, shareBp: 10_001 }] });
-        expect(ruim.status).toBe(400);
-        expect(ruim.body.message).toContain("100%");
+        expect((await patch(caller, event.id, split.id, { totalSilver: "-1" })).status).toBe(400);
       });
 
       it("split já confirmado não é editável: a correção é estorno", async () => {
@@ -374,12 +373,12 @@ describe.skipIf(!baseUrl)("loot split HTTP (TASK-027)", () => {
     });
 
     describe("confirmação (AC#1, AC#2, AC#4)", () => {
-      it("soma ≠ 100% é recusada com a frase do Q22 (AC#1)", async () => {
+      it("soma de presenças zero é recusada com a frase do AC#7", async () => {
         const { event, split } = await drafted();
-        expect((await patch(caller, event.id, split.id, { lines: split.lines.map((l) => ({ id: l.id, shareBp: 4000 })) })).status).toBe(200);
+        expect((await presence(caller, event.id, { entries: [{ discordUserId: membroDiscordId, presenceBp: 0 }] })).status).toBe(200);
         const res = await confirm(caller, event.id, split.id);
         expect(res.status).toBe(409);
-        expect(res.body.message).toBe("A soma das participações precisa ser exatamente 100% para confirmar o split.");
+        expect(res.body.message).toBe("Ninguém está com presença acima de zero: não há como dividir a prata. Dê presença a pelo menos uma pessoa antes de confirmar.");
       });
 
       it("taxa fixa maior que o total é recusada, com o caminho de saída na frase", async () => {
@@ -504,8 +503,70 @@ describe.skipIf(!baseUrl)("loot split HTTP (TASK-027)", () => {
         expect((await confirmPaid(caller, event.id, split.id, ["nao-e-uuid"])).status).toBe(400);
         expect((await confirmPaid(caller, event.id, split.id, [split.lines[0]!.id, split.lines[0]!.id])).status).toBe(400);
         const res = await confirmPaid(caller, event.id, split.id, [outro.split.lines[0]!.id]);
-        expect([res.status, res.body.message]).toEqual([409, "A lista de participações precisa trazer exatamente as linhas deste split."]);
+        expect([res.status, res.body.message]).toEqual([409, "A lista de quem foi pago no jogo precisa trazer só linhas deste split."]);
         expect(await listLedgerEntriesByReference(handle.db, "loot_split", split.id)).toEqual([]);
+      });
+    });
+
+    describe("presença do evento (TASK-084, PE1 a PE6)", () => {
+      it("edita a presença de 0 a 100% por pessoa e recalcula o rascunho aberto (AC#1, AC#2)", async () => {
+        const { event, split } = await drafted("1000000");
+        expect(split.lines[0]).toMatchObject({ presenceBp: 10_000, shareBp: 10_000 });
+        const res = await presence(caller, event.id, { entries: [{ discordUserId: membroDiscordId, presenceBp: 5000 }] });
+        expect(res.status).toBe(200);
+        expect(res.body.present[0]).toMatchObject({ discordUserId: membroDiscordId, presenceBp: 5000, measuredPresenceBp: 10_000 });
+        // Sozinho na lista, ele continua com 100% da divisão: o que muda é o peso, não a fatia.
+        const relido = await send("get", `/api/events/${event.id}/splits/${split.id}`, caller, {});
+        expect((relido.body as LootSplitDto).lines[0]).toMatchObject({ presenceBp: 5000, shareBp: 10_000, amount: "1000000" });
+      });
+
+      it("presença fora de 0 a 100%, lista vazia ou pessoa repetida é 400 em PT-BR (AC#1)", async () => {
+        const { event } = await drafted();
+        expect((await presence(caller, event.id, { entries: [] })).status).toBe(400);
+        const acima = await presence(caller, event.id, { entries: [{ discordUserId: membroDiscordId, presenceBp: 10_001 }] });
+        expect(acima.status).toBe(400);
+        expect(acima.body.message).toContain("0 a 100%");
+        expect((await presence(caller, event.id, { entries: [{ discordUserId: membroDiscordId, presenceBp: -1 }] })).status).toBe(400);
+        expect(
+          (
+            await presence(caller, event.id, {
+              entries: [
+                { discordUserId: membroDiscordId, presenceBp: 1 },
+                { discordUserId: membroDiscordId, presenceBp: 2 },
+              ],
+            })
+          ).status,
+        ).toBe(400);
+      });
+
+      it("quem não manda no evento não edita a presença, e a rota exige mesma origem", async () => {
+        const { event } = await drafted();
+        expect((await presence(outroCaller, event.id, { entries: [{ discordUserId: membroDiscordId, presenceBp: 1 }] })).status).toBe(403);
+        expect((await presence(null, event.id, { entries: [{ discordUserId: membroDiscordId, presenceBp: 1 }] })).status).toBe(401);
+        expect((await presence(caller, event.id, { entries: [{ discordUserId: membroDiscordId, presenceBp: 1 }] }, "https://evil.example")).status).toBe(403);
+      });
+
+      it("publica na timeline depois do commit, com o antes e o depois de cada um (T14, DoD#7)", async () => {
+        const { event } = await drafted("1000000");
+        timeline.clear();
+        expect((await presence(caller, event.id, { entries: [{ discordUserId: membroDiscordId, presenceBp: 4500 }] })).status).toBe(200);
+        const entry = timeline.only("event.presence_edited");
+        expect(entry).toMatchObject({ actor: { kind: "user" }, target: { id: event.id }, recordId: event.id });
+        expect(entry.list?.items).toEqual([expect.stringContaining("100% → 45%")]);
+
+        // Reenviar o mesmo número não muda nada, e o canal não ganha ruído.
+        timeline.clear();
+        expect((await presence(caller, event.id, { entries: [{ discordUserId: membroDiscordId, presenceBp: 4500 }] })).status).toBe(200);
+        expect(timeline.entries).toEqual([]);
+      });
+
+      it("leva confirmada não muda quando a presença é editada depois (PE4, AC#4)", async () => {
+        const { event, split } = await drafted("1000000");
+        expect((await confirm(caller, event.id, split.id)).status).toBe(200);
+        const antes = (await send("get", `/api/events/${event.id}/splits/${split.id}`, caller, {})).body as LootSplitDto;
+        expect((await presence(caller, event.id, { entries: [{ discordUserId: membroDiscordId, presenceBp: 1000 }] })).status).toBe(200);
+        const depois = (await send("get", `/api/events/${event.id}/splits/${split.id}`, caller, {})).body as LootSplitDto;
+        expect(depois.lines).toEqual(antes.lines);
       });
     });
 
@@ -565,7 +626,8 @@ describe.skipIf(!baseUrl)("loot split HTTP (TASK-027)", () => {
         const { event, split } = await drafted("1000000");
         timeline.clear();
         expect((await reverse(staff, event.id, split.id)).status).toBe(409);
-        expect((await patch(caller, event.id, split.id, { lines: split.lines.map((l) => ({ id: l.id, shareBp: 4000 })) })).status).toBe(200);
+        expect((await presence(caller, event.id, { entries: [{ discordUserId: membroDiscordId, presenceBp: 0 }] })).status).toBe(200);
+        timeline.clear();
         expect((await confirm(caller, event.id, split.id)).status).toBe(409);
         expect(timeline.entries).toEqual([]);
         const { event: e2, split: s2 } = await drafted("500000");
