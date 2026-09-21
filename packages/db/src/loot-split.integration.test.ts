@@ -16,6 +16,7 @@ import {
   joinEventRole,
   listEventLootSplits,
   listEventPresence,
+  setEventPresence,
   listEventRoles,
   listLedgerEntriesByReference,
   listWithdrawals,
@@ -574,37 +575,58 @@ describe.skipIf(!baseUrl)("rascunho de loot split (TASK-027, Postgres real)", ()
         ]);
       });
 
-      it("mudar os percentuais redistribui a prata, e a sobra continua fechando o total", async () => {
-        const { split } = await twoPeopleEvent(NO_FEE, 1_000n);
-        const [first, second] = split.lines;
-        const updated = await updateLootSplitDraft(handle.db, split.id, {
-          lines: [
-            { id: first!.id, shareBp: 5000 },
-            { id: second!.id, shareBp: 5000 },
+      it("editar a presença redistribui a prata do rascunho (PE1, PE2)", async () => {
+        const { event, a, b, split } = await twoPeopleEvent(NO_FEE, 1_000n);
+        // Medidos 2h e 1h: 66,67% e 33,33%. O caller diz que os dois participaram igual.
+        expect(split.lines.map((l) => l.shareBp)).toEqual([6667, 3333]);
+        const updated = await setEventPresence(handle.db, event.id, {
+          entries: [
+            { discordUserId: a.discordId, presenceBp: 10_000 },
+            { discordUserId: b.discordId, presenceBp: 10_000 },
           ],
-        });
-        if (!updated.ok) throw new Error(updated.reason);
-        expect(updated.split.lines.map((l) => [l.shareBp, l.amount])).toEqual([
-          [5000, "500"],
-          [5000, "500"],
-        ]);
-        expect(updated.split.residualSilver).toBe("0");
-      });
-
-      it("a soma NÃO precisa fechar 100% durante a edição: ela é exigida só na confirmação (Q22)", async () => {
-        const { split } = await twoPeopleEvent(NO_FEE, 1_000n);
-        const updated = await updateLootSplitDraft(handle.db, split.id, {
-          lines: split.lines.map((line) => ({ id: line.id, shareBp: 1000 })),
+          actorUserId: null,
         });
         expect(updated.ok).toBe(true);
+        const after = (await getLootSplit(handle.db, split.id))!;
+        expect(after.lines.map((l) => [l.presenceBp, l.shareBp, l.amount])).toEqual([
+          [10_000, 5000, "500"],
+          [10_000, 5000, "500"],
+        ]);
+        expect(after.residualSilver).toBe("0");
       });
 
-      it("lista parcial de linhas é recusada: participação é bolo fechado", async () => {
-        const { split } = await twoPeopleEvent(NO_FEE, 1_000n);
-        expect(await updateLootSplitDraft(handle.db, split.id, { lines: [{ id: split.lines[0]!.id, shareBp: 10_000 }] })).toEqual({ ok: false, reason: "unknown_lines" });
+      it("a presença NÃO precisa somar 100%: 10% e 10% dividem meio a meio (PE1)", async () => {
+        const { event, a, b, split } = await twoPeopleEvent(NO_FEE, 1_000n);
+        await setEventPresence(handle.db, event.id, {
+          entries: [
+            { discordUserId: a.discordId, presenceBp: 1000 },
+            { discordUserId: b.discordId, presenceBp: 1000 },
+          ],
+          actorUserId: null,
+        });
+        const after = (await getLootSplit(handle.db, split.id))!;
+        expect(after.lines.map((l) => l.shareBp)).toEqual([5000, 5000]);
+        expect(after.lines.map((l) => l.amount)).toEqual(["500", "500"]);
       });
 
-      it("dar participação a quem não estava inscrito é recusado com frase, não com erro de constraint (Q7)", async () => {
+      it("a lista é parcial: mexer na presença de um não mexe na do outro (PE1)", async () => {
+        const { event, a, b, split } = await twoPeopleEvent(NO_FEE, 1_000n);
+        await setEventPresence(handle.db, event.id, { entries: [{ discordUserId: a.discordId, presenceBp: 5000 }], actorUserId: null });
+        const present = await listEventPresence(handle.db, event.id);
+        expect(present.find((p) => p.discordUserId === a.discordId)!.presenceBp).toBe(5000);
+        // b continua com a medição: 1h de uma call de 2h.
+        expect(present.find((p) => p.discordUserId === b.discordId)!.presenceBp).toBe(5000);
+        expect((await getLootSplit(handle.db, split.id))!.lines.map((l) => l.shareBp)).toEqual([5000, 5000]);
+      });
+
+      it("a medição crua fica ao lado da presença editada, para a tela explicar a diferença (PE3)", async () => {
+        const { event, a } = await twoPeopleEvent(NO_FEE, 1_000n);
+        await setEventPresence(handle.db, event.id, { entries: [{ discordUserId: a.discordId, presenceBp: 2500 }], actorUserId: null });
+        const linha = (await listEventPresence(handle.db, event.id)).find((p) => p.discordUserId === a.discordId)!;
+        expect(linha).toMatchObject({ presenceBp: 2500, measuredPresenceBp: 10_000 });
+      });
+
+      it("dar presença a quem apareceu sem inscrição o faz receber (PE6, AC#6)", async () => {
         const owner = await nextUser();
         const a = await nextUser();
         const intruso = await nextUser();
@@ -616,16 +638,50 @@ describe.skipIf(!baseUrl)("rascunho de loot split (TASK-027, Postgres real)", ()
         await voice(intruso.discordId, channel, start, finish);
         const created = await createLootSplit(handle.db, { eventId: event.id, totalSilver: 1_000n, fee: NO_FEE, createdBy: owner.id });
         if (!created.ok) throw new Error(created.reason);
-        const naoInscrito = created.split.lines.find((l) => !l.signedUp)!;
-        const inscrito = created.split.lines.find((l) => l.signedUp)!;
-        expect(
-          await updateLootSplitDraft(handle.db, created.split.id, {
-            lines: [
-              { id: inscrito.id, shareBp: 5000 },
-              { id: naoInscrito.id, shareBp: 5000 },
-            ],
-          }),
-        ).toEqual({ ok: false, reason: "share_without_signup" });
+        // Nasce com presença 0 mesmo tendo ficado a call inteira: incluir é gesto explícito.
+        expect(created.split.lines.find((l) => !l.signedUp)).toMatchObject({ presenceBp: 0, shareBp: 0, amount: "0" });
+
+        const updated = await setEventPresence(handle.db, event.id, { entries: [{ discordUserId: intruso.discordId, presenceBp: 10_000 }], actorUserId: owner.id });
+        expect(updated.ok).toBe(true);
+        const after = (await getLootSplit(handle.db, created.split.id))!;
+        expect(after.lines.find((l) => !l.signedUp)).toMatchObject({ shareBp: 5000, amount: "500" });
+      });
+
+      it("presença editada depois NÃO muda a leva confirmada, e vale para a próxima (PE4)", async () => {
+        const { event, a, b, split } = await twoPeopleEvent(NO_FEE, 1_000n);
+        const confirmed = await confirmLootSplit(handle.db, split.id, { actorUserId: null });
+        if (!confirmed.ok) throw new Error(confirmed.reason);
+        const congelado = confirmed.split.lines.map((l) => [l.presenceBp, l.shareBp, l.amount]);
+        expect(congelado).toEqual([
+          [10_000, 6667, "666"],
+          [5000, 3333, "333"],
+        ]);
+
+        await setEventPresence(handle.db, event.id, {
+          entries: [
+            { discordUserId: a.discordId, presenceBp: 10_000 },
+            { discordUserId: b.discordId, presenceBp: 10_000 },
+          ],
+          actorUserId: null,
+        });
+        // A leva confirmada é a mesma, linha por linha: o ledger dela já existe.
+        expect((await getLootSplit(handle.db, split.id))!.lines.map((l) => [l.presenceBp, l.shareBp, l.amount])).toEqual(congelado);
+
+        // A leva seguinte nasce com a presença nova.
+        const proxima = await createLootSplit(handle.db, { eventId: event.id, totalSilver: 1_000n, fee: NO_FEE, createdBy: null });
+        if (!proxima.ok) throw new Error(proxima.reason);
+        expect(proxima.split.lines.map((l) => l.shareBp)).toEqual([5000, 5000]);
+      });
+
+      it("editar presença de evento que não está finalizado é recusado (Q26)", async () => {
+        const { event, a, split } = await twoPeopleEvent(NO_FEE, 1_000n);
+        expect((await confirmLootSplit(handle.db, split.id, { actorUserId: null })).ok).toBe(true);
+        expect((await applyEventTransition(handle.db, event.id, "archived")).ok).toBe(true);
+        expect(await setEventPresence(handle.db, event.id, { entries: [{ discordUserId: a.discordId, presenceBp: 1 }], actorUserId: null })).toMatchObject({
+          ok: false,
+          reason: "event_not_editable",
+          status: "archived",
+        });
       });
 
       it("split inexistente é not_found", async () => {
@@ -644,11 +700,17 @@ describe.skipIf(!baseUrl)("rascunho de loot split (TASK-027, Postgres real)", ()
     });
 
     describe("confirmação lança no ledger (AC#2)", () => {
-      it("soma ≠ 100% é recusada (AC#1, Q22)", async () => {
-        const { split } = await twoPeopleEvent(NO_FEE, 1_000n);
-        const torto = await updateLootSplitDraft(handle.db, split.id, { lines: split.lines.map((l) => ({ id: l.id, shareBp: 4000 })) });
-        expect(torto.ok).toBe(true);
-        expect(await confirmLootSplit(handle.db, split.id, { actorUserId: null })).toEqual({ ok: false, reason: "refused", refusal: "shares_not_100" });
+      it("soma de presenças zero é recusada, sem dividir por zero (AC#7)", async () => {
+        const { event, a, b, split } = await twoPeopleEvent(NO_FEE, 1_000n);
+        const zerado = await setEventPresence(handle.db, event.id, {
+          entries: [
+            { discordUserId: a.discordId, presenceBp: 0 },
+            { discordUserId: b.discordId, presenceBp: 0 },
+          ],
+          actorUserId: null,
+        });
+        expect(zerado.ok).toBe(true);
+        expect(await confirmLootSplit(handle.db, split.id, { actorUserId: null })).toEqual({ ok: false, reason: "refused", refusal: "zero_presence" });
         // E nada foi lançado.
         expect(await listLedgerEntriesByReference(handle.db, "loot_split", split.id)).toEqual([]);
         expect((await getLootSplit(handle.db, split.id))!.status).toBe("draft");
