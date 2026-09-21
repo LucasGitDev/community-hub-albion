@@ -1,0 +1,1 @@
+ALTER TABLE "event_signups" ADD COLUMN "presence_from" timestamp with time zone;
