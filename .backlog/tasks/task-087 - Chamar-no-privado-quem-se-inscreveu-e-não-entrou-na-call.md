@@ -5,7 +5,7 @@ status: In Progress
 assignee:
   - '@claude'
 created_date: '2026-09-21 13:02'
-updated_date: '2026-09-21 14:56'
+updated_date: '2026-09-21 14:59'
 labels: []
 milestone: m-12
 dependencies:
@@ -99,6 +99,8 @@ Ambiente: o Postgres compartilhado do gate (localgate-postgres-1) chegou a 99% d
 | #8 | event-call.interactions.test.ts "AC#8: o chamado publica na timeline com quem acionou e quantos foram avisados" + asserções de timeline no teste do start |
 
 Security review (diff da branch, subagent dedicado): nenhum achado HIGH/MEDIUM. Superfícies conferidas: authz/CSRF do endpoint novo (SameOriginGuard + Authorize + assertCan com condição de dono, igual aos irmãos), ator sempre da sessão (o endpoint não lê corpo) e re-checado dentro do serviço, botão do Discord (custom_id só carrega o eventId, validado e recarregado; identidade vem de interaction.user.id), injeção de menção (allowedMentions com users explícito neutraliza @everyone em nome de evento), SQL (drizzle parametrizado, sem sql.raw), exposição de dados (resposta é só a contagem), e o caminho do start que pula CASL (só alcançável pelo hook da transição já autorizada).
+
+PR aberto: https://github.com/LucasGitDev/community-hub-albion/pull/119 — check `summary` = success no commit 48e441a, mergeStateStatus CLEAN. Aguardando merge (não mergeado por instrução).
 <!-- SECTION:NOTES:END -->
 
 ## Final Summary
