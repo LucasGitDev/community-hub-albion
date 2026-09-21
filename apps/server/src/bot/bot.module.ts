@@ -15,6 +15,8 @@ import { EventVoiceService } from "./event-voice.service.js";
 import { EventCallInteractions } from "./event-call.interactions.js";
 import { EventSummonService, SUMMON_CLOCK } from "./event-summon.service.js";
 import { EVENT_SUMMONER } from "../events/event-summoner.token.js";
+import { DEFAULT_LATE_SIGNUP_BATCH_MS, EventLateSignupService, LATE_SIGNUP_BATCH_MS } from "./event-late-signup.service.js";
+import { EventLateSignupInteractions } from "./event-late-signup.interactions.js";
 import { EventCommand } from "./event.command.js";
 import { ImportMembersCommand } from "./import-members.command.js";
 import { DISCORD_EVENTS_CHANNEL_ID, DiscordJsEventsChannelGateway, EVENTS_CHANNEL_GATEWAY } from "./events-channel.gateway.js";
@@ -109,6 +111,10 @@ export class BotModule {
         { provide: SUMMON_CLOCK, useValue: () => new Date() },
         EventSummonService,
         { provide: EVENT_SUMMONER, useExisting: EventSummonService },
+        // TASK-086: pergunta no chat da call sobre quem entrou sem estar inscrito (PE7/PE8).
+        { provide: LATE_SIGNUP_BATCH_MS, useValue: DEFAULT_LATE_SIGNUP_BATCH_MS },
+        EventLateSignupService,
+        EventLateSignupInteractions,
         // TASK-056: emoji da Buffunfa resolvido no boot (env > descoberto > texto puro, F6-28).
         { provide: BUFFUNFA_EMOJI_GATEWAY, useClass: DiscordJsGuildEmojiGateway },
         { provide: BUFFUNFA_EMOJI_ID, useValue: env.DISCORD_BUFFUNFA_EMOJI_ID ?? null },
