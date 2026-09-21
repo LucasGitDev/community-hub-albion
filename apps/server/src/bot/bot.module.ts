@@ -12,6 +12,7 @@ import { EventEmbedService } from "./event-embed.service.js";
 import { EventSignupInteractions } from "./event-signup.interactions.js";
 import { DISCORD_EVENT_CATEGORY_ID, DISCORD_WAITING_VOICE_CHANNEL_ID, DiscordJsEventVoiceGateway, EVENT_VOICE_GATEWAY } from "./event-voice.gateway.js";
 import { EventVoiceService } from "./event-voice.service.js";
+import { EventCallInteractions } from "./event-call.interactions.js";
 import { EventCommand } from "./event.command.js";
 import { ImportMembersCommand } from "./import-members.command.js";
 import { DISCORD_EVENTS_CHANNEL_ID, DiscordJsEventsChannelGateway, EVENTS_CHANNEL_GATEWAY } from "./events-channel.gateway.js";
@@ -100,6 +101,8 @@ export class BotModule {
         { provide: EVENT_VOICE_GATEWAY, useClass: DiscordJsEventVoiceGateway },
         EventVoiceService,
         EventCommand,
+        // TASK-085: menu de gestão da call no chat de texto do canal de voz (PE9 a PE11).
+        EventCallInteractions,
         // TASK-056: emoji da Buffunfa resolvido no boot (env > descoberto > texto puro, F6-28).
         { provide: BUFFUNFA_EMOJI_GATEWAY, useClass: DiscordJsGuildEmojiGateway },
         { provide: BUFFUNFA_EMOJI_ID, useValue: env.DISCORD_BUFFUNFA_EMOJI_ID ?? null },

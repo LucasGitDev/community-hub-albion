@@ -26,6 +26,9 @@ export function describeDiscordError(error: unknown): string {
   if (code === "WAITING_VOICE_CHANNEL_INVALID") {
     return `Canal "Aguardando Evento" não encontrado ou não é de voz (${message}). Confira DISCORD_WAITING_VOICE_CHANNEL_ID e se o bot vê o canal (Ver canal, Conectar, Mover Membros).`;
   }
+  if (code === "EVENT_VOICE_CHANNEL_INVALID") {
+    return `Canal de voz do evento não encontrado ou não aceita a operação (${message}). Confira se ele ainda existe e se o bot tem Ver canal, Enviar mensagens e Gerenciar Canais nele.`;
+  }
   if (code === 10008) {
     return `Mensagem do embed não existe mais (${message}).`;
   }
