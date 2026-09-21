@@ -10,19 +10,28 @@ import {
   type AttendanceInput,
 } from "./event-attendance.js";
 import { buffunfaSuggestionText, formatBuffunfaRange, inBuffunfaRange, isBuffunfaValue } from "./event-templates.js";
-import type { SplitPresenceDto } from "./loot-split.js";
+import { measuredPresenceBp, type SplitPresenceDto } from "./loot-split.js";
 
 const HOUR = 3_600_000;
 
-const person = (over: Partial<SplitPresenceDto> = {}): SplitPresenceDto => ({
-  discordUserId: "111",
-  userId: "u-1",
-  nick: "Tanque",
-  signedUp: true,
-  roleName: "Tank",
-  presenceMs: HOUR,
-  ...over,
-});
+/**
+ * Uma pessoa da call. `presenceBp` acompanha a medição por padrão — é o que o repo faz quando o caller
+ * não editou nada (PE3) — e os casos da PE5 passam o número editado à mão.
+ */
+const person = (over: Partial<SplitPresenceDto> = {}): SplitPresenceDto => {
+  const presenceMs = over.presenceMs ?? HOUR;
+  return {
+    discordUserId: "111",
+    userId: "u-1",
+    nick: "Tanque",
+    signedUp: true,
+    roleName: "Tank",
+    presenceMs,
+    presenceBp: measuredPresenceBp(presenceMs, HOUR),
+    measuredPresenceBp: measuredPresenceBp(presenceMs, HOUR),
+    ...over,
+  };
+};
 
 const input = (over: Partial<AttendanceInput> = {}): AttendanceInput => ({
   windowMs: HOUR,
@@ -69,13 +78,25 @@ describe("faixa de Buffunfa da role (F6-8)", () => {
 });
 
 describe("corte de presença (F6-10)", () => {
-  it("90% em ponto é dentro; um milissegundo abaixo é fora", () => {
+  it("90% em ponto é dentro; um centésimo de por cento abaixo é fora", () => {
     expect(ATTENDANCE_MIN_PRESENCE_BP).toBe(9000);
-    expect(meetsAttendance(HOUR * 0.9, HOUR)).toBe(true);
-    expect(meetsAttendance(HOUR * 0.9 - 1, HOUR)).toBe(false);
-    expect(meetsAttendance(HOUR, HOUR)).toBe(true);
-    // Sem janela medida não existe "bateu": não há relógio para comparar.
-    expect(meetsAttendance(HOUR, 0)).toBe(false);
+    expect(meetsAttendance(9000)).toBe(true);
+    expect(meetsAttendance(8999)).toBe(false);
+    expect(meetsAttendance(10_000)).toBe(true);
+    // Sem janela medida não existe "bateu": a presença é zero, e zero não bate corte nenhum.
+    expect(meetsAttendance(measuredPresenceBp(HOUR, 0))).toBe(false);
+  });
+
+  it("o corte cai sobre a presença do fechamento, que o caller pode ter editado (PE5)", () => {
+    // Ficou 40% na call e não bateria; o caller reconheceu a participação e pôs 100%.
+    const subiu = attendanceRows([person({ presenceMs: HOUR * 0.4, presenceBp: 10_000 })], input());
+    expect(subiu[0]!.skip).toBeNull();
+    expect(subiu[0]!.amount).toBe(40n);
+
+    // Ficou a call inteira, mas o caller sabe que ele estava ausente: zerou, e o prêmio cai junto.
+    const desceu = attendanceRows([person({ presenceMs: HOUR, presenceBp: 0 })], input());
+    expect(desceu[0]!.skip).toBe("below_presence");
+    expect(desceu[0]!.amount).toBe(0n);
   });
 
   it("o percentual mostrado nunca passa de 100%", () => {
